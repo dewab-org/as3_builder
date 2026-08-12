@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { editor } from "monaco-editor";
 import { findNodeAtLocation, getLocation, parse, parseTree } from "jsonc-parser";
 import Toolbar from "./components/Toolbar";
@@ -26,6 +26,16 @@ import {
 
 const INITIAL_TEXT = getTemplate("http-app").content;
 
+type Theme = "light" | "dark";
+
+function initialTheme(): Theme {
+  const stored = localStorage.getItem("as3b-theme");
+  if (stored === "light" || stored === "dark") return stored;
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
+}
+
 function monacoRangeFor(
   model: editor.ITextModel,
   offset: number,
@@ -47,7 +57,16 @@ export default function App() {
   const [baselineText, setBaselineText] = useState(INITIAL_TEXT);
   const [showBigipDialog, setShowBigipDialog] = useState(false);
   const [showNetboxDialog, setShowNetboxDialog] = useState(false);
+  const [theme, setTheme] = useState<Theme>(initialTheme);
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
+  const modifiedDecosRef = useRef<editor.IEditorDecorationsCollection | null>(
+    null
+  );
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem("as3b-theme", theme);
+  }, [theme]);
 
   const docState = useDocument(INITIAL_TEXT);
   const {
@@ -72,6 +91,53 @@ export default function App() {
     () => getContext(root, registry, debouncedText, cursorOffset),
     [root, registry, debouncedText, cursorOffset]
   );
+
+  // Baseline = the document as loaded/saved; anything differing from it is
+  // "modified" and highlighted in the tree and the editor margin.
+  const baselineDoc = useMemo(
+    () => parse(baselineText, [], { allowTrailingComma: true }) as unknown,
+    [baselineText]
+  );
+
+  const isModifiedPath = useCallback(
+    (path: JsonPath): boolean => {
+      if (lastGoodDoc === undefined) return false;
+      return (
+        JSON.stringify(getAtPath(lastGoodDoc, path)) !==
+        JSON.stringify(getAtPath(baselineDoc, path))
+      );
+    },
+    [lastGoodDoc, baselineDoc]
+  );
+
+  // Yellow margin stripes on application members that differ from baseline.
+  useEffect(() => {
+    const ed = editorRef.current;
+    const model = ed?.getModel();
+    if (!ed || !model || model.getValue() !== debouncedText) return;
+    const tree = parseTree(debouncedText, [], { allowTrailingComma: true });
+    if (!tree || !isPlainObject(lastGoodDoc)) return;
+    const decos: editor.IModelDeltaDecoration[] = [];
+    for (const [appKey, appVal] of Object.entries(lastGoodDoc)) {
+      if (!isPlainObject(appVal)) continue;
+      for (const memberKey of Object.keys(appVal)) {
+        const path: JsonPath = [appKey, memberKey];
+        if (!isModifiedPath(path)) continue;
+        const node = findNodeAtLocation(tree, path);
+        const propNode = node?.parent ?? node;
+        if (!propNode) continue;
+        decos.push({
+          range: monacoRangeFor(model, propNode.offset, propNode.length),
+          options: {
+            isWholeLine: true,
+            linesDecorationsClassName: "modified-stripe",
+          },
+        });
+      }
+    }
+    modifiedDecosRef.current?.clear();
+    modifiedDecosRef.current = ed.createDecorationsCollection(decos);
+  }, [debouncedText, lastGoodDoc, isModifiedPath]);
 
   function loadText(newText: string) {
     setText(newText);
@@ -315,6 +381,8 @@ export default function App() {
         isDirty={text !== baselineText}
         onValidateOnBigip={() => setShowBigipDialog(true)}
         onLoadFromNetbox={() => setShowNetboxDialog(true)}
+        theme={theme}
+        onToggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
       />
       {showBigipDialog && (
         <BigipDialog
@@ -343,6 +411,7 @@ export default function App() {
             cursorPath={context.path}
             onSelect={(path) => navigateToPath(path)}
             onDelete={handleDeleteNode}
+            isModified={isModifiedPath}
           />
         </div>
         <div className="pane-editor">
@@ -351,6 +420,7 @@ export default function App() {
             onTextChange={setText}
             schema={schemaEntry.schema}
             schemaId={schemaEntry.id}
+            theme={theme}
             onEditorMount={(ed) => {
               editorRef.current = ed;
             }}
@@ -375,7 +445,17 @@ export default function App() {
         </div>
       </div>
       <div className="errorbar">
-        <span className="ok">Validation bar (Phase 5)</span>
+        <span className="statusbar-crumb" title="Cursor context — new properties and objects insert here">
+          ◎ {context.breadcrumb}
+        </span>
+        {context.isApplication && (
+          <span className="statusbar-hint">new objects drop into this application</span>
+        )}
+        {!context.isApplication && context.className && (
+          <span className="statusbar-hint">
+            new properties drop into this {context.className}
+          </span>
+        )}
       </div>
     </div>
   );

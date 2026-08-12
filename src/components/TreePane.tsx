@@ -8,6 +8,7 @@ interface TreePaneProps {
   cursorPath: JsonPath;
   onSelect: (path: JsonPath) => void;
   onDelete: (path: JsonPath) => void;
+  isModified: (path: JsonPath) => boolean;
 }
 
 const MAX_DEPTH = 3;
@@ -31,6 +32,7 @@ function TreeNode({
   cursorPath,
   onSelect,
   onDelete,
+  isModified,
 }: {
   nodeKey: string | number;
   value: unknown;
@@ -39,6 +41,7 @@ function TreeNode({
   cursorPath: JsonPath;
   onSelect: (path: JsonPath) => void;
   onDelete: (path: JsonPath) => void;
+  isModified: (path: JsonPath) => boolean;
 }) {
   const isBranch =
     (isPlainObject(value) || Array.isArray(value)) && depth < MAX_DEPTH;
@@ -52,7 +55,7 @@ function TreeNode({
   return (
     <div className="tree-node">
       <div
-        className={`tree-label${selected ? " selected" : ""}`}
+        className={`tree-label${selected ? " selected" : ""}${isModified(path) ? " modified" : ""}`}
         onClick={() => onSelect(path)}
         title={path.map(String).join(" › ") || "(root)"}
       >
@@ -80,6 +83,7 @@ function TreeNode({
                 cursorPath={cursorPath}
                 onSelect={onSelect}
                 onDelete={onDelete}
+                isModified={isModified}
               />
             ))}
         </div>
@@ -94,6 +98,7 @@ export default function TreePane({
   cursorPath,
   onSelect,
   onDelete,
+  isModified,
 }: TreePaneProps) {
   if (!isPlainObject(doc)) {
     return <div className="pane-placeholder">No parsed document yet.</div>;
@@ -120,6 +125,7 @@ export default function TreePane({
               cursorPath={cursorPath}
               onSelect={onSelect}
               onDelete={onDelete}
+              isModified={isModified}
             />
           ))}
       </div>

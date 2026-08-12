@@ -10,6 +10,8 @@ interface ToolbarProps {
   isDirty: boolean;
   onValidateOnBigip: () => void;
   onLoadFromNetbox: () => void;
+  theme: "light" | "dark";
+  onToggleTheme: () => void;
 }
 
 export default function Toolbar({
@@ -20,6 +22,8 @@ export default function Toolbar({
   isDirty,
   onValidateOnBigip,
   onLoadFromNetbox,
+  theme,
+  onToggleTheme,
 }: ToolbarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -96,6 +100,12 @@ export default function Toolbar({
         }}
       />
       <button onClick={handleSave}>Save</button>
+      <button
+        onClick={onToggleTheme}
+        title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+      >
+        {theme === "dark" ? "☀" : "☾"}
+      </button>
     </div>
   );
 }

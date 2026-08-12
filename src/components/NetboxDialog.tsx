@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   APPLICATION_LIST_QUERY,
   applicationGraphQuery,
@@ -16,15 +16,35 @@ interface AppEntry {
   description?: string;
 }
 
-// Connection details + provisioned token survive closing/reopening the dialog
-// (in memory only — cleared on page refresh, never persisted).
+// Connection details, provisioned token, and the fetched application list
+// survive closing/reopening the dialog (in memory only — cleared on page
+// refresh, never persisted). A cached token + app list means reopening the
+// dialog goes straight to the picker without re-connecting.
 const remembered = {
   url: "http://localhost:8080",
   username: "",
   password: "",
   validateCert: true,
   authHeader: "" as string,
+  apps: undefined as AppEntry[] | undefined,
 };
+
+// Fuzzy match: rank contiguous substring hits above in-order subsequence
+// hits; everything else is filtered out.
+export function fuzzyRank(name: string, query: string): number | null {
+  const n = name.toLowerCase();
+  const q = query.toLowerCase().trim();
+  if (!q) return 0;
+  const idx = n.indexOf(q);
+  if (idx >= 0) return idx === 0 ? 0 : 1;
+  let pos = 0;
+  for (const ch of q) {
+    pos = n.indexOf(ch, pos);
+    if (pos < 0) return null;
+    pos += 1;
+  }
+  return 2;
+}
 
 export default function NetboxDialog({ onLoad, onClose }: NetboxDialogProps) {
   const [url, setUrl] = useState(remembered.url);
@@ -33,9 +53,19 @@ export default function NetboxDialog({ onLoad, onClose }: NetboxDialogProps) {
   const [validateCert, setValidateCert] = useState(remembered.validateCert);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | undefined>();
-  const [apps, setApps] = useState<AppEntry[] | undefined>();
-  const [selectedApp, setSelectedApp] = useState("");
+  const [apps, setApps] = useState<AppEntry[] | undefined>(remembered.apps);
+  const [selectedApp, setSelectedApp] = useState(
+    remembered.apps?.[0]?.id ?? ""
+  );
+  const [appFilter, setAppFilter] = useState("");
   const [warnings, setWarnings] = useState<string[]>([]);
+
+  // Cached connection: if we already hold a token but no app list yet,
+  // connect immediately on open.
+  useEffect(() => {
+    if (remembered.authHeader && !remembered.apps) void connect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   remembered.url = url;
   remembered.username = username;
@@ -103,18 +133,20 @@ export default function NetboxDialog({ onLoad, onClose }: NetboxDialogProps) {
       const list = [...data.application_list].sort((a, b) =>
         a.name.localeCompare(b.name)
       );
+      remembered.apps = list;
       setApps(list);
       if (list.length > 0) setSelectedApp(list[0].id);
     } catch (err) {
       remembered.authHeader = ""; // stale token? re-provision next time
+      remembered.apps = undefined;
       setError(String(err instanceof Error ? err.message : err));
     } finally {
       setBusy(null);
     }
   }
 
-  async function loadApp() {
-    if (!selectedApp) return;
+  async function loadApp(id: string = selectedApp) {
+    if (!id) return;
     setBusy("Rendering AS3…");
     setError(undefined);
     setWarnings([]);
@@ -122,7 +154,7 @@ export default function NetboxDialog({ onLoad, onClose }: NetboxDialogProps) {
       const auth = await provisionAuth();
       const data = await graphql<{ application_list: Record<string, unknown>[] }>(
         auth,
-        applicationGraphQuery(selectedApp)
+        applicationGraphQuery(id)
       );
       const app = data.application_list[0];
       if (!app) throw new Error("Application not found in NetBox");
@@ -188,20 +220,41 @@ export default function NetboxDialog({ onLoad, onClose }: NetboxDialogProps) {
           Validate TLS certificate (https only)
         </label>
 
-        {apps && (
-          <label className="modal-field">
-            <span>Application</span>
-            <select
-              value={selectedApp}
-              onChange={(e) => setSelectedApp(e.target.value)}
-            >
-              {apps.map((a) => (
-                <option key={a.id} value={a.id} title={a.description}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
-          </label>
+        {apps && apps.length > 0 && (
+          <div className="app-picker">
+            <input
+              type="search"
+              placeholder={`Search ${apps.length} applications…`}
+              value={appFilter}
+              onChange={(e) => setAppFilter(e.target.value)}
+            />
+            <div className="app-picker-list">
+              {apps
+                .map((a) => ({ app: a, rank: fuzzyRank(a.name, appFilter) }))
+                .filter((x): x is { app: AppEntry; rank: number } => x.rank !== null)
+                .sort(
+                  (a, b) =>
+                    a.rank - b.rank || a.app.name.localeCompare(b.app.name)
+                )
+                .map(({ app: a }) => (
+                  <div
+                    key={a.id}
+                    className={`app-picker-item${a.id === selectedApp ? " selected" : ""}`}
+                    onClick={() => setSelectedApp(a.id)}
+                    onDoubleClick={() => {
+                      setSelectedApp(a.id);
+                      void loadApp(a.id);
+                    }}
+                    title={a.description}
+                  >
+                    <span>{a.name}</span>
+                    {a.description && (
+                      <span className="app-desc">{a.description}</span>
+                    )}
+                  </div>
+                ))}
+            </div>
+          </div>
         )}
         {apps && apps.length === 0 && (
           <p className="ctx-hint">No applications found in this NetBox.</p>
@@ -234,7 +287,7 @@ export default function NetboxDialog({ onLoad, onClose }: NetboxDialogProps) {
               <button
                 className="primary"
                 disabled={!!busy || !selectedApp}
-                onClick={loadApp}
+                onClick={() => loadApp()}
               >
                 {busy ?? "Load as AS3"}
               </button>

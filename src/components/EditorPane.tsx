@@ -7,6 +7,7 @@ interface EditorPaneProps {
   onTextChange: (text: string) => void;
   schema: Record<string, unknown>;
   schemaId: string;
+  theme?: "light" | "dark";
   onEditorMount?: (editor: editor.IStandaloneCodeEditor) => void;
   onCursorOffsetChange?: (offset: number) => void;
   /** When a mouse click lands on a value with a closed set of choices,
@@ -22,7 +23,7 @@ interface EditorPaneProps {
 }
 
 export default function EditorPane(props: EditorPaneProps) {
-  const { text, onTextChange, schema, schemaId, onEditorMount } = props;
+  const { text, onTextChange, schema, schemaId, theme, onEditorMount } = props;
   const monaco = useMonaco();
 
   // The onMount handlers below live for the editor's lifetime; going through
@@ -50,6 +51,7 @@ export default function EditorPane(props: EditorPaneProps) {
   return (
     <Editor
       language="json"
+      theme={theme === "dark" ? "vs-dark" : "light"}
       value={text}
       onChange={(value) => onTextChange(value ?? "")}
       onMount={(editorInstance, monacoApi) => {
