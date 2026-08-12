@@ -479,6 +479,31 @@ body {
   overflow: auto;
 }
 
+.modal-error {
+  margin-top: 10px;
+  border: 1px solid #cf222e;
+  background: #fff1f0;
+  color: #cf222e;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.modal-warnings {
+  margin-top: 10px;
+  border: 1px solid #d4a72c;
+  background: #fff8c5;
+  color: #7d4e00;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.modal-warnings ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
 .modal-actions {
   display: flex;
   justify-content: flex-end;

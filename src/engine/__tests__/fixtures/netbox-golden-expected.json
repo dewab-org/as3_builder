@@ -1,0 +1,71 @@
+{
+  "id": "18-fixture-lb_vserver_ssl-10_0_0_2-sample-bigip-a_01-1321c639",
+  "schemaVersion": "3.55.0",
+  "controls": {
+    "class": "Controls",
+    "logLevel": "debug",
+    "trace": true
+  },
+  "fixture-lb_vserver_ssl-10_0_0_2-sample-bigip-a_01-1321c639": {
+    "class": "Application",
+    "label": "Fixture matrix apply for lb_vserver_ssl.conf VIP 10.0.0.2 on sam",
+    "sg_web": {
+      "class": "Pool",
+      "label": "",
+      "loadBalancingMode": "least-connections-member",
+      "monitors": [],
+      "members": [
+        {
+          "servicePort": 443,
+          "serverAddresses": [
+            "192.168.1.20",
+            "192.168.1.21"
+          ]
+        }
+      ]
+    },
+    "PLACEHOLDER_cert_app": {
+      "class": "Certificate",
+      "certificate": {
+        "text": "-----BEGIN CERTIFICATE-----\nMIIE/DCCAuSgAwIBAgIFZPYdFAEwDQYJKoZIhvcNAQELBQAwHjEcMBoGA1UEAwwT\nYXNlcnZlci5hamxhYi5sb2NhbDAeFw0yMDAxMDEwMDAwMDBaFw0zNjAxMDEwMDAw\nMDBaMB4xHDAaBgNVBAMME2FzZXJ2ZXIuYWpsYWIubG9jYWwwggIiMA0GCSqGSIb3\nDQEBAQUAA4ICDwAwggIKAoICAQCd6j4STCecGCw5AtuntXaWEEmrMPV1JerzCV2g\nCTxJkG3edfieAtnY4c5cnBNRcZmEVKFsg4lmVIOc7Fs60rkQBjCd8TaqCOvU1Hj1\nvQhFotHVsaiSIz5hCVoDYTKPVej2+z4AuS2cFmspGbBCe6POo/UIAEaH91+AmxHX\nL+KedjMT28crUdBpXpGNQJwU2XPfUJlGyBWv+f5PR5eQwrliuMYKz8/n3+GPsYUt\n68THvPQNiEBf7kXkBxkWoVk+KB7NgJRGDq9dmOTo04npmt4imHfB6ZhtiAG4tbwM\nxsh0u7eao+/lHaVDhLczPc+R0BoGI9nkZPkWSbPTGGBmlrK4PxjDV4OGJjgcIaie\nvxX9u/prxtHbzY2wl791cLc+BiNRnujvxuPqAtV1QFKsJogRSIi2+NPgz5l7szXP\nL8cApsSNX1orPVIKLPu8Ylnov7T6JMgn8oTAWkpq77zp2CgWwEteQiKGBBCGfcE+\nxw1k6SprfYVkFfy7hrgtWCkXe1pzK5mozj/dZe2UWn7fhx8UjELt6LNclbDg6ATs\nJHpdFeu/M5F1VQH8Fojicc6I5eAq/DpT/snRbd+oGW2Dt4VN1EYPThX9bXQGhaGC\nq4PFaIpRyqDsvIH2soTIYOLoNRFucX9VsurcAy2bh80K8dFDYYdqh1HYwZoZmPYO\nbxgY0wIDAQABo0EwPzAvBgNVHREEKDAmghNhc2VydmVyLmFqbGFiLmxvY2Fsggls\nb2NhbGhvc3SHBH8AAAEwDAYDVR0TAQH/BAIwADANBgkqhkiG9w0BAQsFAAOCAgEA\neixQwNBAH6ro9WoNLMnrF6Zzb/75V4HnYMEuWkUuogGKV/IOX2ZanFPkjb+3qbwr\nHvkhNhLDMTAdKWmmdtrH+0rY44FQ5PdfaAARQwUzqsVMLkuCemK3oj39SzCk7/IM\nS/Z8UpQWeoFbIDgA1CnnD9EeiEcq27lPv4ERa4C0EW9aANxxQYd7QfnagjypuwVH\nOT/RTVkYMq5lor5V5hPRNcgOMpi9wA+X4pvDY7e8eL4HHNWVGnS1p0AJZHG8tXaJ\noGMEq9kSy4MuB/AP88QmtPwHXTqvt95O/LgNLb4xIC5jsctpjkOFPEAHFSQ3BJ5y\n0fUIM9JJkK5tADcMIv6GCpr6NHemhwKZDdnRBELdJ3XGTqsqGqK2/bvUiB5RgUuK\nBy0xC32/v+C53GCfwUO+Fgv57tyOyZWzd70dNuAOgO8+hWKS/QD/jvEV/KZPQ01/\namEvk87Eac2vNNcp8S/omJLIP2lykS8rxsIsXTTF4gppfxnMLkhK6bZjY++2Mn5q\nExPrM37D/4VYechfDTkltd5SJzamyEUWbzCY5dSOb8A7kfLnJKBFcA+nx6pgmlgs\nh7wt7UWqXUObN2s7dB6Z9ctWfOkzb6I5vi5V8y0bdBX/xjUxwKZ1w/+SyuH/kreh\n4E6Fcy5fv9xqEwXMiqFXkQOLyVUORF5+b/0fwnCxB8c=\n-----END CERTIFICATE-----\n"
+      },
+      "privateKey": {
+        "text": "-----BEGIN PRIVATE KEY-----\n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\nfkizMBBXxZRNsWaZp+0fvCxronS+\n-----END PRIVATE KEY-----\n"
+      }
+    },
+    "ssl_vs_ssl_app": {
+      "class": "TLS_Server",
+      "certificates": [
+        {
+          "certificate": "PLACEHOLDER_cert_app"
+        }
+      ],
+      "ciphers": "ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256",
+      "authenticationMode": "ignore",
+      "tls1_0Enabled": false
+    },
+    "vs_ssl_app_service_address": {
+      "class": "Service_Address",
+      "label": "Dynamically generated from Ansible AS3 Module",
+      "virtualAddress": "10.0.0.2/32",
+      "routeAdvertisement": "selective"
+    },
+    "vs_ssl_app": {
+      "class": "Service_HTTPS",
+      "remark": "",
+      "virtualAddresses": [
+        {
+          "use": "vs_ssl_app_service_address"
+        }
+      ],
+      "pool": "sg_web",
+      "persistenceMethods": [
+        "cookie"
+      ],
+      "serverTLS": {
+        "use": "ssl_vs_ssl_app"
+      },
+      "profileHTTP": "basic"
+    }
+  }
+}

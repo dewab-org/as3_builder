@@ -9,6 +9,7 @@ interface ToolbarProps {
   currentText: string;
   isDirty: boolean;
   onValidateOnBigip: () => void;
+  onLoadFromNetbox: () => void;
 }
 
 export default function Toolbar({
@@ -18,6 +19,7 @@ export default function Toolbar({
   currentText,
   isDirty,
   onValidateOnBigip,
+  onLoadFromNetbox,
 }: ToolbarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -76,6 +78,9 @@ export default function Toolbar({
         </select>
       </label>
       <div className="spacer" />
+      <button onClick={onLoadFromNetbox} title="Read a load-balancer application from NetBox as AS3">
+        Load from NetBox…
+      </button>
       <button onClick={onValidateOnBigip} title="Dry-run this declaration against a BIG-IP">
         Validate on BIG-IP…
       </button>

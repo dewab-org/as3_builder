@@ -511,6 +511,50 @@ Each phase ends with the app running (`npm run dev`) and all tests passing
 4. **Verify:** setting a Service's `pool` via dropdown lists existing Pools;
    ajv errors appear and click-jump. Commit: `phase 5: xref pickers, error bar, polish`.
 
+### Phase 6 — Relationship graph pane (read-only "map", not a node editor)
+
+**Why:** JSON nesting is already well served by the tree pane, but AS3's
+cross-references (`pool`, `serverTLS {use}`, `monitors [{use}]`, certificate →
+cipher group chains) are SIBLINGS in the JSON — the tree shows no relationship
+between a Service and the Pool it points at. A graph view shows exactly that.
+**Scope guard: this is a read-only map with click-to-navigate. Do NOT build
+drag-to-rewire editing** — that would duplicate the context panel's editing
+logic and fight layout stability on every keystroke.
+
+1. **Data extraction (pure engine code, `src/engine/docGraph.ts`):**
+   - Nodes: reuse `indexClassInstances(lastGoodDoc)` — one node per
+     class-bearing object (name, className, path).
+   - Edges: walk each object's properties; a property whose resolved schema
+     has `xrefClasses` (the f5PostProcess pointer detection from §9) and whose
+     value names another object in the document produces an edge
+     `{from, to, propertyName}`. Handle all pointer shapes: bare string,
+     `{use: name}`, and arrays of either. `{bigip: …}` pointers are external —
+     render as a stub node, visually distinct.
+   - Also emit: **dangling edges** (pointer names nothing in the document) and
+     **orphan nodes** (nothing points at them and they are not Services).
+   - Unit-test against the http-app/https-app templates and a NetBox-rendered
+     app: Service → Pool → Monitor and Service → TLS_Server → Certificate
+     chains must appear; a bogus `"pool": "nope"` must yield a dangling edge.
+2. **Rendering (`src/components/GraphPane.tsx`):** toggle on the left column
+   (Tree ⇄ Graph). Use left-to-right ranked layout (Service on the left,
+   leaves right) — dagre or a simple longest-path layering is enough; avoid
+   physics/force layouts (layout churn). One node = small card with name +
+   class badge, matching the tree's styling.
+3. **Sync exactly like the tree:** clicking a node calls `navigateToPath`
+   (cursor jump + context panel update); the node containing the current
+   cursor path gets the `selected` highlight. Re-derive the graph from
+   `lastGoodDoc` on the same debounce; keep last-good with the stale banner.
+4. **Diagnostics styling:** dangling edges red + tooltip naming the missing
+   target; orphan nodes dimmed with an "unreferenced" badge.
+5. **Verify:** load the https-app template → graph shows
+   `web → webtls → webcert` and `web → pool1 → (monitor)`; break the `pool`
+   value → red edge; click any node → cursor jumps. Commit:
+   `phase 6: relationship graph pane`.
+
+Pitfall for this phase: derive edges from the SCHEMA's pointer metadata
+(`xrefClasses`), not from string matching — a pool member IP that happens to
+equal an object name must not create an edge.
+
 ---
 
 ## 11. Pitfalls — read before coding, reread when stuck

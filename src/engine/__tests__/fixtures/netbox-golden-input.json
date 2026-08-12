@@ -1,0 +1,104 @@
+{
+  "data": {
+    "application_list": [
+      {
+        "description": "Fixture matrix apply for lb_vserver_ssl.conf VIP 10.0.0.2 on sample-bigip-a_01",
+        "id": "18",
+        "name": "fixture-lb_vserver_ssl-10_0_0_2-sample-bigip-a_01-1321c639",
+        "snow_sys_id": "SNOW1321C6392A28",
+        "virtual_servers": [
+          {
+            "applications": [
+              {
+                "id": "18",
+                "name": "fixture-lb_vserver_ssl-10_0_0_2-sample-bigip-a_01-1321c639"
+              }
+            ],
+            "description": "",
+            "destination_addresses": [],
+            "enabled": true,
+            "extra_parameters": null,
+            "id": "19",
+            "name": "vs_ssl_app",
+            "persistence": [
+              "cookie"
+            ],
+            "policies": [],
+            "protocol": "https",
+            "protocol_profiles": [],
+            "service_port": 443,
+            "slug": "vs-ssl-app",
+            "snat_pool": null,
+            "ssl_profile": {
+              "certificates": [
+                {
+                  "name": "PLACEHOLDER_cert_app",
+                  "certificate": "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUUvRENDQXVTZ0F3SUJBZ0lGWlBZZEZBRXdEUVlKS29aSWh2Y05BUUVMQlFBd0hqRWNNQm9HQTFVRUF3d1QKWVhObGNuWmxjaTVoYW14aFlpNXNiMk5oYkRBZUZ3MHlNREF4TURFd01EQXdNREJhRncwek5qQXhNREV3TURBdwpNREJhTUI0eEhEQWFCZ05WQkFNTUUyRnpaWEoyWlhJdVlXcHNZV0l1Ykc5allXd3dnZ0lpTUEwR0NTcUdTSWIzCkRRRUJBUVVBQTRJQ0R3QXdnZ0lLQW9JQ0FRQ2Q2ajRTVENlY0dDdzVBdHVudFhhV0VFbXJNUFYxSmVyekNWMmcKQ1R4SmtHM2VkZmllQXRuWTRjNWNuQk5SY1ptRVZLRnNnNGxtVklPYzdGczYwcmtRQmpDZDhUYXFDT3ZVMUhqMQp2UWhGb3RIVnNhaVNJejVoQ1ZvRFlUS1BWZWoyK3o0QXVTMmNGbXNwR2JCQ2U2UE9vL1VJQUVhSDkxK0FteEhYCkwrS2Vkak1UMjhjclVkQnBYcEdOUUp3VTJYUGZVSmxHeUJXditmNVBSNWVRd3JsaXVNWUt6OC9uMytHUHNZVXQKNjhUSHZQUU5pRUJmN2tYa0J4a1dvVmsrS0I3TmdKUkdEcTlkbU9UbzA0bnBtdDRpbUhmQjZaaHRpQUc0dGJ3TQp4c2gwdTdlYW8rL2xIYVZEaExjelBjK1IwQm9HSTlua1pQa1dTYlBUR0dCbWxySzRQeGpEVjRPR0pqZ2NJYWllCnZ4WDl1L3ByeHRIYnpZMndsNzkxY0xjK0JpTlJudWp2eHVQcUF0VjFRRktzSm9nUlNJaTIrTlBnejVsN3N6WFAKTDhjQXBzU05YMW9yUFZJS0xQdThZbG5vdjdUNkpNZ244b1RBV2twcTc3enAyQ2dXd0V0ZVFpS0dCQkNHZmNFKwp4dzFrNlNwcmZZVmtGZnk3aHJndFdDa1hlMXB6SzVtb3pqL2RaZTJVV243Zmh4OFVqRUx0NkxOY2xiRGc2QVRzCkpIcGRGZXUvTTVGMVZRSDhGb2ppY2M2STVlQXEvRHBUL3NuUmJkK29HVzJEdDRWTjFFWVBUaFg5YlhRR2hhR0MKcTRQRmFJcFJ5cURzdklIMnNvVElZT0xvTlJGdWNYOVZzdXJjQXkyYmg4MEs4ZEZEWVlkcWgxSFl3Wm9abVBZTwpieGdZMHdJREFRQUJvMEV3UHpBdkJnTlZIUkVFS0RBbWdoTmhjMlZ5ZG1WeUxtRnFiR0ZpTG14dlkyRnNnZ2xzCmIyTmhiR2h2YzNTSEJIOEFBQUV3REFZRFZSMFRBUUgvQkFJd0FEQU5CZ2txaGtpRzl3MEJBUXNGQUFPQ0FnRUEKZWl4UXdOQkFINnJvOVdvTkxNbnJGNlp6Yi83NVY0SG5ZTUV1V2tVdW9nR0tWL0lPWDJaYW5GUGtqYiszcWJ3cgpIdmtoTmhMRE1UQWRLV21tZHRySCswclk0NEZRNVBkZmFBQVJRd1V6cXNWTUxrdUNlbUszb2ozOVN6Q2s3L0lNClMvWjhVcFFXZW9GYklEZ0ExQ25uRDlFZWlFY3EyN2xQdjRFUmE0QzBFVzlhQU54eFFZZDdRZm5hZ2p5cHV3VkgKT1QvUlRWa1lNcTVsb3I1VjVoUFJOY2dPTXBpOXdBK1g0cHZEWTdlOGVMNEhITldWR25TMXAwQUpaSEc4dFhhSgpvR01FcTlrU3k0TXVCL0FQODhRbXRQd0hYVHF2dDk1Ty9MZ05MYjR4SUM1anNjdHBqa09GUEVBSEZTUTNCSjV5CjBmVUlNOUpKa0s1dEFEY01JdjZHQ3ByNk5IZW1od0taRGRuUkJFTGRKM1hHVHFzcUdxSzIvYnZVaUI1UmdVdUsKQnkweEMzMi92K0M1M0dDZndVTytGZ3Y1N3R5T3laV3pkNzBkTnVBT2dPOCtoV0tTL1FEL2p2RVYvS1pQUTAxLwphbUV2azg3RWFjMnZOTmNwOFMvb21KTElQMmx5a1M4cnhzSXNYVFRGNGdwcGZ4bk1Ma2hLNmJaalkrKzJNbjVxCkV4UHJNMzdELzRWWWVjaGZEVGtsdGQ1U0p6YW15RVVXYnpDWTVkU09iOEE3a2ZMbkpLQkZjQStueDZwZ21sZ3MKaDd3dDdVV3FYVU9iTjJzN2RCNlo5Y3RXZk9remI2STV2aTVWOHkwYmRCWC94alV4d0taMXcvK1N5dUgva3JlaAo0RTZGY3k1ZnY5eHFFd1hNaXFGWGtRT0x5VlVPUkY1K2IvMGZ3bkN4QjhjPQotLS0tLUVORCBDRVJUSUZJQ0FURS0tLS0tCg==",
+                  "privateKey": "LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUpRUUlCQURBTkJna3Foa2lHOXcwQkFRRUZBQVNDQ1Nzd2dna25BZ0VBQW9JQ0FRQ2Q2ajRTVENlY0dDdzUKQXR1bnRYYVdFRW1yTVBWMUplcnpDVjJnQ1R4SmtHM2VkZmllQXRuWTRjNWNuQk5SY1ptRVZLRnNnNGxtVklPYwo3RnM2MHJrUUJqQ2Q4VGFxQ092VTFIajF2UWhGb3RIVnNhaVNJejVoQ1ZvRFlUS1BWZWoyK3o0QXVTMmNGbXNwCkdiQkNlNlBPby9VSUFFYUg5MStBbXhIWEwrS2Vkak1UMjhjclVkQnBYcEdOUUp3VTJYUGZVSmxHeUJXditmNVAKUjVlUXdybGl1TVlLejgvbjMrR1BzWVV0NjhUSHZQUU5pRUJmN2tYa0J4a1dvVmsrS0I3TmdKUkdEcTlkbU9UbwowNG5wbXQ0aW1IZkI2Wmh0aUFHNHRid014c2gwdTdlYW8rL2xIYVZEaExjelBjK1IwQm9HSTlua1pQa1dTYlBUCkdHQm1scks0UHhqRFY0T0dKamdjSWFpZXZ4WDl1L3ByeHRIYnpZMndsNzkxY0xjK0JpTlJudWp2eHVQcUF0VjEKUUZLc0pvZ1JTSWkyK05QZ3o1bDdzelhQTDhjQXBzU05YMW9yUFZJS0xQdThZbG5vdjdUNkpNZ244b1RBV2twcQo3N3pwMkNnV3dFdGVRaUtHQkJDR2ZjRSt4dzFrNlNwcmZZVmtGZnk3aHJndFdDa1hlMXB6SzVtb3pqL2RaZTJVClduN2ZoeDhVakVMdDZMTmNsYkRnNkFUc0pIcGRGZXUvTTVGMVZRSDhGb2ppY2M2STVlQXEvRHBUL3NuUmJkK28KR1cyRHQ0Vk4xRVlQVGhYOWJYUUdoYUdDcTRQRmFJcFJ5cURzdklIMnNvVElZT0xvTlJGdWNYOVZzdXJjQXkyYgpoODBLOGRGRFlZZHFoMUhZd1pvWm1QWU9ieGdZMHdJREFRQUJBb0lDQUNycHVITjllWGdjUTR3OG9CZHJveTIxCmdHZUNsdmwrVStJMnhkZ1RHbXg5VUxZWEJmaGVtdmVxcVVzV2FOT0ZsT3ZXbWNWazIyWlJDakVQTTkyQTNTU2oKSWZ3UnpFS1p5UWlkc3I5STN1SVpsSDlIVjZGYTdYMHVMdVZqT1B1bG8zalducXRRcHpuWEI4anovNmVaZE5MWApVR09idTQ4QVpOWU1qZVVWMExZeU5jQXNSZXdhUUJJYVRtQjkwY3lDcVUvaTFieGI3RFRWc1V1M0QxT1o3d29LClgxc1p6UXhjbFMzWTFuRzdzODU1cFRLMk41UTZLb2tFZXNkaEVtRG5Rek9pUU9qbTNiWUlNaENwUjcyUlJkTk4KN3FGbUN2T2M5YWJOMEN3Q3F2KzU4WE9YSUQ1NWQyc3BPaVcxSXQ2am1DYmFBRURtUmFCT2FBMHgveVJ4eUdBSApDbHRaT1l0UllLbzlucWFqRkh3Vy9UbnpJY0VtVk1kRHlaMUZTdHdnTlNrVEZQcXhFVm13ck9pc0lnSDBxZVYyCk9GUmx5OGpvVm1CM3NlMGN1OVBncVlUeGZBeGlJS0Z1MGJVRDlXaFh2c2xDQ1g5ZGV5Zi9RbU5DNWZvU3JJcDIKRHNEdytIQzRLSVBzK1pLL0dTK3RKdCs4U0N4eWdXWjlRTXAvWnBjTzZ1MnVWajVaNnlDQ2ZiV2JEdmc0ZER2Vgovc3JNOUM4MG0yT2JFWnk3c2VvZEdFTWk0OFpHVzhxTFZ3VjNkbkxWTU40cDYyZmc2Mkw4YkczZ25KRmUzQklvCmZTNTNqUmh4ZUlUcmpia0FlTUxwNm9uRGN6OHN2SU0vSTRzU2lyTThsdWRNRFNYUjgxb0FYZmdabm4zY1ZXYTEKZUhtS05lTjBwRkFsa3Y5c296MmRBb0lCQVFETjZNZ2drbStqWFBTK3EyUlRlSEEyMEk3cHRsRU1oUnJrSTZlZwpGNlVJNW5hYk44V2FqUlVqRkxSa3pXNWQxOHF4ejFGUVRrM1VkdDB6VmRXRkFyQ2ZWbWFCdjg5VlV1anZZNnVkCmdGU21hby8zTjZKei8vMGUzbHhyZVdZVGtCUVVHVGhBUjk5Z3g4QytqaWJuNHpJdVkzUTgvczk3OWNDRjZVZ3gKZGxpbWxFZjRmcXYydTdqclNzQ21qRjZhU0tPOE1SYnFLZGRiVWp4S0FYK1g1MEhUMGRyZXJ0SWhzNiszVGY2VQprNzlNTmpGdzJJYkk0cXJPKzg3K1lnbnJGSVdDcituRGVHS05hbmw1aFpCOFdIVW1iLzVXS0VNYUdZNnQxbUI0CllyRFNKb0ZNVVdLVXpvazVuc2NRdXB3RmFIcHRuNzdkK2NQRDk4Q1lscHpGK1lIZkFvSUJBUURFVkpETTFQTVUKV242WlZUMFpEZnEzSGZZdnFCTno4QStOVVN2blVaTW0rZ29ieG9jOVFBQlpVTDVRQ1UvRlhzZFBOU2JCRzBJdQpWdnNEQlZSc3BpSE85azNjK2xFZmVXV3ZUcmN2aEJGL21TaExzbHBYdkg0SExFamJxQWNjaFNLTnRHNHZVSStkCnF1OEY0TmNNVXFURlZaNVdWeEFSVFBaTEdSV3d5cFg4ZjNBMjJkeXBuS3hoTUxiOGZsa0FZVmZSMWZ6cTM1QWcKYzQzK0hDYVhpRyt2a2g5emUzM3lodUpsTEVLQlVHYjdwcW5ncjRUNWlvMTZvNTZBTmxqMzk0amE1bGxXQ21JSgp1d3dKVlRad0pRaVhvMXFtUldpNkxpbGs3WUdaNUFyT3IvYmlidGd6UXBFcFpHUGdjdlVVOFBQY3Jqa3F5VCsxCi9SRTEyNUxlNEkrTkFvSUJBRHNCODZBSjl2NHMzR0pyd1hOK04wSXVJRlp2amVoMW1KQTZlNFlRWUpZZFhXMzcKM0ovK3dFanVYUWZxS3krdmNJSG1OSm83NW1mMXJFeFMwNzZyVjZ4QjJWeGplR291T1Z5cEJudzdVNGJoVU9KNgp5ZzVPRk42c3dIVjRNNzExYzV1UzRxRGhOKzJITVFBcXdwRi9kVmovM1ViQml2b3VJZjcrTEZjb1lCMVVydzlTClZidCtibTdYWEVBZVI5b1U2UDg4WGlHNjNlRm92cWhDcDZzRGRjVGJCY3I4OUhEK0NtUVFjTjFwUGMvOFU4elAKOEVoUFZMMitRY0o2bS9jSFNYOTdKQldGUVZEZmEzSmN5VndwQ1dGN2hMcHlEVkRFZERQekZIQkxiL3E1V0NKagp6RWx5cXJhZGZ0U1hkYkRERVJxclJjcGRFakh0cFA3VllwWUZlNmNDZ2dFQVg3ZFd6UFg0K0hCU0RsRTNNMUxVCmE1Z280UDBSVnRHdjAxYkNqOGorYzk4dE5ITnFsWnJ4VUpvRDNxTmJoNzc0Ym81Y01ZTW5sYzRFSEducHlmcUkKdXd6cjB4TWFuN3lncllJejN1K0ZWRzhIN1RlcndlQjhsT1NyTktQTHE4VGduck5ia0tlM0RNZzhOZUp6RldmcApPdWZPQlF2M0ltZ2lIMlRBWld1dkNlWGJnSEpnbVRSditnWTFBQTVkTjhrOWRtamNJR29VS3k0TENOc1NtWWdECjQxWGJEWU1rV1N3WGpmbXhCcmg3TEs4SlhTaFZMUSsyZ0JicS9Ga0NzUW0yWi9vcmpiNE1JL0JVSXV5dldLZEYKZENCSTNvMHlUS3FhdGNEeEVXVFRQQWNmMXk3eEtyU0didWFwcHRDRTJjdkxLRWlzU0ViTFQ5OXNGNVRRR3ViaQpOUUtDQVFBVHY2WlNQQkFBc0RFaktCK2Y5SlRweWFrM2FaUm90MktCQzFUY3dpMEViQ2h1U3QvZHJOalcvZHQxCmx4WHVIOVBxNEk4aitOU0xuVGF5Z0ZNOFNWV2tDQ296TmNDMTF1Wnd2VGp3cWM4ZEtiRXk0ZUdTWVUwRHowUVIKZSt4THNIdWlKdXg0V2J6d1Z6TWQ0TXlQemxNWEpPb3pvNUpkanJYWkc3M3Uwdk9CU3paOGRhTVY0MWMwVk1rcQprbHpNaHdEN28zQmJEcCtkQ1o3bkJhQlVLUXMzNE1yMUxnYWNqaUI1WkY1ZUpORDlzTU1yZlNvWG9UL2xwZXZsCnJ1enJ6M3lCVDRrazhXakZ4ZWllaGJhNzhGTjhCT0Q1TU02dk5SaVdmRWJhbDNHaVJuSXRFVTUrMnk5RGRYbVEKZmtpek1CQlh4WlJOc1dhWnArMGZ2Q3hyb25TKwotLS0tLUVORCBQUklWQVRFIEtFWS0tLS0tCg=="
+                }
+              ],
+              "cipher_group": null,
+              "ciphers": [
+                "ECDHE-RSA-AES256-GCM-SHA384",
+                "ECDHE-RSA-AES128-GCM-SHA256"
+              ],
+              "id": "9",
+              "mtls": "ignore",
+              "name": "ssl_vs_ssl_app",
+              "options": null,
+              "profile_type": "client",
+              "tls_versions": [
+                "TLSv1.1",
+                "TLSv1.2"
+              ]
+            },
+            "virtual_addresses": [
+              {
+                "address": "10.0.0.2/32",
+                "id": "45"
+              }
+            ],
+            "vs_type": "standard",
+            "backend_pools": [
+              {
+                "description": "",
+                "id": "21",
+                "load_balancing_algorithm": "least-connections",
+                "members": [
+                  {
+                    "enabled": true,
+                    "extra_parameters": null,
+                    "id": "28",
+                    "node": {
+                      "address": "192.168.1.20/32",
+                      "id": "46"
+                    },
+                    "priority_group": 0,
+                    "ratio": 0,
+                    "service_port": 443
+                  },
+                  {
+                    "enabled": true,
+                    "extra_parameters": null,
+                    "id": "29",
+                    "node": {
+                      "address": "192.168.1.21/32",
+                      "id": "47"
+                    },
+                    "priority_group": 0,
+                    "ratio": 0,
+                    "service_port": 443
+                  }
+                ],
+                "monitors": [],
+                "name": "sg_web",
+                "priority_group_activation": false,
+                "priority_group_threshold": null
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

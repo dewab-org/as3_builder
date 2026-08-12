@@ -3,6 +3,7 @@ import type { editor } from "monaco-editor";
 import { findNodeAtLocation, getLocation, parse, parseTree } from "jsonc-parser";
 import Toolbar from "./components/Toolbar";
 import BigipDialog from "./components/BigipDialog";
+import NetboxDialog from "./components/NetboxDialog";
 import EditorPane from "./components/EditorPane";
 import TreePane from "./components/TreePane";
 import ContextPanel from "./components/ContextPanel";
@@ -45,6 +46,7 @@ export default function App() {
   const [cursorOffset, setCursorOffset] = useState(0);
   const [baselineText, setBaselineText] = useState(INITIAL_TEXT);
   const [showBigipDialog, setShowBigipDialog] = useState(false);
+  const [showNetboxDialog, setShowNetboxDialog] = useState(false);
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
 
   const docState = useDocument(INITIAL_TEXT);
@@ -312,11 +314,25 @@ export default function App() {
         currentText={text}
         isDirty={text !== baselineText}
         onValidateOnBigip={() => setShowBigipDialog(true)}
+        onLoadFromNetbox={() => setShowNetboxDialog(true)}
       />
       {showBigipDialog && (
         <BigipDialog
           declarationText={text}
           onClose={() => setShowBigipDialog(false)}
+        />
+      )}
+      {showNetboxDialog && (
+        <NetboxDialog
+          onLoad={(newText) => {
+            if (
+              text === baselineText ||
+              window.confirm("Replace the current document with the NetBox render?")
+            ) {
+              loadText(newText);
+            }
+          }}
+          onClose={() => setShowNetboxDialog(false)}
         />
       )}
       <div className="main">
