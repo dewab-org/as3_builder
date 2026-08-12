@@ -19,6 +19,12 @@ export interface PropertyInfo {
   xrefClasses?: string[];
 }
 
+export interface UnknownProp {
+  name: string;
+  /** Rough type of the value present in the document. */
+  valueType: string;
+}
+
 export interface NodeContext {
   path: JsonPath;
   breadcrumb: string;
@@ -26,6 +32,9 @@ export interface NodeContext {
   schema?: JsonSchema;
   presentProps: PropertyInfo[];
   addableProps: PropertyInfo[];
+  /** Document keys the current (class) schema does not allow — typically
+   * left over after a class change. */
+  unknownProps: UnknownProp[];
   isApplication: boolean;
 }
 
@@ -161,6 +170,7 @@ export function getContextForPath(
       schema: undefined,
       presentProps: [],
       addableProps: [],
+      unknownProps: [],
       isApplication,
     };
   }
@@ -182,14 +192,26 @@ export function getContextForPath(
     (info.present ? presentProps : addableProps).push(info);
   }
 
-  // Required-but-missing first, then alphabetical.
-  addableProps.sort((a, b) =>
-    a.required !== b.required
-      ? a.required
-        ? -1
-        : 1
-      : a.name.localeCompare(b.name)
-  );
+  // Alphabetical; required-but-missing entries keep their visual marker.
+  addableProps.sort((a, b) => a.name.localeCompare(b.name));
+
+  // Keys in the document this schema doesn't know. Flag them when the schema
+  // forbids extras (additionalProperties: false) or when this is a class
+  // object without an explicit member escape hatch — the usual aftermath of
+  // changing an object's class.
+  const unknownProps: UnknownProp[] = [];
+  const flagUnknown =
+    eff.additionalProperties === false ||
+    (className !== undefined && eff.additionalProperties === undefined);
+  if (flagUnknown && isPlainObject(docNode) && eff.properties) {
+    for (const [key, value] of Object.entries(docNode)) {
+      if (key in eff.properties) continue;
+      unknownProps.push({
+        name: key,
+        valueType: Array.isArray(value) ? "array" : typeof value,
+      });
+    }
+  }
 
   return {
     path,
@@ -198,6 +220,7 @@ export function getContextForPath(
     schema: eff,
     presentProps,
     addableProps,
+    unknownProps,
     isApplication,
   };
 }

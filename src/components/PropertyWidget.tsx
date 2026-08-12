@@ -28,10 +28,13 @@ export default function PropertyWidget({
   const [draft, setDraft] = useState(typeof value === "string" ? value : "");
   const [error, setError] = useState<string | undefined>();
 
+  const requiredEmpty = (v: string) =>
+    prop.required && v === "" ? "Input required" : undefined;
+
   useEffect(() => {
     if (typeof value === "string") {
       setDraft(value);
-      setError(validateValue(prop.schema, value).message);
+      setError(requiredEmpty(value) ?? validateValue(prop.schema, value).message);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
@@ -113,7 +116,10 @@ export default function PropertyWidget({
         value={draft}
         onChange={(e) => {
           setDraft(e.target.value);
-          setError(validateValue(prop.schema, e.target.value).message);
+          setError(
+            requiredEmpty(e.target.value) ??
+              validateValue(prop.schema, e.target.value).message
+          );
         }}
         onBlur={() => {
           if (draft !== value) onEdit(propPath, draft);

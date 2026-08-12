@@ -26,6 +26,8 @@ export interface DocumentState {
   parseErrors: ParseError[];
   /** Insert/replace (value) or delete (undefined) at path, preserving formatting. */
   applyEdit: (path: JsonPath, value: unknown) => string;
+  /** Apply several path edits atomically (sequentially on one base text). */
+  applyEditMany: (edits: [JsonPath, unknown][]) => string;
 }
 
 export function useDocument(initialText: string): DocumentState {
@@ -51,21 +53,29 @@ export function useDocument(initialText: string): DocumentState {
   const isStale = parseErrors.length > 0;
   if (!isStale) lastGoodRef.current = doc;
 
-  const applyEdit = useCallback(
-    (path: JsonPath, value: unknown): string => {
+  const applyEditMany = useCallback(
+    (pathEdits: [JsonPath, unknown][]): string => {
       let next = text;
       try {
-        const edits = modify(text, path, value, {
-          formattingOptions: FORMATTING,
-        });
-        next = applyEdits(text, edits);
+        for (const [path, value] of pathEdits) {
+          const edits = modify(next, path, value, {
+            formattingOptions: FORMATTING,
+          });
+          next = applyEdits(next, edits);
+        }
         setText(next);
       } catch {
         // Text too broken to edit structurally; leave it untouched.
+        return text;
       }
       return next;
     },
     [text]
+  );
+
+  const applyEdit = useCallback(
+    (path: JsonPath, value: unknown): string => applyEditMany([[path, value]]),
+    [applyEditMany]
   );
 
   return {
@@ -77,5 +87,6 @@ export function useDocument(initialText: string): DocumentState {
     isStale,
     parseErrors,
     applyEdit,
+    applyEditMany,
   };
 }

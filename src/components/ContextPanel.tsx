@@ -1,6 +1,7 @@
 import type { ClassInfo, JsonPath, NodeContext } from "../engine";
 import { getAtPath, isPlainObject } from "../engine";
 import PropertyWidget from "./PropertyWidget";
+import ConfirmButton from "./ConfirmButton";
 import AddableList, {
   type AddableItem,
   type ChipPayload,
@@ -14,6 +15,8 @@ interface ContextPanelProps {
   onEdit: (path: JsonPath, value: unknown) => void;
   onNavigate: (path: JsonPath) => void;
   onAddChip: (payload: ChipPayload) => void;
+  onDeleteNode: (path: JsonPath) => void;
+  onClassChange: (path: JsonPath, className: string) => void;
 }
 
 export default function ContextPanel({
@@ -24,6 +27,8 @@ export default function ContextPanel({
   onEdit,
   onNavigate,
   onAddChip,
+  onDeleteNode,
+  onClassChange,
 }: ContextPanelProps) {
   const docNode = getAtPath(doc, context.path);
 
@@ -52,7 +57,9 @@ export default function ContextPanel({
     payload: { name: p.name, sourcePath: context.path },
   }));
 
-  const classItems: AddableItem[] = memberClasses.map((c) => ({
+  const classItems: AddableItem[] = [...memberClasses]
+    .sort((a, b) => a.className.localeCompare(b.className))
+    .map((c) => ({
     key: c.className,
     label: c.className,
     detail: {
@@ -68,10 +75,34 @@ export default function ContextPanel({
     },
   }));
 
+  // Class choices for the class dropdown: sibling-level member classes, plus
+  // the current class if it's something else (e.g. Application itself).
+  const classOptions = memberClasses.map((c) => c.className).sort();
+  if (context.className && !classOptions.includes(context.className)) {
+    classOptions.unshift(context.className);
+  }
+
+  const nodeName =
+    context.path.length > 0
+      ? String(context.path[context.path.length - 1])
+      : undefined;
+
   return (
     <div>
       {isStale && <div className="stale-banner">Stale — fix JSON to refresh</div>}
-      <div className="ctx-breadcrumb">{context.breadcrumb}</div>
+      <div className="ctx-breadcrumb">
+        <span className="ctx-crumb-text">{context.breadcrumb}</span>
+        {nodeName !== undefined && (
+          <ConfirmButton
+            className="ctx-delete"
+            title={`Delete ${nodeName}`}
+            armedLabel="delete?"
+            onConfirm={() => onDeleteNode(context.path)}
+          >
+            🗑
+          </ConfirmButton>
+        )}
+      </div>
 
       {!context.schema && (
         <div className="pane-placeholder">
@@ -89,8 +120,7 @@ export default function ContextPanel({
           <select
             value=""
             onChange={(e) => {
-              if (e.target.value)
-                onEdit([...context.path, "class"], e.target.value);
+              if (e.target.value) onClassChange(context.path, e.target.value);
             }}
           >
             <option value="" disabled>
@@ -108,15 +138,76 @@ export default function ContextPanel({
       {context.schema && !needsClass && context.presentProps.length > 0 && (
         <div className="ctx-section">
           <h3>Properties</h3>
-          {context.presentProps.map((p) => (
-            <PropertyWidget
-              key={p.name}
-              prop={p}
-              value={isPlainObject(docNode) ? docNode[p.name] : undefined}
-              contextPath={context.path}
-              onEdit={onEdit}
-              onNavigate={onNavigate}
-            />
+          {context.presentProps.map((p) =>
+            p.name === "class" && context.path.length > 0 ? (
+              <div className="pw-wrap" key={p.name}>
+                <div className="pw-row" title="Object class">
+                  <span className="pw-name required">class</span>
+                  <select
+                    value={context.className ?? ""}
+                    onChange={(e) => {
+                      if (e.target.value && e.target.value !== context.className)
+                        onClassChange(context.path, e.target.value);
+                    }}
+                  >
+                    {classOptions.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="pw-delete-spacer" />
+                </div>
+              </div>
+            ) : (
+              <PropertyWidget
+                key={p.name}
+                prop={p}
+                value={isPlainObject(docNode) ? docNode[p.name] : undefined}
+                contextPath={context.path}
+                onEdit={onEdit}
+                onNavigate={onNavigate}
+              />
+            )
+          )}
+        </div>
+      )}
+
+      {context.schema && !needsClass && context.unknownProps.length > 0 && (
+        <div className="ctx-section ctx-invalid">
+          <h3>
+            Invalid for {context.className ?? "this object"}
+            <ConfirmButton
+              className="ctx-remove-all"
+              title="Remove all invalid properties"
+              armedLabel="click to confirm"
+              onConfirm={() =>
+                context.unknownProps.forEach((u) =>
+                  onEdit([...context.path, u.name], undefined)
+                )
+              }
+            >
+              Remove all
+            </ConfirmButton>
+          </h3>
+          <p className="ctx-hint">
+            These properties exist in the document but are not allowed by the
+            current class — usually left over after a class change.
+          </p>
+          {context.unknownProps.map((u) => (
+            <div className="pw-wrap" key={u.name}>
+              <div className="pw-row invalid-row">
+                <span className="pw-name invalid">{u.name}</span>
+                <span className="pw-summary">{u.valueType}</span>
+                <button
+                  className="pw-delete"
+                  title={`Remove ${u.name}`}
+                  onClick={() => onEdit([...context.path, u.name], undefined)}
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
           ))}
         </div>
       )}

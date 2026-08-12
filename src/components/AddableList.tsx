@@ -81,14 +81,31 @@ export default function AddableList({ items, onAdd }: AddableListProps) {
     left: number;
   } | null>(null);
   const [pinnedKey, setPinnedKey] = useState<string | null>(null);
+  const [filter, setFilter] = useState("");
+
+  const shown = filter
+    ? items.filter((i) =>
+        i.label.toLowerCase().includes(filter.trim().toLowerCase())
+      )
+    : items;
 
   const hoveredItem = hovered
-    ? items.find((i) => i.key === hovered.key)
+    ? shown.find((i) => i.key === hovered.key)
     : undefined;
 
   return (
     <div className="addable-list">
-      {items.map((item) => (
+      <input
+        type="search"
+        className="addable-filter"
+        placeholder={`Filter ${items.length}…`}
+        value={filter}
+        onChange={(e) => setFilter(e.target.value)}
+      />
+      {shown.length === 0 && (
+        <div className="addable-empty">No matches for “{filter}”</div>
+      )}
+      {shown.map((item) => (
         <div key={item.key}>
           <div
             className={`addable-row${item.required ? " required" : ""}`}

@@ -224,6 +224,30 @@ describe("stubber", () => {
   });
 });
 
+describe("unknown props (class change)", () => {
+  it("flags leftovers after changing Pool → Service_HTTP", () => {
+    const doc = {
+      schemaVersion: "3.55.0",
+      myApp: {
+        class: "Application",
+        pool1: {
+          class: "Service_HTTP", // was Pool; members is now invalid
+          members: [{ servicePort: 80 }],
+          virtualAddresses: ["10.0.0.1"],
+        },
+      },
+    };
+    const ctx = getContextForPath(root, registry, doc, ["myApp", "pool1"]);
+    expect(ctx.unknownProps.map((u) => u.name)).toEqual(["members"]);
+    expect(ctx.unknownProps[0].valueType).toBe("array");
+  });
+
+  it("does not flag valid members of an Application", () => {
+    const ctx = getContextForPath(root, registry, DOC, ["myApp"]);
+    expect(ctx.unknownProps).toEqual([]);
+  });
+});
+
 describe("validation", () => {
   it("validates ports via minimum/maximum", () => {
     const port = { type: "integer", minimum: 0, maximum: 65535 };

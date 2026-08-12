@@ -226,6 +226,119 @@ body {
   padding-left: 6px;
 }
 
+.pw-name.invalid {
+  color: #cf222e;
+  text-decoration: line-through;
+}
+
+.invalid-row {
+  background: #fff1f0;
+  border-radius: 4px;
+  padding: 2px 4px;
+}
+
+.pw-delete-spacer {
+  width: 20px;
+  flex: 0 0 auto;
+}
+
+.ctx-invalid h3 {
+  color: #cf222e;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ctx-remove-all {
+  font-size: 10px;
+  text-transform: none;
+  letter-spacing: normal;
+  border: 1px solid #cf222e;
+  color: #cf222e;
+  background: none;
+  border-radius: 8px;
+  padding: 1px 7px;
+  cursor: pointer;
+}
+
+.ctx-remove-all:hover {
+  background: #ffebe9;
+}
+
+.ctx-breadcrumb {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.ctx-crumb-text {
+  flex: 1 1 auto;
+}
+
+.ctx-delete {
+  flex: 0 0 auto;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  opacity: 0.6;
+}
+
+.ctx-delete:hover {
+  background: #ffebe9;
+  opacity: 1;
+}
+
+.tree-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tree-text {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tree-delete {
+  flex: 0 0 auto;
+  border: none;
+  background: none;
+  color: #cf222e;
+  cursor: pointer;
+  font-size: 10px;
+  padding: 1px 3px;
+  border-radius: 3px;
+  visibility: hidden;
+}
+
+.tree-label:hover .tree-delete {
+  visibility: visible;
+}
+
+.tree-delete:hover {
+  background: #ffebe9;
+}
+
+.tree-delete.armed,
+.ctx-delete.armed,
+.ctx-remove-all.armed {
+  visibility: visible;
+  background: #cf222e;
+  color: #ffffff;
+  opacity: 1;
+}
+
+.inserted-flash {
+  background: rgba(255, 213, 79, 0.55);
+  border-radius: 2px;
+  transition: background 0.4s ease;
+}
+
 .pw-summary {
   flex: 1 1 auto;
   color: #57606a;
@@ -271,6 +384,27 @@ body {
   border: 1px solid #eaeef2;
   border-radius: 6px;
   overflow: hidden;
+}
+
+.addable-filter {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid #eaeef2;
+  padding: 4px 8px;
+  font-size: 12px;
+  outline: none;
+  background: #fbfcfd;
+}
+
+.addable-filter:focus {
+  background: #ffffff;
+  border-bottom-color: #54aeff;
+}
+
+.addable-empty {
+  padding: 6px 8px;
+  font-size: 12px;
+  color: #8b949e;
 }
 
 .addable-row {

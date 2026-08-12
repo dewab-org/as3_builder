@@ -13,7 +13,9 @@ import {
   applicationMemberClasses,
   buildClassRegistry,
   effectiveSchema,
+  getAtPath,
   getContext,
+  isPlainObject,
   resolveSchemaForPath,
   stubValue,
   type JsonPath,
@@ -22,6 +24,21 @@ import {
 
 const INITIAL_TEXT = getTemplate("http-app").content;
 
+function monacoRangeFor(
+  model: editor.ITextModel,
+  offset: number,
+  length: number
+) {
+  const start = model.getPositionAt(offset);
+  const end = model.getPositionAt(offset + length);
+  return {
+    startLineNumber: start.lineNumber,
+    startColumn: start.column,
+    endLineNumber: end.lineNumber,
+    endColumn: end.column,
+  };
+}
+
 export default function App() {
   const [schemaId, setSchemaId] = useState(DEFAULT_SCHEMA_ID);
   const [cursorOffset, setCursorOffset] = useState(0);
@@ -29,8 +46,15 @@ export default function App() {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
 
   const docState = useDocument(INITIAL_TEXT);
-  const { text, setText, debouncedText, lastGoodDoc, isStale, applyEdit } =
-    docState;
+  const {
+    text,
+    setText,
+    debouncedText,
+    lastGoodDoc,
+    isStale,
+    applyEdit,
+    applyEditMany,
+  } = docState;
 
   const schemaEntry = useMemo(() => getSchema(schemaId), [schemaId]);
   const root = schemaEntry.schema as JsonSchemaRoot;
@@ -51,29 +75,52 @@ export default function App() {
     setCursorOffset(0);
   }
 
-  // Move the Monaco cursor to the value at `path` in the given text.
-  const navigateToPath = useCallback((path: JsonPath, inText?: string) => {
-    const ed = editorRef.current;
-    const model = ed?.getModel();
-    if (!ed || !model) return;
-    const tree = parseTree(inText ?? model.getValue(), [], {
-      allowTrailingComma: true,
-    });
-    if (!tree) return;
-    const node = path.length === 0 ? tree : findNodeAtLocation(tree, path);
-    if (!node) return;
-    // Land inside the value (offset+1 for objects/arrays) so the context
-    // resolves to the node itself rather than its parent.
-    const inside =
-      node.type === "object" || node.type === "array"
-        ? node.offset + 1
-        : node.offset;
-    const pos = model.getPositionAt(inside);
-    ed.setPosition(pos);
-    ed.revealPositionInCenterIfOutsideViewport(pos);
-    ed.focus();
-    setCursorOffset(inside);
-  }, []);
+  // Move the Monaco cursor to the value at `path`. Strings land BETWEEN the
+  // quotes so typing replaces/fills the value; objects/arrays land just
+  // inside the bracket. With `flash`, the value briefly highlights so the
+  // user sees where input is expected.
+  const navigateToPath = useCallback(
+    (path: JsonPath, opts?: { flash?: boolean; flashChildren?: string[] }) => {
+      const ed = editorRef.current;
+      const model = ed?.getModel();
+      if (!ed || !model) return;
+      const tree = parseTree(model.getValue(), [], {
+        allowTrailingComma: true,
+      });
+      if (!tree) return;
+      const node = path.length === 0 ? tree : findNodeAtLocation(tree, path);
+      if (!node) return;
+      const inside =
+        node.type === "object" || node.type === "array" || node.type === "string"
+          ? node.offset + 1
+          : node.offset;
+      const pos = model.getPositionAt(inside);
+      ed.setPosition(pos);
+      ed.revealPositionInCenterIfOutsideViewport(pos);
+      ed.focus();
+      setCursorOffset(inside);
+      // Highlight where input is expected: specific child property values
+      // (flashChildren) or the whole navigated value (flash).
+      const flashNodes =
+        opts?.flashChildren && opts.flashChildren.length > 0
+          ? opts.flashChildren
+              .map((name) => findNodeAtLocation(tree, [...path, name]))
+              .filter((n): n is NonNullable<typeof n> => n !== undefined)
+          : opts?.flash
+            ? [node]
+            : [];
+      if (flashNodes.length > 0) {
+        const deco = ed.createDecorationsCollection(
+          flashNodes.map((n) => ({
+            range: monacoRangeFor(model, n.offset, n.length),
+            options: { className: "inserted-flash" },
+          }))
+        );
+        setTimeout(() => deco.clear(), 2500);
+      }
+    },
+    []
+  );
 
   // When the offset sits inside a VALUE whose schema offers a closed set of
   // choices (enum, boolean, const), return the offset at the START of that
@@ -122,16 +169,60 @@ export default function App() {
   // commit; navigating before that clamps the offset. Poll briefly until the
   // model holds the expected text, then jump.
   const navigateWhenReady = useCallback(
-    (path: JsonPath, expectedText: string, attempt = 0) => {
+    (
+      path: JsonPath,
+      expectedText: string,
+      opts?: { flash?: boolean; flashChildren?: string[] },
+      attempt = 0
+    ) => {
       const model = editorRef.current?.getModel();
       if (model && model.getValue() === expectedText) {
-        navigateToPath(path);
+        navigateToPath(path, opts ?? { flash: true });
         return;
       }
       if (attempt < 20)
-        setTimeout(() => navigateWhenReady(path, expectedText, attempt + 1), 25);
+        setTimeout(
+          () => navigateWhenReady(path, expectedText, opts, attempt + 1),
+          25
+        );
     },
     [navigateToPath]
+  );
+
+  // Setting/changing an object's class: write the class, stub every
+  // required property the object is missing, and flash them as needing input.
+  const handleClassChange = useCallback(
+    (path: JsonPath, className: string) => {
+      const info = registry.get(className);
+      if (!info) return;
+      const stub = stubValue(root, info.schema);
+      const existing = getAtPath(lastGoodDoc, path);
+      const edits: [JsonPath, unknown][] = [[[...path, "class"], className]];
+      const added: string[] = [];
+      if (isPlainObject(stub)) {
+        for (const [key, value] of Object.entries(stub)) {
+          if (key === "class") continue;
+          if (isPlainObject(existing) && key in existing) continue;
+          edits.push([[...path, key], value]);
+          added.push(key);
+        }
+      }
+      const next = applyEditMany(edits);
+      navigateWhenReady(path, next, {
+        flashChildren: added.length > 0 ? added : undefined,
+        flash: added.length === 0,
+      });
+    },
+    [root, registry, lastGoodDoc, applyEditMany, navigateWhenReady]
+  );
+
+  const handleDeleteNode = useCallback(
+    (path: JsonPath) => {
+      if (path.length === 0) return;
+      applyEdit(path, undefined);
+      navigateToPath(path.slice(0, -1));
+    },
+    [applyEdit, navigateToPath]
   );
 
   // Double-click insertion: add the property (or new class object) into the
@@ -156,11 +247,16 @@ export default function App() {
           n += 1;
           name = `new${payload.className.replace(/^Service_/, "Service")}${n}`;
         }
-        const next = applyEdit(
-          [...payload.sourcePath, name],
-          stubValue(root, info.schema)
-        );
-        navigateWhenReady([...payload.sourcePath, name], next);
+        const stub = stubValue(root, info.schema);
+        const next = applyEdit([...payload.sourcePath, name], stub);
+        const requiredChildren = isPlainObject(stub)
+          ? Object.keys(stub).filter((k) => k !== "class")
+          : [];
+        navigateWhenReady([...payload.sourcePath, name], next, {
+          flashChildren:
+            requiredChildren.length > 0 ? requiredChildren : undefined,
+          flash: requiredChildren.length === 0,
+        });
         return;
       }
       const ctx = getContext(root, registry, debouncedText, cursorOffset);
@@ -196,6 +292,7 @@ export default function App() {
             isStale={isStale}
             cursorPath={context.path}
             onSelect={(path) => navigateToPath(path)}
+            onDelete={handleDeleteNode}
           />
         </div>
         <div className="pane-editor">
@@ -220,6 +317,8 @@ export default function App() {
             onEdit={handleEdit}
             onNavigate={(path) => navigateToPath(path)}
             onAddChip={handleAddChip}
+            onDeleteNode={handleDeleteNode}
+            onClassChange={handleClassChange}
           />
         </div>
       </div>

@@ -1,11 +1,13 @@
 import type { JsonPath } from "../engine";
 import { isPlainObject } from "../engine";
+import ConfirmButton from "./ConfirmButton";
 
 interface TreePaneProps {
   doc: unknown;
   isStale: boolean;
   cursorPath: JsonPath;
   onSelect: (path: JsonPath) => void;
+  onDelete: (path: JsonPath) => void;
 }
 
 const MAX_DEPTH = 3;
@@ -28,6 +30,7 @@ function TreeNode({
   depth,
   cursorPath,
   onSelect,
+  onDelete,
 }: {
   nodeKey: string | number;
   value: unknown;
@@ -35,6 +38,7 @@ function TreeNode({
   depth: number;
   cursorPath: JsonPath;
   onSelect: (path: JsonPath) => void;
+  onDelete: (path: JsonPath) => void;
 }) {
   const isBranch =
     (isPlainObject(value) || Array.isArray(value)) && depth < MAX_DEPTH;
@@ -52,7 +56,15 @@ function TreeNode({
         onClick={() => onSelect(path)}
         title={path.map(String).join(" › ") || "(root)"}
       >
-        {nodeLabel(nodeKey, value)}
+        <span className="tree-text">{nodeLabel(nodeKey, value)}</span>
+        <ConfirmButton
+          className="tree-delete"
+          title={`Delete ${nodeKey}`}
+          armedLabel="del?"
+          onConfirm={() => onDelete(path)}
+        >
+          ✕
+        </ConfirmButton>
       </div>
       {isBranch && (
         <div className="tree-children">
@@ -67,6 +79,7 @@ function TreeNode({
                 depth={depth + 1}
                 cursorPath={cursorPath}
                 onSelect={onSelect}
+                onDelete={onDelete}
               />
             ))}
         </div>
@@ -80,6 +93,7 @@ export default function TreePane({
   isStale,
   cursorPath,
   onSelect,
+  onDelete,
 }: TreePaneProps) {
   if (!isPlainObject(doc)) {
     return <div className="pane-placeholder">No parsed document yet.</div>;
@@ -105,6 +119,7 @@ export default function TreePane({
               depth={1}
               cursorPath={cursorPath}
               onSelect={onSelect}
+              onDelete={onDelete}
             />
           ))}
       </div>
