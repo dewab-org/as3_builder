@@ -5,7 +5,7 @@ import Toolbar from "./components/Toolbar";
 import EditorPane from "./components/EditorPane";
 import TreePane from "./components/TreePane";
 import ContextPanel from "./components/ContextPanel";
-import type { ChipPayload } from "./components/AddableChip";
+import type { ChipPayload } from "./components/AddableList";
 import { DEFAULT_SCHEMA_ID, getSchema } from "./schemas";
 import { getTemplate } from "./templates";
 import { useDocument } from "./hooks/useDocument";

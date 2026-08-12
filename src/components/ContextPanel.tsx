@@ -1,7 +1,10 @@
 import type { ClassInfo, JsonPath, NodeContext } from "../engine";
 import { getAtPath, isPlainObject } from "../engine";
 import PropertyWidget from "./PropertyWidget";
-import AddableChip, { type ChipPayload } from "./AddableChip";
+import AddableList, {
+  type AddableItem,
+  type ChipPayload,
+} from "./AddableList";
 
 interface ContextPanelProps {
   context: NodeContext;
@@ -32,6 +35,38 @@ export default function ContextPanel({
     !context.className &&
     isPlainObject(docNode) &&
     classProp !== undefined;
+
+  const addableItems: AddableItem[] = context.addableProps.map((p) => ({
+    key: p.name,
+    label: p.name,
+    typeBadge: p.type,
+    required: p.required,
+    detail: {
+      type: p.type === "enum" ? "string (enum)" : p.type,
+      description: p.description,
+      defaultValue: p.default,
+      enumValues: p.enumValues,
+      xrefClasses: p.xrefClasses,
+      required: p.required,
+    },
+    payload: { name: p.name, sourcePath: context.path },
+  }));
+
+  const classItems: AddableItem[] = memberClasses.map((c) => ({
+    key: c.className,
+    label: c.className,
+    detail: {
+      type: "object",
+      description: c.description,
+      required: false,
+    },
+    payload: {
+      name: c.className,
+      sourcePath: context.path,
+      isClassObject: true,
+      className: c.className,
+    },
+  }));
 
   return (
     <div>
@@ -86,23 +121,13 @@ export default function ContextPanel({
         </div>
       )}
 
-      {context.schema && !needsClass && context.addableProps.length > 0 && (
+      {context.schema && !needsClass && addableItems.length > 0 && (
         <div className="ctx-section">
           <h3>Add property</h3>
-          <p className="ctx-hint">Drag into the editor, or double-click.</p>
-          <div className="chip-list">
-            {context.addableProps.map((p) => (
-              <AddableChip
-                key={p.name}
-                label={p.name}
-                typeBadge={p.type}
-                description={p.description}
-                required={p.required}
-                payload={{ name: p.name, sourcePath: context.path }}
-                onAdd={onAddChip}
-              />
-            ))}
-          </div>
+          <p className="ctx-hint">
+            Drag into the editor, double-click, or press +.
+          </p>
+          <AddableList items={addableItems} onAdd={onAddChip} />
         </div>
       )}
 
@@ -110,24 +135,9 @@ export default function ContextPanel({
         <div className="ctx-section">
           <h3>Add object</h3>
           <p className="ctx-hint">
-            New named object in this application (drag or double-click).
+            New named object in this application (drag, double-click, or +).
           </p>
-          <div className="chip-list">
-            {memberClasses.map((c) => (
-              <AddableChip
-                key={c.className}
-                label={c.className}
-                description={c.description}
-                payload={{
-                  name: c.className,
-                  sourcePath: context.path,
-                  isClassObject: true,
-                  className: c.className,
-                }}
-                onAdd={onAddChip}
-              />
-            ))}
-          </div>
+          <AddableList items={classItems} onAdd={onAddChip} />
         </div>
       )}
     </div>
