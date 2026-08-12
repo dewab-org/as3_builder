@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { editor } from "monaco-editor";
-import { findNodeAtLocation, parseTree } from "jsonc-parser";
+import { findNodeAtLocation, getLocation, parse, parseTree } from "jsonc-parser";
 import Toolbar from "./components/Toolbar";
 import EditorPane from "./components/EditorPane";
 import TreePane from "./components/TreePane";
@@ -12,7 +12,9 @@ import { useDocument } from "./hooks/useDocument";
 import {
   applicationMemberClasses,
   buildClassRegistry,
+  effectiveSchema,
   getContext,
+  resolveSchemaForPath,
   stubValue,
   type JsonPath,
   type JsonSchemaRoot,
@@ -72,6 +74,42 @@ export default function App() {
     ed.focus();
     setCursorOffset(inside);
   }, []);
+
+  // When the offset sits inside a VALUE whose schema offers a closed set of
+  // choices (enum, boolean, const), return the offset at the START of that
+  // value (inside the quote for strings) — clicking there should pop the
+  // full suggestion list so the user can pick instead of type. Returns null
+  // for free-form values.
+  const choiceValueStartAt = useCallback(
+    (editorText: string, offset: number): number | null => {
+      const loc = getLocation(editorText, offset);
+      if (loc.isAtPropertyKey || loc.path.length === 0) return null;
+      const node = loc.previousNode;
+      if (!node) return null;
+      if (offset < node.offset || offset > node.offset + node.length)
+        return null;
+      const doc = parse(editorText, [], { allowTrailingComma: true }) as unknown;
+      const schema = resolveSchemaForPath(
+        root,
+        registry,
+        doc,
+        loc.path as JsonPath
+      );
+      if (!schema) return null;
+      try {
+        const eff = effectiveSchema(root, schema);
+        const isChoice =
+          (eff.enum?.length ?? 0) > 0 ||
+          eff.const !== undefined ||
+          eff.type === "boolean";
+        if (!isChoice) return null;
+        return node.type === "string" ? node.offset + 1 : node.offset;
+      } catch {
+        return null;
+      }
+    },
+    [root, registry]
+  );
 
   const handleEdit = useCallback(
     (path: JsonPath, value: unknown) => {
@@ -170,6 +208,7 @@ export default function App() {
               editorRef.current = ed;
             }}
             onCursorOffsetChange={setCursorOffset}
+            choiceValueStartAt={choiceValueStartAt}
           />
         </div>
         <div className="pane-context">

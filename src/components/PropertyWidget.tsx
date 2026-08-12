@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { JsonPath, PropertyInfo } from "../engine";
+import { validateValue } from "../engine";
 
 interface PropertyWidgetProps {
   prop: PropertyInfo;
@@ -25,11 +26,23 @@ export default function PropertyWidget({
 }: PropertyWidgetProps) {
   const propPath = [...contextPath, prop.name];
   const [draft, setDraft] = useState(typeof value === "string" ? value : "");
-  const [patternError, setPatternError] = useState(false);
+  const [error, setError] = useState<string | undefined>();
 
   useEffect(() => {
-    if (typeof value === "string") setDraft(value);
+    if (typeof value === "string") {
+      setDraft(value);
+      setError(validateValue(prop.schema, value).message);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
+
+  const numError =
+    (prop.type === "integer" || prop.type === "number") &&
+    typeof value === "number"
+      ? validateValue(prop.schema, value).message
+      : undefined;
+  const shownError =
+    prop.type === "integer" || prop.type === "number" ? numError : error;
 
   let control: React.ReactNode;
 
@@ -62,42 +75,47 @@ export default function PropertyWidget({
     );
   } else if (prop.type === "boolean") {
     control = (
-      <input
-        type="checkbox"
-        checked={value === true}
-        onChange={(e) => onEdit(propPath, e.target.checked)}
-      />
+      <select
+        value={value === true ? "true" : value === false ? "false" : ""}
+        onChange={(e) => onEdit(propPath, e.target.value === "true")}
+      >
+        {value === undefined && <option value="">(unset)</option>}
+        <option value="true">true</option>
+        <option value="false">false</option>
+      </select>
     );
   } else if (prop.type === "integer" || prop.type === "number") {
     control = (
       <input
         type="number"
+        className={numError ? "pw-invalid" : ""}
+        title={numError}
         value={typeof value === "number" ? value : ""}
         min={prop.schema.minimum}
         max={prop.schema.maximum}
+        step={prop.type === "integer" ? 1 : undefined}
         onChange={(e) => {
+          if (e.target.value === "") return;
           const n = Number(e.target.value);
-          if (!Number.isNaN(n) && e.target.value !== "") onEdit(propPath, n);
+          if (Number.isNaN(n)) return;
+          onEdit(propPath, prop.type === "integer" ? Math.trunc(n) : n);
         }}
       />
     );
   } else {
-    // Strings and anything else scalar.
+    // Strings and anything else scalar: live-validate against pattern,
+    // format (f5ip, hostname, …), and length constraints.
     control = (
       <input
         type="text"
-        className={patternError ? "pw-invalid" : ""}
+        className={error ? "pw-invalid" : ""}
+        title={error}
         value={draft}
-        onChange={(e) => setDraft(e.target.value)}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          setError(validateValue(prop.schema, e.target.value).message);
+        }}
         onBlur={() => {
-          const pattern = prop.schema.pattern;
-          if (pattern) {
-            try {
-              setPatternError(!new RegExp(pattern).test(draft));
-            } catch {
-              setPatternError(false);
-            }
-          }
           if (draft !== value) onEdit(propPath, draft);
         }}
         onKeyDown={(e) => {
@@ -108,19 +126,22 @@ export default function PropertyWidget({
   }
 
   return (
-    <div className="pw-row" title={prop.description}>
-      <span className={`pw-name${prop.required ? " required" : ""}`}>
-        {prop.name}
-      </span>
-      {control}
-      <button
-        className="pw-delete"
-        disabled={prop.required}
-        title={prop.required ? "Required property" : "Remove property"}
-        onClick={() => onEdit(propPath, undefined)}
-      >
-        ✕
-      </button>
+    <div className="pw-wrap">
+      <div className="pw-row" title={prop.description}>
+        <span className={`pw-name${prop.required ? " required" : ""}`}>
+          {prop.name}
+        </span>
+        {control}
+        <button
+          className="pw-delete"
+          disabled={prop.required}
+          title={prop.required ? "Required property" : "Remove property"}
+          onClick={() => onEdit(propPath, undefined)}
+        >
+          ✕
+        </button>
+      </div>
+      {shownError && <div className="pw-error">{shownError}</div>}
     </div>
   );
 }

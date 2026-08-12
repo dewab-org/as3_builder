@@ -5,3 +5,4 @@ export * from "./pathResolver";
 export * from "./context";
 export * from "./stubber";
 export * from "./docIndex";
+export * from "./validation";

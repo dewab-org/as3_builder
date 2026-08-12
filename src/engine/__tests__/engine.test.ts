@@ -10,6 +10,7 @@ import { resolveSchemaForPath } from "../pathResolver";
 import { getContext, getContextForPath } from "../context";
 import { stubValue } from "../stubber";
 import { indexClassInstances } from "../docIndex";
+import { validateValue } from "../validation";
 
 const root = perAppSchema as unknown as JsonSchemaRoot;
 const registry = buildClassRegistry(root);
@@ -220,6 +221,44 @@ describe("stubber", () => {
     };
     const stub = stubValue(selfRef, selfRef.definitions!.Node);
     expect(JSON.stringify(stub).length).toBeLessThan(200);
+  });
+});
+
+describe("validation", () => {
+  it("validates ports via minimum/maximum", () => {
+    const port = { type: "integer", minimum: 0, maximum: 65535 };
+    expect(validateValue(port, 80).valid).toBe(true);
+    expect(validateValue(port, 65535).valid).toBe(true);
+    expect(validateValue(port, 65536).valid).toBe(false);
+    expect(validateValue(port, -1).valid).toBe(false);
+    expect(validateValue(port, 8.5).valid).toBe(false);
+  });
+
+  it("validates f5ip: plain, CIDR, route domain", () => {
+    const ip = { type: "string", format: "f5ip" };
+    expect(validateValue(ip, "10.0.0.1").valid).toBe(true);
+    expect(validateValue(ip, "10.0.0.0/24").valid).toBe(true);
+    expect(validateValue(ip, "10.0.0.1%2").valid).toBe(true);
+    expect(validateValue(ip, "10.0.0.1%2/32").valid).toBe(true);
+    expect(validateValue(ip, "::").valid).toBe(true);
+    expect(validateValue(ip, "2001:db8::1/64").valid).toBe(true);
+    expect(validateValue(ip, "256.1.1.1").valid).toBe(false);
+    expect(validateValue(ip, "10.0.0.0/33").valid).toBe(false);
+    expect(validateValue(ip, "not-an-ip").valid).toBe(false);
+  });
+
+  it("validates f5bigip paths and hostnames", () => {
+    expect(validateValue({ format: "f5bigip" }, "/Common/pool1").valid).toBe(true);
+    expect(validateValue({ format: "f5bigip" }, "Common/pool1").valid).toBe(false);
+    expect(validateValue({ format: "hostname" }, "www.example.com").valid).toBe(true);
+    expect(validateValue({ format: "hostname" }, "-bad-.example").valid).toBe(false);
+  });
+
+  it("validates pattern and length", () => {
+    const s = { type: "string", pattern: "^[a-z]+$", minLength: 2 };
+    expect(validateValue(s, "abc").valid).toBe(true);
+    expect(validateValue(s, "ABC").valid).toBe(false);
+    expect(validateValue(s, "a").valid).toBe(false);
   });
 });
 
