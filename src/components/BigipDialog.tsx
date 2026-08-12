@@ -18,7 +18,7 @@ const remembered = {
   host: "",
   username: "",
   password: "",
-  tenant: "Tenant1",
+  tenant: "Applications",
   validateCert: true,
 };
 
