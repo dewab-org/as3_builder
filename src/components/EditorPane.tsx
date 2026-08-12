@@ -1,4 +1,5 @@
 import Editor, { useMonaco } from "@monaco-editor/react";
+import type { editor } from "monaco-editor";
 import { useEffect } from "react";
 
 interface EditorPaneProps {
@@ -6,6 +7,8 @@ interface EditorPaneProps {
   onTextChange: (text: string) => void;
   schema: Record<string, unknown>;
   schemaId: string;
+  onEditorMount?: (editor: editor.IStandaloneCodeEditor) => void;
+  onCursorOffsetChange?: (offset: number) => void;
 }
 
 export default function EditorPane({
@@ -13,6 +16,8 @@ export default function EditorPane({
   onTextChange,
   schema,
   schemaId,
+  onEditorMount,
+  onCursorOffsetChange,
 }: EditorPaneProps) {
   const monaco = useMonaco();
 
@@ -36,6 +41,13 @@ export default function EditorPane({
       language="json"
       value={text}
       onChange={(value) => onTextChange(value ?? "")}
+      onMount={(editorInstance) => {
+        onEditorMount?.(editorInstance);
+        editorInstance.onDidChangeCursorPosition((e) => {
+          const model = editorInstance.getModel();
+          if (model) onCursorOffsetChange?.(model.getOffsetAt(e.position));
+        });
+      }}
       options={{
         minimap: { enabled: false },
         automaticLayout: true,
