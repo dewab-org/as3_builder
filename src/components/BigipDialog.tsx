@@ -49,6 +49,7 @@ export default function BigipDialog({
   const [steps, setSteps] = useState<StepState[]>([]);
   const [rawResponse, setRawResponse] = useState<string | undefined>();
   const [showRaw, setShowRaw] = useState(false);
+  const [confirmingApply, setConfirmingApply] = useState(false);
 
   const canRun =
     !running && host.trim() !== "" && username !== "" && tenant.trim() !== "";
@@ -64,13 +65,15 @@ export default function BigipDialog({
     setSteps((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)));
   }
 
-  async function run() {
+  async function run(dryRun: boolean) {
+    const applyLabel = dryRun ? "Dry-run declaration" : "Apply declaration";
     setRunning(true);
+    setConfirmingApply(false);
     setRawResponse(undefined);
     setShowRaw(false);
     setSteps([
       { label: "Check AS3 API availability", state: "running" },
-      { label: "Dry-run declaration", state: "pending" },
+      { label: applyLabel, state: "pending" },
     ]);
     const headers = authHeaders(host, username, password, validateCert);
 
@@ -95,7 +98,8 @@ export default function BigipDialog({
         detail: `AS3 ${infoBody.version ?? "?"} (schema ${infoBody.schemaCurrent ?? "?"})`,
       });
 
-      // Step 2: dry-run. Per-app POST with controls.dryRun forced on.
+      // Step 2: submit. controls.dryRun is forced to match the chosen mode,
+      // overriding whatever the declaration itself says.
       setStep(1, { state: "running" });
       let declaration: Record<string, unknown>;
       try {
@@ -107,7 +111,7 @@ export default function BigipDialog({
       declaration.controls = {
         ...(typeof declaration.controls === "object" ? declaration.controls : {}),
         class: "Controls",
-        dryRun: true,
+        dryRun,
       };
       const declRes = await fetch(
         `/bigip-proxy/mgmt/shared/appsvcs/declare/${encodeURIComponent(tenant.trim())}/applications`,
@@ -129,7 +133,9 @@ export default function BigipDialog({
           state: "ok",
           detail:
             messages.join(" · ") ||
-            "Declaration accepted (no changes were made — dry run)",
+            (dryRun
+              ? "Declaration accepted (no changes were made — dry run)"
+              : "Declaration applied"),
         });
       } else {
         setStep(1, {
@@ -233,9 +239,30 @@ export default function BigipDialog({
           </div>
         )}
 
+        {confirmingApply && (
+          <div className="modal-confirm">
+            <strong>Apply for real?</strong> This will modify tenant{" "}
+            <code>{tenant.trim()}</code> on <code>{host.trim()}</code>. Consider
+            running a dry-run first.
+            <div className="modal-confirm-actions">
+              <button onClick={() => setConfirmingApply(false)}>Cancel</button>
+              <button className="danger" onClick={() => run(false)}>
+                Yes, apply
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="modal-actions">
           <button onClick={onClose}>Close</button>
-          <button className="primary" disabled={!canRun} onClick={run}>
+          <button
+            className="danger-outline"
+            disabled={!canRun}
+            onClick={() => setConfirmingApply(true)}
+          >
+            Apply…
+          </button>
+          <button className="primary" disabled={!canRun} onClick={() => run(true)}>
             {running ? "Running…" : "Run dry-run"}
           </button>
         </div>

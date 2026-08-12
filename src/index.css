@@ -501,9 +501,59 @@ body {
   color: #ffffff;
 }
 
-.modal-actions button.primary:disabled {
+.modal-actions button.danger-outline {
+  border-color: #cf222e;
+  color: #cf222e;
+  background: #ffffff;
+}
+
+.modal-actions button.danger-outline:hover:not(:disabled) {
+  background: #ffebe9;
+}
+
+.modal-actions button:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+.modal-confirm {
+  margin-top: 12px;
+  border: 1px solid #cf222e;
+  background: #fff1f0;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: #57606a;
+}
+
+.modal-confirm strong {
+  color: #cf222e;
+}
+
+.modal-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.modal-confirm-actions button {
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid #d0d7de;
+  background: #ffffff;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.modal-confirm-actions button.danger {
+  background: #cf222e;
+  border-color: #cf222e;
+  color: #ffffff;
+}
+
+.modal-confirm-actions button.danger:hover {
+  background: #a40e26;
 }
 
 .inserted-flash {
