@@ -8,6 +8,7 @@ interface ToolbarProps {
   onLoadText: (text: string) => void;
   currentText: string;
   isDirty: boolean;
+  onValidateOnBigip: () => void;
 }
 
 export default function Toolbar({
@@ -16,6 +17,7 @@ export default function Toolbar({
   onLoadText,
   currentText,
   isDirty,
+  onValidateOnBigip,
 }: ToolbarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -74,6 +76,9 @@ export default function Toolbar({
         </select>
       </label>
       <div className="spacer" />
+      <button onClick={onValidateOnBigip} title="Dry-run this declaration against a BIG-IP">
+        Validate on BIG-IP…
+      </button>
       <button onClick={() => fileInputRef.current?.click()}>Open</button>
       <input
         ref={fileInputRef}

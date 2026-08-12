@@ -2,6 +2,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import type { editor } from "monaco-editor";
 import { findNodeAtLocation, getLocation, parse, parseTree } from "jsonc-parser";
 import Toolbar from "./components/Toolbar";
+import BigipDialog from "./components/BigipDialog";
 import EditorPane from "./components/EditorPane";
 import TreePane from "./components/TreePane";
 import ContextPanel from "./components/ContextPanel";
@@ -43,6 +44,7 @@ export default function App() {
   const [schemaId, setSchemaId] = useState(DEFAULT_SCHEMA_ID);
   const [cursorOffset, setCursorOffset] = useState(0);
   const [baselineText, setBaselineText] = useState(INITIAL_TEXT);
+  const [showBigipDialog, setShowBigipDialog] = useState(false);
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
 
   const docState = useDocument(INITIAL_TEXT);
@@ -216,6 +218,31 @@ export default function App() {
     [root, registry, lastGoodDoc, applyEditMany, navigateWhenReady]
   );
 
+  // The JSON path deletable from a given line: the property whose key starts
+  // the line, or the array element whose value starts it. Structural lines
+  // (closing brackets, the root brace) return null.
+  const deletableRowPath = useCallback(
+    (editorText: string, lineStartOffset: number): JsonPath | null => {
+      const ch = editorText[lineStartOffset];
+      if (ch === undefined || ch === "}" || ch === "]" || ch === ",") return null;
+      const loc = getLocation(editorText, lineStartOffset + 1);
+      const path = loc.path as JsonPath;
+      if (path.length === 0) return null;
+      if (loc.isAtPropertyKey) return path;
+      // Array element (string/number/object/array starting the line).
+      if (typeof path[path.length - 1] === "number") return path;
+      return null;
+    },
+    []
+  );
+
+  const handleDeleteRow = useCallback(
+    (path: unknown) => {
+      applyEdit(path as JsonPath, undefined);
+    },
+    [applyEdit]
+  );
+
   const handleDeleteNode = useCallback(
     (path: JsonPath) => {
       if (path.length === 0) return;
@@ -284,7 +311,14 @@ export default function App() {
         onLoadText={loadText}
         currentText={text}
         isDirty={text !== baselineText}
+        onValidateOnBigip={() => setShowBigipDialog(true)}
       />
+      {showBigipDialog && (
+        <BigipDialog
+          declarationText={text}
+          onClose={() => setShowBigipDialog(false)}
+        />
+      )}
       <div className="main">
         <div className="pane-tree">
           <TreePane
@@ -306,6 +340,8 @@ export default function App() {
             }}
             onCursorOffsetChange={setCursorOffset}
             choiceValueStartAt={choiceValueStartAt}
+            deletableRowPath={deletableRowPath}
+            onDeleteRow={handleDeleteRow}
           />
         </div>
         <div className="pane-context">
