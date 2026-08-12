@@ -12,6 +12,16 @@ interface StepState {
   detail?: string;
 }
 
+// Connection details survive closing/reopening the dialog (in memory only —
+// cleared on page refresh, never written to storage).
+const remembered = {
+  host: "",
+  username: "",
+  password: "",
+  tenant: "Tenant1",
+  validateCert: true,
+};
+
 function authHeaders(
   host: string,
   username: string,
@@ -30,11 +40,11 @@ export default function BigipDialog({
   declarationText,
   onClose,
 }: BigipDialogProps) {
-  const [host, setHost] = useState("");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [validateCert, setValidateCert] = useState(true);
-  const [tenant, setTenant] = useState("Tenant1");
+  const [host, setHost] = useState(remembered.host);
+  const [username, setUsername] = useState(remembered.username);
+  const [password, setPassword] = useState(remembered.password);
+  const [validateCert, setValidateCert] = useState(remembered.validateCert);
+  const [tenant, setTenant] = useState(remembered.tenant);
   const [running, setRunning] = useState(false);
   const [steps, setSteps] = useState<StepState[]>([]);
   const [rawResponse, setRawResponse] = useState<string | undefined>();
@@ -42,6 +52,13 @@ export default function BigipDialog({
 
   const canRun =
     !running && host.trim() !== "" && username !== "" && tenant.trim() !== "";
+
+  // Keep the in-memory cache current so reopening the dialog restores fields.
+  remembered.host = host;
+  remembered.username = username;
+  remembered.password = password;
+  remembered.validateCert = validateCert;
+  remembered.tenant = tenant;
 
   function setStep(index: number, patch: Partial<StepState>) {
     setSteps((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)));
@@ -98,6 +115,7 @@ export default function BigipDialog({
       );
       const declBody = await declRes.json().catch(() => ({}));
       setRawResponse(JSON.stringify(declBody, null, 2));
+      setShowRaw(true); // dry-run results are the point — show them
       const results: { code?: number; message?: string }[] = Array.isArray(
         declBody.results
       )
