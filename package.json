@@ -1,0 +1,28 @@
+{
+  "name": "as3-builder",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
+    "ajv": "^8.17.1",
+    "jsonc-parser": "^3.3.1",
+    "monaco-editor": "^0.56.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "~5.6.2",
+    "vite": "^6.0.0",
+    "vitest": "^2.1.8"
+  }
+}

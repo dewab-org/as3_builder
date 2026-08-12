@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "3.55.0",
+  "myApp": {
+    "class": "Application",
+    "web": {
+      "class": "Service_HTTP",
+      "virtualAddresses": ["10.0.0.1"],
+      "pool": "pool1"
+    },
+    "pool1": {
+      "class": "Pool",
+      "members": [
+        {
+          "servicePort": 80,
+          "serverAddresses": ["10.0.1.10"]
+        }
+      ]
+    }
+  }
+}

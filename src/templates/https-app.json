@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "3.55.0",
+  "myApp": {
+    "class": "Application",
+    "web": {
+      "class": "Service_HTTPS",
+      "virtualAddresses": ["10.0.0.1"],
+      "serverTLS": "webtls",
+      "pool": "pool1"
+    },
+    "webtls": {
+      "class": "TLS_Server",
+      "certificates": [
+        {
+          "certificate": "webcert"
+        }
+      ]
+    },
+    "webcert": {
+      "class": "Certificate",
+      "certificate": { "bigip": "/Common/default.crt" },
+      "privateKey": { "bigip": "/Common/default.key" }
+    },
+    "pool1": {
+      "class": "Pool",
+      "monitors": ["https"],
+      "members": [
+        {
+          "servicePort": 443,
+          "serverAddresses": ["10.0.1.10"]
+        }
+      ]
+    }
+  }
+}
