@@ -27,21 +27,6 @@ interface EditorPaneProps {
     start: number;
     length: number;
   } | null;
-  /** Engine-derived property-name completions (covers the conditional-branch
-   * properties Monaco's JSON service cannot see). */
-  keyCompletionsAt?: (
-    text: string,
-    offset: number
-  ) => {
-    items: {
-      name: string;
-      type: string;
-      description?: string;
-      insertJson: string;
-    }[];
-    replace: { start: number; length: number } | null;
-    needsTrailingComma: boolean;
-  } | null;
   /** Delete the row (property or array element) whose value starts on the
    * given line. Receives the path returned by deletableRowPath. */
   onDeleteRow?: (path: unknown) => void;
@@ -100,47 +85,7 @@ export default function EditorPane(props: EditorPaneProps) {
               model.getValue(),
               offset
             );
-            if (!info) {
-              // Not a reference value — offer engine-derived property names
-              // (e.g. Monitor_DNS options once monitorType is "dns").
-              const keys = propsRef.current.keyCompletionsAt?.(
-                model.getValue(),
-                offset
-              );
-              if (!keys) return { suggestions: [] };
-              let range;
-              if (keys.replace) {
-                const s = model.getPositionAt(keys.replace.start);
-                const e = model.getPositionAt(
-                  keys.replace.start + keys.replace.length
-                );
-                range = {
-                  startLineNumber: s.lineNumber,
-                  startColumn: s.column,
-                  endLineNumber: e.lineNumber,
-                  endColumn: e.column,
-                };
-              } else {
-                range = {
-                  startLineNumber: position.lineNumber,
-                  startColumn: position.column,
-                  endLineNumber: position.lineNumber,
-                  endColumn: position.column,
-                };
-              }
-              const comma = keys.needsTrailingComma ? "," : "";
-              return {
-                suggestions: keys.items.map((k) => ({
-                  label: k.name,
-                  detail: k.type,
-                  documentation: k.description,
-                  kind: monacoApi.languages.CompletionItemKind.Property,
-                  insertText: `"${k.name}": ${k.insertJson}${comma}`,
-                  range,
-                  sortText: `1_${k.name}`,
-                })),
-              };
-            }
+            if (!info) return { suggestions: [] };
             // Replace the inside of the string (between the quotes).
             const start = model.getPositionAt(info.start + 1);
             const end = model.getPositionAt(info.start + info.length - 1);

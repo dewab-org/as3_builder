@@ -47,6 +47,19 @@ function matchesIf(root: JsonSchemaRoot, cond: JsonSchema, docNode: unknown): bo
     if (typeof docNode !== "number") return false;
   }
   if (c.not && matchesIf(root, c.not, docNode)) return false;
+  // Combinators inside a condition (GSLB_Pool gates several branches on
+  // "resourceRecordType is A or AAAA" this way). Without these the condition
+  // silently passes and the branch's properties get offered everywhere.
+  if (c.anyOf && !c.anyOf.some((b) => matchesIf(root, b, docNode))) return false;
+  if (c.oneOf) {
+    const hits = c.oneOf.filter((b) => matchesIf(root, b, docNode)).length;
+    if (hits !== 1) return false;
+  }
+  if (c.allOf && !c.allOf.every((b) => matchesIf(root, b, docNode))) return false;
+  if (c.const !== undefined && JSON.stringify(docNode) !== JSON.stringify(c.const))
+    return false;
+  if (c.enum && !c.enum.some((v) => JSON.stringify(v) === JSON.stringify(docNode)))
+    return false;
   if (c.required) {
     if (!isPlainObject(docNode)) return false;
     for (const key of c.required) if (!(key in docNode)) return false;

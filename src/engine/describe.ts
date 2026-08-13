@@ -89,14 +89,18 @@ function branchSummary(root: JsonSchemaRoot, branch: JsonSchema): SchemaBranch {
   return { type: typeName(b), summary: parts.join(" — ") || undefined };
 }
 
-// Full documentation for one (property) schema, unions included.
+// Full documentation for one (property) schema, unions included. Pass the
+// current document value when available: many properties hide their real
+// enum/constraints inside an if/then branch keyed on that value (a Pool
+// member's addressDiscovery, for one).
 export function describeSchema(
   root: JsonSchemaRoot,
-  schema: JsonSchema
+  schema: JsonSchema,
+  docValue?: unknown
 ): SchemaDocs {
   let eff: JsonSchema;
   try {
-    eff = effectiveSchema(root, schema);
+    eff = effectiveSchema(root, schema, docValue);
   } catch {
     eff = schema;
   }
