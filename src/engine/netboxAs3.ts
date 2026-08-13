@@ -25,7 +25,7 @@ export const APPLICATION_LIST_QUERY = `query {
 export function applicationGraphQuery(appId: number | string): string {
   return `query {
   application_list(filters: { id: ${Number(appId)} }) {
-    id name snow_sys_id description last_updated
+    id name snow_sys_id description last_updated extra_parameters
     virtual_servers {
       id name slug description enabled last_updated
       applications { id name }
@@ -501,6 +501,10 @@ class Renderer {
   }
 }
 
+// Structural keys can't be object names: they would rewrite the Application
+// itself. The plugin rejects them at render time, and so do we.
+const RESERVED_APP_KEYS = new Set(["class", "label", "remark", "constants"]);
+
 export function renderNetboxApp(app: Dict): NetboxRenderResult {
   const r = new Renderer();
   const appKey = sanitizeKey(String(app.name));
@@ -515,6 +519,36 @@ export function renderNetboxApp(app: Dict): NetboxRenderResult {
   if (app.description)
     application.label = sanitizeLabel(String(app.description));
   Object.assign(application, r.objects);
+
+  // Application.extra_parameters holds COMPLETE top-level AS3 objects keyed
+  // by name — the plugin's escape valve for classes it doesn't model
+  // (Data_Group, standalone iRule, WAF/Analytics policy, …). Unlike the
+  // pool/service/member extras, these are objects, not property fragments.
+  const appExtras = app.extra_parameters;
+  if (isPlainObject(appExtras)) {
+    for (const [rawKey, value] of Object.entries(appExtras)) {
+      const key = sanitizeKey(rawKey);
+      if (RESERVED_APP_KEYS.has(rawKey)) {
+        r.warn(
+          `Application extra_parameters key "${rawKey}" is reserved — not added`
+        );
+        continue;
+      }
+      if (!isPlainObject(value) || typeof value.class !== "string") {
+        r.warn(
+          `Application extra_parameters "${rawKey}" is not a complete AS3 object (no class) — not added`
+        );
+        continue;
+      }
+      if (key in application) {
+        r.warn(
+          `Application extra_parameters "${rawKey}" collides with a generated object — the generated one is kept`
+        );
+        continue;
+      }
+      application[key] = value;
+    }
+  }
 
   const declaration: Dict = {
     id: `${app.id}-${app.name}`.slice(0, 255),

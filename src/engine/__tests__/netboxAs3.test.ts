@@ -263,3 +263,59 @@ describe("netbox renderer edge cases", () => {
     ]);
   });
 });
+
+describe("application extra_parameters (complete AS3 objects)", () => {
+  const appWithExtras = {
+    id: "700",
+    name: "app700",
+    extra_parameters: {
+      my_data_group: {
+        class: "Data_Group",
+        keyDataType: "string",
+        records: [{ key: "a", value: "1" }],
+      },
+      standalone_irule: { class: "iRule", iRule: { base64: "d2hlbiB7fQ==" } },
+    },
+    virtual_servers: [
+      {
+        name: "vs1",
+        protocol: "http",
+        service_port: 80,
+        virtual_addresses: [{ address: "10.0.0.1/32" }],
+      },
+    ],
+  };
+
+  it("merges them into the Application as members", () => {
+    const { declaration, warnings } = renderNetboxApp(appWithExtras);
+    const app = declaration.app700 as Dict;
+    expect((app.my_data_group as Dict).class).toBe("Data_Group");
+    expect((app.standalone_irule as Dict).class).toBe("iRule");
+    expect(app.vs1).toBeDefined(); // generated objects still present
+    expect(warnings).toEqual([]);
+  });
+
+  it("rejects reserved keys and fragments that aren't AS3 objects", () => {
+    const { declaration, warnings } = renderNetboxApp({
+      ...appWithExtras,
+      extra_parameters: {
+        class: { class: "Data_Group" },
+        not_an_object: { keyDataType: "string" },
+      },
+    });
+    const app = declaration.app700 as Dict;
+    expect(app.class).toBe("Application");
+    expect(app.not_an_object).toBeUndefined();
+    expect(warnings.some((w) => w.includes("reserved"))).toBe(true);
+    expect(warnings.some((w) => w.includes("not a complete AS3 object"))).toBe(true);
+  });
+
+  it("keeps a generated object when an extra collides with it", () => {
+    const { declaration, warnings } = renderNetboxApp({
+      ...appWithExtras,
+      extra_parameters: { vs1: { class: "Data_Group" } },
+    });
+    expect(((declaration.app700 as Dict).vs1 as Dict).class).toBe("Service_HTTP");
+    expect(warnings.some((w) => w.includes("collides"))).toBe(true);
+  });
+});

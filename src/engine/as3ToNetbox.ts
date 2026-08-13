@@ -86,6 +86,9 @@ export interface AppManifest {
    * Certificate, cipher objects, …): key → snapshot as rendered. Used to
    * tell "edited artifact" (out of scope note) from "new object". */
   artifacts: Record<string, unknown>;
+  /** Application members that came from Application.extra_parameters —
+   * complete AS3 objects the plugin doesn't model. */
+  extraKeys: string[];
 }
 
 export interface FieldChange {
@@ -611,12 +614,17 @@ export function buildManifest(
     }
   }
 
+  const extraKeys = isPlainObject(app.extra_parameters)
+    ? Object.keys(app.extra_parameters).map((k) => sanitizeKey(k))
+    : [];
+
   return {
     declarationId: String(declaration.id ?? ""),
     appId: Number(app.id),
     appKey,
     entries,
     artifacts,
+    extraKeys,
   };
 }
 
@@ -960,7 +968,34 @@ export function computeUpdates(
     // pushable when the loaded extras round-trip cleanly — if the renderer
     // merged data from other sources (protocol profiles etc.), pushing the
     // complement would smuggle it into the catch-all field.
-    const extraField = EXTRA_FIELD[entry.endpoint];
+    if (entry.isApplication) {
+      // Application.extra_parameters carries COMPLETE AS3 objects keyed by
+      // name: everything in the application that isn't a modelled object and
+      // isn't a renderer artifact belongs there.
+      const rendererArtifacts = new Set(
+        Object.keys(manifest.artifacts).filter(
+          (k) => !manifest.extraKeys.includes(k)
+        )
+      );
+      const desired: Dict = {};
+      for (const [key, value] of Object.entries(current)) {
+        if (!isPlainObject(value) || typeof value.class !== "string") continue;
+        if (knownKeys.has(key) || rendererArtifacts.has(key)) continue;
+        // A new object of a class NetBox models becomes a real object (W3
+        // create); only unmodelled classes — and objects that already lived
+        // in extras — belong in extra_parameters.
+        if (!manifest.extraKeys.includes(key) && KIND_BY_CLASS[String(value.class)])
+          continue;
+        desired[key] = value;
+      }
+      const before = (entry.fields.extra_parameters ?? null) as Dict | null;
+      const after = Object.keys(desired).length > 0 ? desired : null;
+      if (!valueEq(before, after)) {
+        changes.push({ field: "extra_parameters", from: before, to: after });
+      }
+    }
+
+    const extraField = entry.isApplication ? undefined : EXTRA_FIELD[entry.endpoint];
     if (extraField) {
       const currentExtras = extrasFromAs3(entry.endpoint, current);
       const snapshotExtras = extrasFromAs3(
@@ -1031,7 +1066,9 @@ export function computeUpdates(
         cls !== "Service_Address" &&
         cls !== "Certificate"
       ) {
-        notes.push(`"${key}" (${cls}) has no NetBox model — cannot be created.`);
+        notes.push(
+          `"${key}" (${cls}) has no NetBox model — stored in the application's extra_parameters.`
+        );
       }
       continue;
     }
