@@ -152,29 +152,43 @@ export default function PushNetboxDialog({
   const totalOps = applicable.reduce((n, r) => n + rowOpCount(r), 0);
   const deleteCount = applicable.filter((r) => r.kind === "delete").length;
 
-  async function ensureCertificate(name: string): Promise<number> {
+  // NetBox holds certificate metadata only — the material lives in the
+  // certificate estate. A missing record is created as a placeholder so the
+  // profile can be built in one pass, and reported so it gets reconciled.
+  async function ensureCertificate(
+    name: string
+  ): Promise<{ id: number; placeholder: boolean }> {
     const found = await netboxRest<{ results: { id: number }[] }>(
       `${PLUGIN_BASE}/certificates/?name=${encodeURIComponent(name)}`
     );
-    if (found.results.length > 0) return found.results[0].id;
+    if (found.results.length > 0)
+      return { id: found.results[0].id, placeholder: false };
     const created = await netboxRest<{ id: number }>(
       `${PLUGIN_BASE}/certificates/`,
       { method: "POST", body: { name, distinguished_name: name } }
     );
-    return created.id;
+    return { id: created.id, placeholder: true };
   }
 
+  /** Returns warnings worth surfacing on the row (placeholder certificates). */
   async function applyCreate(
     create: CreateObject,
     keyToId: Map<string, number>,
     appId: number
-  ): Promise<void> {
+  ): Promise<string[]> {
     const body: Record<string, unknown> = { ...create.fields };
+    const warnings: string[] = [];
 
     if (create.certificateNames) {
       const ids: number[] = [];
-      for (const name of create.certificateNames)
-        ids.push(await ensureCertificate(name));
+      for (const name of create.certificateNames) {
+        const cert = await ensureCertificate(name);
+        ids.push(cert.id);
+        if (cert.placeholder)
+          warnings.push(
+            `placeholder certificate "${name}" created in NetBox — it is a pointer only, so reconcile it with the certificate estate`
+          );
+      }
       body.certificates = ids;
     }
     for (const ref of create.refs) {
@@ -226,6 +240,7 @@ export default function PushNetboxDialog({
         body: memberBody,
       });
     }
+    return warnings;
   }
 
   async function applyUpdate(
@@ -350,15 +365,16 @@ export default function PushNetboxDialog({
       if (failed) break;
       setStatus(index, "applying");
       try {
+        let warnings: string[] = [];
         if (row.kind === "create")
-          await applyCreate(row.create, keyToId, manifest.appId);
+          warnings = await applyCreate(row.create, keyToId, manifest.appId);
         else if (row.kind === "update") await applyUpdate(row.change, keyToId);
         else
           await netboxRest(
             `${PLUGIN_BASE}/${row.del.entry.endpoint}/${row.del.entry.id}/`,
             { method: "DELETE" }
           );
-        setStatus(index, "ok");
+        setStatus(index, "ok", warnings.join("; ") || undefined);
       } catch (err) {
         failed = true;
         setStatus(
@@ -486,7 +502,15 @@ export default function PushNetboxDialog({
             <span className="push-from">{row.del.label}</span>
           </div>
         )}
-        {row.detail && <div className="push-field push-fail">{row.detail}</div>}
+        {row.detail && (
+          <div
+            className={`push-field ${
+              row.status === "fail" ? "push-fail" : "push-warn"
+            }`}
+          >
+            {row.detail}
+          </div>
+        )}
       </div>
     );
   }
@@ -498,7 +522,7 @@ export default function PushNetboxDialog({
         <p className="ctx-hint">
           Writes this declaration's edits back to the NetBox objects it was
           loaded from: field updates, pool membership, virtual addresses, and
-          object creation/deletion. IPs and certificate stubs are created as
+          object creation/deletion. IPs and placeholder certificate records are created as
           needed. Deletions are never pre-selected.
         </p>
 

@@ -1274,20 +1274,23 @@ export function computeUpdates(
         notes.push(
           value.class === "Endpoint_Policy"
             ? `"${key}" was edited but is a merged view of several NetBox policies on one virtual server — there is no single object to write it back to. Edit the individual policies in NetBox.`
-            : `"${key}" (${value.class}) was edited but is derived data with no NetBox object of its own — not pushable.`
+            : value.class === "Certificate"
+              ? CERTIFICATE_NOTE(key, "was edited")
+              : `"${key}" (${value.class}) was edited but is derived data with no NetBox object of its own — not pushable.`
         );
       }
       continue;
     }
     const create = buildCreate(key, value, notes);
     if (!create) {
-      // Service_Address / Certificate objects are consumed by the services
-      // and TLS profiles that reference them — no standalone NetBox object.
+      // Service_Address objects are consumed by the services that reference
+      // them — no standalone NetBox object.
       const cls = String(value.class);
-      if (
+      if (cls === "Certificate") {
+        notes.push(CERTIFICATE_NOTE(key, "is new"));
+      } else if (
         !KIND_BY_CLASS[cls] &&
-        cls !== "Service_Address" &&
-        cls !== "Certificate"
+        cls !== "Service_Address"
       ) {
         notes.push(
           `"${key}" (${cls}) has no NetBox model — stored in the application's extra_parameters.`
@@ -1322,6 +1325,12 @@ export function computeUpdates(
 
 // Relation-shaped properties that only NOTE on change (no write support):
 // their NetBox counterparts are relations we don't rewire yet.
+// NetBox holds certificate metadata only — a pointer to material that lives
+// in the certificate estate (Venafi / the BIG-IP), not the certificate itself.
+// Nothing about a certificate is therefore writable from a declaration.
+const CERTIFICATE_NOTE = (key: string, what: string) =>
+  `"${key}" ${what}, but certificates are pointers: NetBox stores metadata only and the material lives in the certificate estate. Manage it there — nothing is pushed.`;
+
 // Relation properties with no write path yet: editing one is reported, not
 // pushed. `snat` is absent deliberately — retargeting it is a vs-snat op.
 const NOTED_RELATION_PROPS: Record<string, string[]> = {

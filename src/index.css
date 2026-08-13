@@ -1598,6 +1598,15 @@ body {
   font-weight: 700;
 }
 
+/* A row that succeeded but left something to reconcile (placeholder
+   certificate records), as opposed to .push-fail which stopped the run. */
+.push-warn {
+  color: var(--warn-text);
+  background: var(--warn-bg);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
 .push-fail {
   color: var(--danger);
 }

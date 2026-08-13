@@ -207,6 +207,39 @@ describe("snat pool linkage", () => {
   });
 });
 
+describe("certificates are pointers", () => {
+  /** NetBox stores certificate metadata only; the material lives in the
+   * certificate estate, so nothing about one is writable from a declaration. */
+  function appWithCert() {
+    const app = netboxApp();
+    const vs = (app.virtual_servers as Dict[])[0];
+    (vs.ssl_profile as Dict).certificates = [
+      { id: 80, name: "cert_app", description: "", distinguished_name: "CN=app" },
+    ];
+    return app;
+  }
+
+  it("explains that an edited certificate is not pushable", () => {
+    const { declaration, manifest, appKey } = fresh(appWithCert());
+    const cert = (declaration[appKey] as Dict).cert_app as Dict;
+    cert.remark = "edited";
+    const { updates, notes } = computeUpdates(declaration, manifest);
+    expect(updates.flatMap((u) => u.changes)).toEqual([]);
+    expect(notes.join(" ")).toMatch(/certificates are pointers/);
+  });
+
+  it("explains that a new certificate cannot be created", () => {
+    const { declaration, manifest, appKey } = fresh(appWithCert());
+    (declaration[appKey] as Dict).cert_new = {
+      class: "Certificate",
+      certificate: { bigip: "/Common/new.crt" },
+    };
+    const { creates, notes } = computeUpdates(declaration, manifest);
+    expect(creates).toEqual([]);
+    expect(notes.join(" ")).toMatch(/"cert_new" is new.*certificates are pointers/);
+  });
+});
+
 describe("relation objects: changeset", () => {
   it("round-trips to an empty changeset when nothing was edited", () => {
     const { declaration, manifest } = fresh();

@@ -184,8 +184,12 @@ the current declaration id) → dialog in the BigipDialog style:
 - Merged multi-policy `<vs>-endpoint-policy` objects and generated
   `_service_address` objects are structural artifacts of the renderer;
   edits inside them map back, but renaming them breaks provenance.
-- Certificates: NetBox stores metadata only; cert content edits (`{text}`)
-  cannot be pushed (report as "cannot push — manage via Venafi").
+- Certificates are pointers, not objects: NetBox stores metadata only and the
+  material lives in the certificate estate, so nothing about a certificate is
+  writable from a declaration — edits and new Certificate objects are both
+  reported, never pushed. Creating a TLS profile whose certificate has no
+  NetBox record still creates a placeholder record (so the profile can be
+  built in one pass), and says so on the row for reconciliation.
 - GSLB objects are out of scope until the reader supports them.
 - An iRule policy's NetBox `description` has nowhere to live in AS3 (the
   renderer emits only `{class: "iRule", iRule}`), so it is never diffed —
