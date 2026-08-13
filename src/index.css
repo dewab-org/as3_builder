@@ -212,8 +212,8 @@ body {
 .simple-pane {
   flex: 1 1 auto;
   overflow: auto;
-  background: var(--panel);
-  padding: 34px 8px 8px;
+  background: var(--bg);
+  padding: 34px 10px 10px;
   font-size: 13px;
 }
 
@@ -223,7 +223,6 @@ body {
   gap: 8px;
   padding: 2px 6px;
   border-radius: 4px;
-  cursor: pointer;
   white-space: nowrap;
 }
 
@@ -281,6 +280,128 @@ body {
 .sv-null {
   color: var(--faint);
   font-style: italic;
+}
+
+/* --- simplified view: object cards --- */
+
+.obj-card {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--panel);
+  margin: 6px 0;
+  overflow: hidden;
+}
+
+/* Standalone AS3 objects (Service, Pool, Monitor …) read as real cards;
+   nested plain objects and array items stay quieter so nesting is legible. */
+.obj-card.object {
+  box-shadow: 0 1px 2px var(--shadow);
+}
+
+.obj-card.nested,
+.obj-card.item {
+  border-style: dashed;
+  border-color: var(--border-light);
+  background: transparent;
+  box-shadow: none;
+}
+
+.obj-card.selected {
+  border-color: var(--accent);
+  border-style: solid;
+  box-shadow: 0 0 0 2px var(--select-bg);
+}
+
+.obj-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  cursor: pointer;
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.obj-card.nested > .obj-card-head,
+.obj-card.item > .obj-card-head {
+  background: transparent;
+  border-bottom-style: dashed;
+  padding: 2px 8px;
+}
+
+.obj-card-head:hover {
+  background: var(--select-hover);
+}
+
+.obj-card.selected > .obj-card-head {
+  background: var(--select-bg);
+}
+
+.obj-card.modified > .obj-card-head {
+  background: var(--modified-bg);
+}
+
+.obj-name {
+  font-weight: 600;
+  color: var(--prop);
+}
+
+.obj-card.item .obj-name {
+  font-weight: 500;
+  color: var(--faint);
+}
+
+.obj-class {
+  font-size: 10px;
+  color: var(--purple);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 0 6px;
+  white-space: nowrap;
+}
+
+.obj-spacer {
+  flex: 1 1 auto;
+}
+
+.obj-card-body {
+  padding: 4px 8px 5px 14px;
+}
+
+.obj-card.object > .obj-card-body {
+  border-left: 3px solid var(--select-bg);
+}
+
+.simple-empty {
+  color: var(--faint);
+  font-size: 11px;
+  font-style: italic;
+  padding: 2px 0;
+}
+
+.simple-group {
+  margin: 2px 0;
+}
+
+.simple-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.simple-count {
+  font-size: 10px;
+  color: var(--faint);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 0 5px;
+}
+
+.simple-group-body {
+  margin-left: 10px;
+  padding-left: 8px;
+  border-left: 1px dotted var(--border);
 }
 
 .simple-value-hit {
