@@ -15,10 +15,41 @@ function schemaType(eff: JsonSchema): string | undefined {
 
 // Placeholder value for a schema, used when inserting properties/objects.
 // Rules per PLAN.md §5.5, first match wins.
+// An empty string is the natural placeholder, but it is *invalid* whenever
+// the schema constrains the string (policy rule names must match
+// ^[a-zA-Z0-9_\-.:%]+$, for instance). Offer the first candidate that
+// actually satisfies the constraint so a freshly inserted object doesn't
+// start out schema-invalid.
+function stringStub(eff: JsonSchema, hint?: string): string {
+  const minLength = eff.minLength ?? 0;
+  let pattern: RegExp | undefined;
+  if (eff.pattern) {
+    try {
+      pattern = new RegExp(eff.pattern);
+    } catch {
+      pattern = undefined;
+    }
+  }
+  if (!pattern && minLength === 0) return "";
+  const candidates = [
+    ...(hint ? [`new_${hint}`, hint] : []),
+    "new_item",
+    "item1",
+    "x",
+  ];
+  for (const candidate of candidates) {
+    if (candidate.length < minLength) continue;
+    if (pattern && !pattern.test(candidate)) continue;
+    return candidate;
+  }
+  return "";
+}
+
 export function stubValue(
   root: JsonSchemaRoot,
   schema: JsonSchema,
-  depth = 0
+  depth = 0,
+  hint?: string
 ): unknown {
   let eff = effectiveSchema(root, schema);
   // For objects, re-evaluate conditionals as they apply to a fresh empty
@@ -40,7 +71,7 @@ export function stubValue(
 
   switch (type) {
     case "string":
-      return "";
+      return stringStub(eff, hint);
     case "number":
     case "integer":
       return eff.minimum ?? 0;
@@ -63,7 +94,7 @@ export function stubValue(
       for (const name of eff.required ?? []) {
         if (name in out) continue;
         const propSchema = eff.properties?.[name];
-        out[name] = propSchema ? stubValue(root, propSchema, depth + 1) : "";
+        out[name] = propSchema ? stubValue(root, propSchema, depth + 1, name) : "";
       }
       return out;
     }

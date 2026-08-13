@@ -406,3 +406,29 @@ describe("docIndex", () => {
     expect(byName.pool1.path).toEqual(["myApp", "pool1"]);
   });
 });
+
+describe("stub validity for constrained strings", () => {
+  it("a new Endpoint_Policy rule stub satisfies the name pattern", () => {
+    const doc = {
+      schemaVersion: "3.55.0",
+      myApp: {
+        class: "Application",
+        pol: { class: "Endpoint_Policy", rules: [{ name: "r1", conditions: [], actions: [] }] },
+      },
+    };
+    const schema = resolveSchemaForPath(root, registry, doc, ["myApp", "pol", "rules", 1]);
+    const stub = stubValue(root, schema!) as Record<string, unknown>;
+    expect(typeof stub.name).toBe("string");
+    expect(stub.name as string).toMatch(/^[a-zA-Z0-9_\-.:%]+$/);
+  });
+
+  it("unconstrained strings still stub as empty", () => {
+    expect(stubValue(root, { type: "string" })).toBe("");
+  });
+
+  it("honours minLength and pattern together", () => {
+    const v = stubValue(root, { type: "string", minLength: 3, pattern: "^[a-z_]+$" }) as string;
+    expect(v.length).toBeGreaterThanOrEqual(3);
+    expect(v).toMatch(/^[a-z_]+$/);
+  });
+});
