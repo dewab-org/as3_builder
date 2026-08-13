@@ -9,3 +9,4 @@ export * from "./validation";
 export * from "./netboxAs3";
 export * from "./as3ToNetbox";
 export * from "./inserter";
+export * from "./describe";

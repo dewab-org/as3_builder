@@ -21,6 +21,10 @@ export interface AddableDetail {
    * item (the class itself for Add-object rows, the containing class for
    * property rows). */
   docClass?: string;
+  /** Human-readable constraints from the schema (ranges, patterns, formats). */
+  constraints?: string[];
+  /** Union alternatives ("integer" OR "Firewall_Port_List reference"). */
+  branches?: { type: string; summary?: string }[];
 }
 
 export function f5DocUrl(className: string): string {
@@ -37,7 +41,13 @@ export interface AddableItem {
   payload: ChipPayload;
 }
 
-function DetailCard({ label, detail }: { label: string; detail: AddableDetail }) {
+export function DetailCard({
+  label,
+  detail,
+}: {
+  label: string;
+  detail: AddableDetail;
+}) {
   return (
     <div className="detail-card">
       <div className="detail-title">
@@ -52,6 +62,27 @@ function DetailCard({ label, detail }: { label: string; detail: AddableDetail })
         <div className="detail-kv">
           <span>Default</span>
           <code>{JSON.stringify(detail.defaultValue)}</code>
+        </div>
+      )}
+      {detail.constraints && detail.constraints.length > 0 && (
+        <div className="detail-kv">
+          <span>Rules</span>
+          <span className="detail-enum">
+            {detail.constraints.map((c) => (
+              <code key={c}>{c}</code>
+            ))}
+          </span>
+        </div>
+      )}
+      {detail.branches && detail.branches.length > 0 && (
+        <div className="detail-branches">
+          <span className="detail-kv-label">Accepts one of</span>
+          {detail.branches.map((b, i) => (
+            <div key={i} className="detail-branch">
+              <code>{b.type}</code>
+              {b.summary && <span>{b.summary}</span>}
+            </div>
+          ))}
         </div>
       )}
       {detail.enumValues && detail.enumValues.length > 0 && (

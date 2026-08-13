@@ -8,6 +8,7 @@ import PushNetboxDialog from "./components/PushNetboxDialog";
 import EditorPane from "./components/EditorPane";
 import TreePane from "./components/TreePane";
 import ContextPanel from "./components/ContextPanel";
+import SimplifiedPane from "./components/SimplifiedPane";
 import type { ChipPayload } from "./components/AddableList";
 import { DEFAULT_SCHEMA_ID, getSchema } from "./schemas";
 import { getTemplate } from "./templates";
@@ -108,6 +109,7 @@ export default function App() {
   }, []);
   const [showPushDialog, setShowPushDialog] = useState(false);
   const [theme, setTheme] = useState<Theme>(initialTheme);
+  const [viewMode, setViewMode] = useState<"json" | "simple">("json");
   const [toast, setToast] = useState<string | null>(null);
   const [showIssues, setShowIssues] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout>>();
@@ -575,6 +577,33 @@ export default function App() {
           />
         </div>
         <div className="pane-editor">
+          <div className="view-toggle">
+            <button
+              className={viewMode === "json" ? "active" : ""}
+              onClick={() => setViewMode("json")}
+            >
+              JSON
+            </button>
+            <button
+              className={viewMode === "simple" ? "active" : ""}
+              onClick={() => setViewMode("simple")}
+              title="Indented key-value view without JSON syntax"
+            >
+              Simple
+            </button>
+          </div>
+          {viewMode === "simple" && (
+            <SimplifiedPane
+              doc={lastGoodDoc}
+              cursorPath={context.path}
+              isModified={isModifiedPath}
+              onSelect={(path) => navigateToPath(path)}
+            />
+          )}
+          <div
+            className="editor-host"
+            style={viewMode === "simple" ? { display: "none" } : undefined}
+          >
           <EditorPane
             text={text}
             onTextChange={setText}
@@ -591,6 +620,7 @@ export default function App() {
             deletableRowPath={deletableRowPath}
             onDeleteRow={handleDeleteRow}
           />
+          </div>
         </div>
         <div className="pane-context">
           <ContextPanel
@@ -598,6 +628,7 @@ export default function App() {
             doc={lastGoodDoc}
             isStale={isStale}
             memberClasses={memberClasses}
+            schemaRoot={root}
             onEdit={handleEdit}
             onNavigate={(path) => navigateToPath(path)}
             onAddChip={handleAddChip}

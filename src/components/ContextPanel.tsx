@@ -1,5 +1,16 @@
-import type { ClassInfo, JsonPath, NodeContext } from "../engine";
-import { getAtPath, indexClassInstances, isPlainObject } from "../engine";
+import type {
+  ClassInfo,
+  JsonPath,
+  JsonSchemaRoot,
+  NodeContext,
+  PropertyInfo,
+} from "../engine";
+import {
+  describeSchema,
+  getAtPath,
+  indexClassInstances,
+  isPlainObject,
+} from "../engine";
 import PropertyWidget from "./PropertyWidget";
 import ConfirmButton from "./ConfirmButton";
 import AddableList, {
@@ -13,6 +24,7 @@ interface ContextPanelProps {
   doc: unknown;
   isStale: boolean;
   memberClasses: ClassInfo[];
+  schemaRoot: JsonSchemaRoot;
   onEdit: (path: JsonPath, value: unknown) => void;
   onNavigate: (path: JsonPath) => void;
   onAddChip: (payload: ChipPayload) => void;
@@ -25,6 +37,7 @@ export default function ContextPanel({
   doc,
   isStale,
   memberClasses,
+  schemaRoot,
   onEdit,
   onNavigate,
   onAddChip,
@@ -58,20 +71,28 @@ export default function ContextPanel({
     isPlainObject(docNode) &&
     classProp !== undefined;
 
+  // Everything the schema knows about a property, for detail cards and ⓘ.
+  const detailFor = (p: PropertyInfo) => {
+    const docs = describeSchema(schemaRoot, p.schema);
+    return {
+      type: docs.type === "enum" ? "string (enum)" : docs.type,
+      description: docs.description ?? p.description,
+      defaultValue: docs.defaultValue ?? p.default,
+      enumValues: docs.enumValues ?? p.enumValues,
+      constraints: docs.constraints,
+      branches: docs.branches,
+      xrefClasses: p.xrefClasses,
+      required: p.required,
+      docClass: context.className,
+    };
+  };
+
   const addableItems: AddableItem[] = context.addableProps.map((p) => ({
     key: p.name,
     label: p.name,
     typeBadge: p.type,
     required: p.required,
-    detail: {
-      type: p.type === "enum" ? "string (enum)" : p.type,
-      description: p.description,
-      defaultValue: p.default,
-      enumValues: p.enumValues,
-      xrefClasses: p.xrefClasses,
-      required: p.required,
-      docClass: context.className,
-    },
+    detail: detailFor(p),
     payload: { name: p.name, sourcePath: context.path },
   }));
 
@@ -200,6 +221,7 @@ export default function ContextPanel({
                 onEdit={onEdit}
                 onNavigate={onNavigate}
                 xrefOptions={xrefOptionsFor(p.xrefClasses)}
+                detail={detailFor(p)}
               />
             )
           )}

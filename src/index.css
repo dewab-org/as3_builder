@@ -171,6 +171,164 @@ body {
 .pane-editor {
   flex: 1 1 auto;
   min-width: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.editor-host {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.view-toggle {
+  position: absolute;
+  top: 6px;
+  right: 20px;
+  z-index: 10;
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 1px 4px var(--shadow);
+}
+
+.view-toggle button {
+  border: none;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 11px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.view-toggle button.active {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+/* --- simplified view --- */
+
+.simple-pane {
+  flex: 1 1 auto;
+  overflow: auto;
+  background: var(--panel);
+  padding: 34px 8px 8px;
+  font-size: 13px;
+}
+
+.simple-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.simple-row:hover {
+  background: var(--select-hover);
+}
+
+.simple-row.selected {
+  background: var(--select-bg);
+}
+
+.simple-row.modified {
+  background: var(--modified-bg);
+}
+
+.simple-row.modified.selected {
+  background: var(--select-bg);
+  box-shadow: inset 3px 0 0 var(--warn-border);
+}
+
+.simple-key {
+  color: var(--prop);
+  font-weight: 500;
+}
+
+.simple-badge {
+  font-size: 10px;
+  color: var(--purple);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 0 6px;
+}
+
+.simple-dash {
+  color: var(--ghost);
+}
+
+.sv {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sv-string {
+  color: var(--text);
+}
+
+.sv-number {
+  color: var(--green);
+}
+
+.sv-boolean {
+  color: var(--purple);
+}
+
+.sv-null {
+  color: var(--faint);
+  font-style: italic;
+}
+
+.simple-hint {
+  color: var(--faint);
+  font-size: 11px;
+  margin: 14px 6px 4px;
+}
+
+.detail-branches {
+  margin-top: 4px;
+}
+
+.detail-kv-label {
+  color: var(--faint);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.detail-branch {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  margin: 2px 0 0 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.pw-info {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  visibility: hidden;
+}
+
+.pw-row:hover .pw-info,
+.pw-info.active {
+  visibility: visible;
+}
+
+.pw-info:hover,
+.pw-info.active {
+  background: var(--select-hover);
+  color: var(--accent);
 }
 
 .pane-context {

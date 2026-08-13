@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { JsonPath, PropertyInfo } from "../engine";
 import { validateValue } from "../engine";
+import { DetailCard, type AddableDetail } from "./AddableList";
 
 interface PropertyWidgetProps {
   prop: PropertyInfo;
@@ -10,6 +11,8 @@ interface PropertyWidgetProps {
   onNavigate: (path: JsonPath) => void;
   /** Document objects this property may reference (for xref dropdowns). */
   xrefOptions?: { name: string; className: string }[];
+  /** Full schema documentation for the ⓘ card. */
+  detail?: AddableDetail;
 }
 
 function summarize(value: unknown): string {
@@ -26,10 +29,12 @@ export default function PropertyWidget({
   onEdit,
   onNavigate,
   xrefOptions,
+  detail,
 }: PropertyWidgetProps) {
   const propPath = [...contextPath, prop.name];
   const [draft, setDraft] = useState(typeof value === "string" ? value : "");
   const [error, setError] = useState<string | undefined>();
+  const [showInfo, setShowInfo] = useState(false);
 
   const requiredEmpty = (v: string) =>
     prop.required && v === "" ? "Input required" : undefined;
@@ -169,6 +174,15 @@ export default function PropertyWidget({
           {prop.name}
         </span>
         {control}
+        {detail && (
+          <button
+            className={`pw-info${showInfo ? " active" : ""}`}
+            title="Schema documentation"
+            onClick={() => setShowInfo(!showInfo)}
+          >
+            ⓘ
+          </button>
+        )}
         <button
           className="pw-delete"
           disabled={prop.required}
@@ -179,6 +193,7 @@ export default function PropertyWidget({
         </button>
       </div>
       {shownError && <div className="pw-error">{shownError}</div>}
+      {showInfo && detail && <DetailCard label={prop.name} detail={detail} />}
     </div>
   );
 }
