@@ -11,7 +11,7 @@ staged_ts=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.(ts|ts
 echo "pre-commit: secrets"
 node scripts/check-secrets.mjs
 if command -v gitleaks >/dev/null 2>&1; then
-  gitleaks protect --staged --redact --no-banner
+  gitleaks protect --staged --redact --no-banner --config .gitleaks.toml
 else
   echo "  (gitleaks not installed — pattern scan only)"
 fi

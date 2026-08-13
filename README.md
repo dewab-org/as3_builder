@@ -180,8 +180,21 @@ GSLB are read-only for now).
 `Applications`), and a TLS-verification checkbox; it checks
 `/mgmt/shared/appsvcs/info` first, then submits the declaration with
 `controls.dryRun: true` (no changes) to
-`/mgmt/shared/appsvcs/declare/<tenant>/applications`. A separate **Apply…**
-button performs the real deployment behind an are-you-sure confirmation.
+`/mgmt/shared/appsvcs/declare/<tenant>/applications`.
+
+Certificates are swapped for a disposable placeholder **on dry runs only**
+(`src/engine/dryRunCertificate.ts`): NetBox stores certificate metadata, not
+the material, so AS3 would fail on the certificate and tell you nothing about
+the rest of the declaration. The dialog names every key it substituted — what
+the BIG-IP validated is not your real certificate. An apply always sends the
+declaration as written.
+
+**Applying belongs in the Ansible workflow.** The **Apply…** button here is a
+deliberate exception and is gated three times: an explanation that this
+bypasses Ansible, then a prompt to type the target host (which also reports
+whether a dry run was done against that host/tenant this session and whether it
+passed), then a final confirmation naming the host and warning that AS3 removes
+applications missing from the declaration.
 
 ## Repository documents
 

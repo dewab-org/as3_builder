@@ -17,6 +17,9 @@ const SKIP_PATH = [
   /(^|\/)__tests__\//,
   /(^|\/)scripts\/check-secrets\.mjs$/,
   /^src\/schemas\//,
+  // A deliberately worthless self-signed key used to stand in for real
+  // certificate material during BIG-IP dry runs (see the file's header).
+  /^src\/engine\/dryRunCertificate\.ts$/,
   /^dist\//,
 ];
 

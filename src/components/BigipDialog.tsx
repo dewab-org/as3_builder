@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { substituteDryRunCertificates } from "../engine";
 
 interface BigipDialogProps {
   /** Current editor text (the declaration to dry-run). */
@@ -49,10 +50,25 @@ export default function BigipDialog({
   const [steps, setSteps] = useState<StepState[]>([]);
   const [rawResponse, setRawResponse] = useState<string | undefined>();
   const [showRaw, setShowRaw] = useState(false);
-  const [confirmingApply, setConfirmingApply] = useState(false);
+  // Direct apply is the exception, not the route: it walks three gates
+  // (0 = not applying, 1 = "use Ansible", 2 = type the host, 3 = final).
+  const [applyGate, setApplyGate] = useState(0);
+  const [hostConfirm, setHostConfirm] = useState("");
+  /** Set once a dry run finishes, so the gates can say whether one was done
+   * against this exact host/tenant and whether it came back clean. */
+  const [lastDryRun, setLastDryRun] = useState<{
+    host: string;
+    tenant: string;
+    ok: boolean;
+  } | null>(null);
+  const [substituted, setSubstituted] = useState<string[]>([]);
 
   const canRun =
     !running && host.trim() !== "" && username !== "" && tenant.trim() !== "";
+  const dryRunMatches =
+    lastDryRun !== null &&
+    lastDryRun.host === host.trim() &&
+    lastDryRun.tenant === tenant.trim();
 
   // Keep the in-memory cache current so reopening the dialog restores fields.
   remembered.host = host;
@@ -61,6 +77,11 @@ export default function BigipDialog({
   remembered.validateCert = validateCert;
   remembered.tenant = tenant;
 
+  function cancelApply() {
+    setApplyGate(0);
+    setHostConfirm("");
+  }
+
   function setStep(index: number, patch: Partial<StepState>) {
     setSteps((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)));
   }
@@ -68,7 +89,7 @@ export default function BigipDialog({
   async function run(dryRun: boolean) {
     const applyLabel = dryRun ? "Dry-run declaration" : "Apply declaration";
     setRunning(true);
-    setConfirmingApply(false);
+    cancelApply();
     setRawResponse(undefined);
     setShowRaw(false);
     setSteps([
@@ -113,6 +134,23 @@ export default function BigipDialog({
         class: "Controls",
         dryRun,
       };
+      // Certificates live in the certificate estate, not in the declaration,
+      // so a dry run would fail on material it cannot see. Swap in a
+      // disposable placeholder — never on an apply, which needs the real one.
+      if (dryRun) {
+        const swap = substituteDryRunCertificates(declaration);
+        declaration = swap.declaration;
+        declaration.controls = {
+          ...(typeof declaration.controls === "object"
+            ? declaration.controls
+            : {}),
+          class: "Controls",
+          dryRun,
+        };
+        setSubstituted(swap.substituted);
+      } else {
+        setSubstituted([]);
+      }
       const declRes = await fetch(
         `/bigip-proxy/mgmt/shared/appsvcs/declare/${encodeURIComponent(tenant.trim())}/applications`,
         { method: "POST", headers, body: JSON.stringify(declaration) }
@@ -128,6 +166,8 @@ export default function BigipDialog({
       const messages = results
         .map((r) => `${r.code ?? ""} ${r.message ?? ""}`.trim())
         .filter(Boolean);
+      if (dryRun)
+        setLastDryRun({ host: host.trim(), tenant: tenant.trim(), ok: declRes.ok });
       if (declRes.ok) {
         setStep(1, {
           state: "ok",
@@ -169,6 +209,8 @@ export default function BigipDialog({
         <p className="ctx-hint">
           Checks the AS3 API, then submits the current declaration with{" "}
           <code>controls.dryRun</code> — no changes are made on the BIG-IP.
+          Applying for real belongs in the Ansible workflow; the Apply button
+          here is a deliberate exception and asks accordingly.
         </p>
         <label className="modal-field">
           <span>BIG-IP host/IP</span>
@@ -232,6 +274,17 @@ export default function BigipDialog({
 
         {rawResponse && (
           <div className="modal-raw">
+            {substituted.length > 0 && (
+              <div className="push-warn">
+                Dry run only: certificate material for{" "}
+                {substituted.map((k) => (
+                  <code key={k}>{k}</code>
+                ))}{" "}
+                was replaced with a disposable placeholder, because NetBox
+                stores certificate metadata rather than the material itself.
+                What the BIG-IP validated is not your real certificate.
+              </div>
+            )}
             <button className="modal-link" onClick={() => setShowRaw(!showRaw)}>
               {showRaw ? "Hide" : "Show"} full response
             </button>
@@ -239,15 +292,78 @@ export default function BigipDialog({
           </div>
         )}
 
-        {confirmingApply && (
+        {applyGate === 1 && (
           <div className="modal-confirm">
-            <strong>Apply for real?</strong> This will modify tenant{" "}
-            <code>{tenant.trim()}</code> on <code>{host.trim()}</code>. Consider
-            running a dry-run first.
+            <strong>This is not the normal way to apply.</strong> Configuration
+            reaches the BIG-IPs through the Ansible workflow, which keeps the
+            estate reviewable and repeatable. Applying from here bypasses it and
+            changes a live device directly — do it only when you have a specific
+            reason to.
             <div className="modal-confirm-actions">
-              <button onClick={() => setConfirmingApply(false)}>Cancel</button>
-              <button className="danger" onClick={() => run(false)}>
-                Yes, apply
+              <button onClick={cancelApply}>Cancel</button>
+              <button onClick={() => setApplyGate(2)}>
+                I understand — continue
+              </button>
+            </div>
+          </div>
+        )}
+
+        {applyGate === 2 && (
+          <div className="modal-confirm">
+            {dryRunMatches ? (
+              lastDryRun?.ok ? (
+                <div>A dry run against this host and tenant passed.</div>
+              ) : (
+                <div className="push-fail">
+                  The last dry run against this host and tenant FAILED.
+                </div>
+              )
+            ) : (
+              <div className="push-warn">
+                No dry run has been done against{" "}
+                <code>{host.trim()}</code> / <code>{tenant.trim()}</code> in this
+                session. Run one first unless you know why you're skipping it.
+              </div>
+            )}
+            <div>
+              Type the host — <code>{host.trim()}</code> — to confirm you are
+              applying to the right device:
+            </div>
+            <input
+              type="text"
+              value={hostConfirm}
+              onChange={(e) => setHostConfirm(e.target.value)}
+              placeholder={host.trim()}
+              autoFocus
+            />
+            <div className="modal-confirm-actions">
+              <button onClick={cancelApply}>Cancel</button>
+              <button
+                disabled={hostConfirm.trim() !== host.trim()}
+                onClick={() => setApplyGate(3)}
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        )}
+
+        {applyGate === 3 && (
+          <div className="modal-confirm">
+            <strong>Last chance.</strong> This writes tenant{" "}
+            <code>{tenant.trim()}</code> to <code>{host.trim()}</code> now.
+            Existing applications in that tenant that are absent from this
+            declaration will be REMOVED by AS3.
+            <div className="modal-confirm-actions">
+              <button onClick={cancelApply}>Cancel, use Ansible</button>
+              <button
+                className="danger"
+                onClick={() => {
+                  cancelApply();
+                  void run(false);
+                }}
+              >
+                Apply to {host.trim()} now
               </button>
             </div>
           </div>
@@ -258,7 +374,7 @@ export default function BigipDialog({
           <button
             className="danger-outline"
             disabled={!canRun}
-            onClick={() => setConfirmingApply(true)}
+            onClick={() => setApplyGate(1)}
           >
             Apply…
           </button>

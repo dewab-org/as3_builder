@@ -1,0 +1,10 @@
+# Extends gitleaks' default rules. The only exemption is the disposable
+# self-signed key used to stand in for real certificate material during BIG-IP
+# dry runs — see the header of the exempted file for why it exists and why it
+# is worthless.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Throwaway dry-run certificate placeholder"
+paths = ['''src/engine/dryRunCertificate\.ts''']
