@@ -14,7 +14,8 @@ RUN npm ci
 COPY . .
 # The SPA (dist/) plus the single-file server bundle (dist-server/index.mjs).
 # Bundling the server means the runtime image ships no node_modules at all.
-RUN npm run build && npm run build:server
+# Precompression happens here so the runtime never compresses per request.
+RUN npm run build && npm run build:server && npm run precompress
 
 # Runtime stage: distroless — no shell, no package manager, no npm, and a
 # non-root user (uid 65532) baked in. The attack surface is node plus two

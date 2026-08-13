@@ -8,7 +8,9 @@
 
 import { execFileSync } from "node:child_process";
 
-const MAX_BYTES = 2_000_000; // generated schema artifacts are far bigger
+// Generous: the generated schema artifacts are excluded by path anyway, and a
+// scanner that skips silently is worse than no scanner.
+const MAX_BYTES = 64_000_000;
 
 const SKIP_PATH = [
   /(^|\/)package-lock\.json$/,
@@ -52,14 +54,19 @@ function staged() {
   return out.split("\0").filter(Boolean);
 }
 
+const skipped = [];
+
 function stagedContent(file) {
   try {
     return execFileSync("git", ["show", `:${file}`], {
       encoding: "utf8",
       maxBuffer: MAX_BYTES,
     });
-  } catch {
-    return undefined; // binary, deleted, or larger than MAX_BYTES
+  } catch (err) {
+    // Binary content is genuinely nothing to scan; anything else (too large
+    // to buffer, unreadable) is a gap the committer needs to know about.
+    if (!/binary/i.test(String(err?.message))) skipped.push(file);
+    return undefined;
   }
 }
 
@@ -78,6 +85,12 @@ for (const file of staged()) {
       findings.push({ file, line: i + 1, rule: rule.name, text: m[0] });
     }
   }
+}
+
+if (skipped.length > 0) {
+  console.error(
+    `check-secrets: NOT scanned (too large or unreadable): ${skipped.join(", ")}`
+  );
 }
 
 if (findings.length > 0) {

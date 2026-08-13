@@ -76,16 +76,42 @@ function securityHeaders(res: ServerResponse): void {
 
 /** Resolve a URL path inside ROOT, or undefined if it escapes (traversal). */
 function safePath(urlPath: string): string | undefined {
-  const decoded = decodeURIComponent(urlPath.split("?")[0]);
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(urlPath.split("?")[0]);
+  } catch {
+    return undefined; // malformed %-escape — a bad request, not a server error
+  }
   const candidate = resolve(join(ROOT, normalize(decoded)));
   if (candidate !== ROOT && !candidate.startsWith(ROOT + sep)) return undefined;
   return candidate;
 }
 
+/** Precompressed sibling (file.br / file.gz) the client will accept, if any. */
+async function encodedVariant(
+  file: string,
+  acceptEncoding: string
+): Promise<{ path: string; encoding: string } | undefined> {
+  const accepted = acceptEncoding.toLowerCase();
+  for (const [encoding, suffix] of [
+    ["br", ".br"],
+    ["gzip", ".gz"],
+  ] as const) {
+    if (!accepted.includes(encoding)) continue;
+    try {
+      const info = await stat(file + suffix);
+      if (info.isFile()) return { path: file + suffix, encoding };
+    } catch {
+      // Not precompressed; try the next encoding, then the raw file.
+    }
+  }
+  return undefined;
+}
+
 async function sendFile(
   res: ServerResponse,
   file: string,
-  { immutable }: { immutable: boolean }
+  { immutable, acceptEncoding }: { immutable: boolean; acceptEncoding: string }
 ): Promise<boolean> {
   let info;
   try {
@@ -94,8 +120,22 @@ async function sendFile(
     return false;
   }
   if (!info.isFile()) return false;
+
+  // Content-Type comes from the *logical* file, not the .br/.gz sibling.
+  const contentType = MIME[extname(file)] ?? "application/octet-stream";
+  const variant = await encodedVariant(file, acceptEncoding);
+  let body = file;
+  if (variant) {
+    const variantInfo = await stat(variant.path);
+    body = variant.path;
+    info = variantInfo;
+    res.setHeader("content-encoding", variant.encoding);
+  }
+  // Caches must key on the encoding, or a gzip client can be served brotli.
+  res.setHeader("vary", "Accept-Encoding");
+
   res.statusCode = 200;
-  res.setHeader("content-type", MIME[extname(file)] ?? "application/octet-stream");
+  res.setHeader("content-type", contentType);
   res.setHeader("content-length", info.size);
   // Hashed asset filenames can be cached forever; index.html never is, or
   // clients would pin themselves to a stale build.
@@ -103,7 +143,7 @@ async function sendFile(
     "cache-control",
     immutable ? "public, max-age=31536000, immutable" : "no-cache"
   );
-  createReadStream(file).pipe(res);
+  createReadStream(body).pipe(res);
   return true;
 }
 
@@ -148,7 +188,8 @@ async function handle(
     return;
   }
   const isAsset = url.startsWith("/assets/");
-  if (await sendFile(res, file, { immutable: isAsset })) return;
+  const acceptEncoding = String(req.headers["accept-encoding"] ?? "");
+  if (await sendFile(res, file, { immutable: isAsset, acceptEncoding })) return;
 
   // Unknown asset paths are a 404; anything else falls back to the SPA shell.
   if (isAsset || extname(file)) {
@@ -157,7 +198,12 @@ async function handle(
     res.end("Not found");
     return;
   }
-  if (!(await sendFile(res, join(ROOT, "index.html"), { immutable: false }))) {
+  if (
+    !(await sendFile(res, join(ROOT, "index.html"), {
+      immutable: false,
+      acceptEncoding,
+    }))
+  ) {
     res.statusCode = 500;
     res.end("Missing index.html");
   }

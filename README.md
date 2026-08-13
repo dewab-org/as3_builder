@@ -73,6 +73,12 @@ framing, no-referrer and COOP/CORP, caps proxied request bodies at 16MB, and
 exposes `/healthz` for the healthcheck. Hashed assets are cached immutably,
 `index.html` never is.
 
+Assets are precompressed at build time (`npm run precompress` writes `.br` and
+`.gz` siblings) and served by content negotiation with `Vary: Accept-Encoding`,
+so the runtime never compresses per request: the 5.2MB main bundle goes out as
+1.0MB brotli or 1.3MB gzip. A `dist/` that hasn't been precompressed still
+serves fine, just uncompressed.
+
 One deliberate CSP concession: `script-src` includes `'unsafe-eval'` because
 Ajv compiles each JSON Schema into a function at runtime, and "load schema from
 URL" means that can't move to build time. Without it the app throws `EvalError`

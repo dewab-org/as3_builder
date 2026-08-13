@@ -12,7 +12,8 @@
     "test": "vitest run --passWithNoTests",
     "lint": "eslint .",
     "check:secrets": "node scripts/check-secrets.mjs",
-    "build:server": "esbuild server/index.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist-server/index.mjs"
+    "build:server": "esbuild server/index.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist-server/index.mjs",
+    "precompress": "node scripts/precompress.mjs"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
