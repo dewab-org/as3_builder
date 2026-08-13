@@ -17,6 +17,15 @@ export interface AddableDetail {
   enumValues?: (string | number)[];
   xrefClasses?: string[];
   required?: boolean;
+  /** AS3 class whose official F5 schema-reference section documents this
+   * item (the class itself for Add-object rows, the containing class for
+   * property rows). */
+  docClass?: string;
+}
+
+export function f5DocUrl(className: string): string {
+  const anchor = className.toLowerCase().replace(/_/g, "-");
+  return `https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#${anchor}`;
 }
 
 export interface AddableItem {
@@ -63,6 +72,18 @@ function DetailCard({ label, detail }: { label: string; detail: AddableDetail })
               <code key={c}>{c}</code>
             ))}
           </span>
+        </div>
+      )}
+      {detail.docClass && (
+        <div className="detail-doclink">
+          <a
+            href={f5DocUrl(detail.docClass)}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(e) => e.stopPropagation()}
+          >
+            F5 schema reference: {detail.docClass} ↗
+          </a>
         </div>
       )}
     </div>

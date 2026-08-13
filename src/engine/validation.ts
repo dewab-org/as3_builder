@@ -71,6 +71,8 @@ export function validateValue(
   schema: JsonSchema,
   value: unknown
 ): ValidationResult {
+  if (schema.const !== undefined && value !== schema.const)
+    return bad(`Must be ${JSON.stringify(schema.const)}`);
   if (typeof value === "number") {
     if (schema.type === "integer" && !Number.isInteger(value))
       return bad("Must be an integer");
@@ -78,6 +80,29 @@ export function validateValue(
       return bad(`Must be ≥ ${schema.minimum}`);
     if (schema.maximum !== undefined && value > schema.maximum)
       return bad(`Must be ≤ ${schema.maximum}`);
+    if (
+      schema.exclusiveMinimum !== undefined &&
+      value <= schema.exclusiveMinimum
+    )
+      return bad(`Must be > ${schema.exclusiveMinimum}`);
+    if (
+      schema.exclusiveMaximum !== undefined &&
+      value >= schema.exclusiveMaximum
+    )
+      return bad(`Must be < ${schema.exclusiveMaximum}`);
+    if (schema.multipleOf !== undefined && schema.multipleOf > 0) {
+      // Tolerate float error (e.g. 0.1 steps).
+      const q = value / schema.multipleOf;
+      if (Math.abs(q - Math.round(q)) > 1e-9)
+        return bad(`Must be a multiple of ${schema.multipleOf}`);
+    }
+    return OK;
+  }
+  if (Array.isArray(value)) {
+    if (schema.minItems !== undefined && value.length < schema.minItems)
+      return bad(`Must have at least ${schema.minItems} item${schema.minItems === 1 ? "" : "s"}`);
+    if (schema.maxItems !== undefined && value.length > schema.maxItems)
+      return bad(`Must have at most ${schema.maxItems} item${schema.maxItems === 1 ? "" : "s"}`);
     return OK;
   }
   if (typeof value === "string") {

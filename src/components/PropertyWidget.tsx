@@ -94,9 +94,11 @@ export default function PropertyWidget({
         className={numError ? "pw-invalid" : ""}
         title={numError}
         value={typeof value === "number" ? value : ""}
-        min={prop.schema.minimum}
-        max={prop.schema.maximum}
-        step={prop.type === "integer" ? 1 : undefined}
+        min={prop.schema.minimum ?? prop.schema.exclusiveMinimum}
+        max={prop.schema.maximum ?? prop.schema.exclusiveMaximum}
+        step={
+          prop.schema.multipleOf ?? (prop.type === "integer" ? 1 : undefined)
+        }
         onChange={(e) => {
           if (e.target.value === "") return;
           const n = Number(e.target.value);

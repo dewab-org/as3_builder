@@ -3,6 +3,7 @@ import { getAtPath, isPlainObject } from "../engine";
 import PropertyWidget from "./PropertyWidget";
 import ConfirmButton from "./ConfirmButton";
 import AddableList, {
+  f5DocUrl,
   type AddableItem,
   type ChipPayload,
 } from "./AddableList";
@@ -53,6 +54,7 @@ export default function ContextPanel({
       enumValues: p.enumValues,
       xrefClasses: p.xrefClasses,
       required: p.required,
+      docClass: context.className,
     },
     payload: { name: p.name, sourcePath: context.path },
   }));
@@ -66,6 +68,7 @@ export default function ContextPanel({
       type: "object",
       description: c.description,
       required: false,
+      docClass: c.className,
     },
     payload: {
       name: c.className,
@@ -91,7 +94,20 @@ export default function ContextPanel({
     <div>
       {isStale && <div className="stale-banner">Stale — fix JSON to refresh</div>}
       <div className="ctx-breadcrumb">
-        <span className="ctx-crumb-text">{context.breadcrumb}</span>
+        <span className="ctx-crumb-text">
+          {context.breadcrumb}
+          {context.className && (
+            <a
+              className="ctx-doclink"
+              href={f5DocUrl(context.className)}
+              target="_blank"
+              rel="noreferrer"
+              title={`Official F5 schema reference for ${context.className}`}
+            >
+              docs ↗
+            </a>
+          )}
+        </span>
         {nodeName !== undefined && (
           <ConfirmButton
             className="ctx-delete"

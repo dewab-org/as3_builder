@@ -22,7 +22,11 @@ export interface JsonSchema {
   default?: unknown;
   minimum?: number;
   maximum?: number;
+  exclusiveMinimum?: number;
+  exclusiveMaximum?: number;
+  multipleOf?: number;
   minItems?: number;
+  maxItems?: number;
   minLength?: number;
   maxLength?: number;
   pattern?: string;

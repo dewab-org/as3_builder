@@ -659,6 +659,29 @@ body {
   gap: 3px;
 }
 
+.detail-doclink {
+  margin-top: 6px;
+  border-top: 1px solid var(--border-light);
+  padding-top: 5px;
+}
+
+.detail-doclink a,
+.ctx-doclink {
+  color: var(--accent);
+  font-size: 11px;
+  text-decoration: none;
+}
+
+.detail-doclink a:hover,
+.ctx-doclink:hover {
+  text-decoration: underline;
+}
+
+.ctx-doclink {
+  margin-left: 8px;
+  font-weight: 400;
+}
+
 .detail-card code,
 .modal code {
   background: var(--bg);

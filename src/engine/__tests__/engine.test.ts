@@ -284,6 +284,26 @@ describe("validation", () => {
     expect(validateValue(s, "ABC").valid).toBe(false);
     expect(validateValue(s, "a").valid).toBe(false);
   });
+
+  it("validates exclusive bounds, multipleOf, const, and array item counts", () => {
+    const ex = { type: "number", exclusiveMinimum: 0, exclusiveMaximum: 100 };
+    expect(validateValue(ex, 50).valid).toBe(true);
+    expect(validateValue(ex, 0).valid).toBe(false);
+    expect(validateValue(ex, 100).valid).toBe(false);
+
+    const mult = { type: "integer", multipleOf: 5 };
+    expect(validateValue(mult, 15).valid).toBe(true);
+    expect(validateValue(mult, 12).valid).toBe(false);
+    expect(validateValue({ type: "number", multipleOf: 0.1 }, 0.3).valid).toBe(true);
+
+    expect(validateValue({ const: "Pool" }, "Pool").valid).toBe(true);
+    expect(validateValue({ const: "Pool" }, "Monitor").valid).toBe(false);
+
+    const arr = { type: "array", minItems: 1, maxItems: 2 };
+    expect(validateValue(arr, ["a"]).valid).toBe(true);
+    expect(validateValue(arr, []).valid).toBe(false);
+    expect(validateValue(arr, ["a", "b", "c"]).valid).toBe(false);
+  });
 });
 
 describe("docIndex", () => {
