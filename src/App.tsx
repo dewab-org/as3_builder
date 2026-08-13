@@ -29,6 +29,7 @@ import {
   extractXrefClasses,
   extrasFromAs3,
   getAtPath,
+  getContextForPath,
   indexClassInstances,
   getContext,
   isPlainObject,
@@ -426,6 +427,74 @@ export default function App() {
     [root, registry, lastGoodDoc]
   );
 
+  // Property-name completions from the ENGINE for the editor's suggest list.
+  // Monaco's JSON service can't evaluate if/then discrimination (a Monitor
+  // with monitorType "dns" never gets queryName offered), so we contribute
+  // exactly the conditional-branch properties it misses.
+  const keyCompletionsAt = useCallback(
+    (editorText: string, offset: number) => {
+      const doc = parse(editorText, [], { allowTrailingComma: true }) as unknown;
+      const loc = getLocation(editorText, offset);
+      let objPath: JsonPath;
+      let replace: { start: number; length: number } | null = null;
+      if (
+        loc.isAtPropertyKey &&
+        loc.previousNode?.type === "string" &&
+        offset >= loc.previousNode.offset &&
+        offset <= loc.previousNode.offset + loc.previousNode.length
+      ) {
+        // Typing inside a (partial) property key: replace the whole key node.
+        objPath = (loc.path as JsonPath).slice(0, -1);
+        replace = {
+          start: loc.previousNode.offset,
+          length: loc.previousNode.length,
+        };
+      } else if (!loc.isAtPropertyKey) {
+        // Blank position inside an object (fresh line, after a comma).
+        objPath = loc.path as JsonPath;
+        if (!isPlainObject(getAtPath(doc, objPath))) return null;
+        if (
+          loc.previousNode &&
+          offset > loc.previousNode.offset &&
+          offset < loc.previousNode.offset + loc.previousNode.length
+        )
+          return null; // inside a value
+      } else {
+        return null;
+      }
+      const ctx = getContextForPath(root, registry, doc, objPath);
+      if (!ctx.schema || ctx.addableProps.length === 0) return null;
+      // Properties Monaco can see on its own (no if/then evaluation): skip
+      // them to avoid duplicate suggestions.
+      let baseProps = new Set<string>();
+      const raw = resolveSchemaForPath(root, registry, doc, objPath);
+      if (raw) {
+        try {
+          baseProps = new Set(
+            Object.keys(effectiveSchema(root, raw).properties ?? {})
+          );
+        } catch {
+          /* fall through with empty base */
+        }
+      }
+      const items = ctx.addableProps
+        .filter((p) => !baseProps.has(p.name))
+        .map((p) => ({
+          name: p.name,
+          type: p.type,
+          description: p.description,
+          insertJson: JSON.stringify(stubValue(root, p.schema)),
+        }));
+      if (items.length === 0) return null;
+      const tail = editorText.slice(
+        replace ? replace.start + replace.length : offset
+      );
+      const nextChar = /^\s*(\S)/.exec(tail)?.[1];
+      return { items, replace, needsTrailingComma: nextChar === '"' };
+    },
+    [root, registry]
+  );
+
   const xrefAt = useCallback(
     (editorText: string, offset: number) =>
       xrefCandidatesAt(root, registry, editorText, offset),
@@ -806,6 +875,7 @@ export default function App() {
             onCursorOffsetChange={setCursorOffset}
             choiceValueStartAt={choiceValueStartAt}
             xrefCandidatesAt={xrefAt}
+            keyCompletionsAt={keyCompletionsAt}
             onChipDrop={handleChipDrop}
             deletableRowPath={deletableRowPath}
             onDeleteRow={handleDeleteRow}
