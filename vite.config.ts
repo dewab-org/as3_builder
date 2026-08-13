@@ -123,16 +123,78 @@ function netboxProxyHandler(req: IncomingMessage, res: ServerResponse): void {
   });
 }
 
+// Generic GET passthrough for schema URLs whose hosts don't send CORS
+// headers. GET-only, http(s)-only, target via ?url=.
+function urlProxyHandler(req: IncomingMessage, res: ServerResponse): void {
+  if (req.method !== "GET") {
+    res.statusCode = 405;
+    res.end();
+    return;
+  }
+  const query = new URL(req.url ?? "/", "http://x").searchParams;
+  let target: URL;
+  try {
+    target = new URL(query.get("url") ?? "");
+    if (target.protocol !== "http:" && target.protocol !== "https:")
+      throw new Error();
+  } catch {
+    res.statusCode = 400;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ error: "url must be an http(s) URL" }));
+    return;
+  }
+  const lib = target.protocol === "https:" ? https : http;
+  const upstream = lib.get(
+    target,
+    { timeout: 30000, headers: { accept: "application/json" } },
+    (upRes) => {
+      // Follow one level of redirects (GitHub raw etc.).
+      if (
+        upRes.statusCode &&
+        [301, 302, 307, 308].includes(upRes.statusCode) &&
+        upRes.headers.location
+      ) {
+        upRes.resume();
+        const redirected = lib.get(
+          new URL(upRes.headers.location, target),
+          { timeout: 30000 },
+          (r2) => {
+            res.statusCode = r2.statusCode ?? 502;
+            res.setHeader("content-type", r2.headers["content-type"] ?? "application/json");
+            r2.pipe(res);
+          }
+        );
+        redirected.on("error", (err) => {
+          res.statusCode = 502;
+          res.end(JSON.stringify({ error: err.message }));
+        });
+        return;
+      }
+      res.statusCode = upRes.statusCode ?? 502;
+      res.setHeader("content-type", upRes.headers["content-type"] ?? "application/json");
+      upRes.pipe(res);
+    }
+  );
+  upstream.on("timeout", () => upstream.destroy(new Error("Connection timed out")));
+  upstream.on("error", (err) => {
+    res.statusCode = 502;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ error: `Cannot reach ${target.host}: ${err.message}` }));
+  });
+}
+
 function bigipProxy(): Plugin {
   return {
     name: "bigip-proxy",
     configureServer(server) {
       server.middlewares.use("/bigip-proxy", bigipProxyHandler);
       server.middlewares.use("/netbox-proxy", netboxProxyHandler);
+      server.middlewares.use("/url-proxy", urlProxyHandler);
     },
     configurePreviewServer(server) {
       server.middlewares.use("/bigip-proxy", bigipProxyHandler);
       server.middlewares.use("/netbox-proxy", netboxProxyHandler);
+      server.middlewares.use("/url-proxy", urlProxyHandler);
     },
   };
 }

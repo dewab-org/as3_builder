@@ -5,6 +5,9 @@ import { TEMPLATES, getTemplate } from "../templates";
 interface ToolbarProps {
   schemaId: string;
   onSchemaChange: (id: string) => void;
+  /** URL-sourced schemas added this session ({id, label}). */
+  urlSchemas: { id: string; label: string }[];
+  onAddSchemaUrl: () => void;
   onLoadText: (text: string) => void;
   currentText: string;
   isDirty: boolean;
@@ -18,6 +21,8 @@ interface ToolbarProps {
 export default function Toolbar({
   schemaId,
   onSchemaChange,
+  urlSchemas,
+  onAddSchemaUrl,
   onLoadText,
   currentText,
   isDirty,
@@ -62,12 +67,24 @@ export default function Toolbar({
       <h1>AS3 Builder</h1>
       <label>
         Schema
-        <select value={schemaId} onChange={(e) => onSchemaChange(e.target.value)}>
+        <select
+          value={schemaId}
+          onChange={(e) => {
+            if (e.target.value === "__add-url__") onAddSchemaUrl();
+            else onSchemaChange(e.target.value);
+          }}
+        >
           {SCHEMA_LIST.map((s) => (
             <option key={s.id} value={s.id}>
               {s.label}
             </option>
           ))}
+          {urlSchemas.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.label}
+            </option>
+          ))}
+          <option value="__add-url__">Load schema from URL…</option>
         </select>
       </label>
       <label>

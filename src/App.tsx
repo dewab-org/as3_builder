@@ -14,6 +14,8 @@ import {
   DEFAULT_SCHEMA_ENTRY,
   DEFAULT_SCHEMA_ID,
   loadSchema,
+  urlSchemaId,
+  urlSchemaLabel,
   type SchemaEntry,
 } from "./schemas";
 import { getTemplate } from "./templates";
@@ -117,6 +119,24 @@ export default function App() {
   const [showPushDialog, setShowPushDialog] = useState(false);
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [viewMode, setViewMode] = useState<"json" | "simple">("json");
+  // URL-sourced schemas ({id, label}); URLs persist across sessions.
+  const [urlSchemas, setUrlSchemas] = useState<{ id: string; label: string }[]>(
+    () => {
+      try {
+        const stored = JSON.parse(
+          localStorage.getItem("as3b-url-schemas") ?? "[]"
+        ) as string[];
+        return stored.map((u) => ({ id: urlSchemaId(u), label: urlSchemaLabel(u) }));
+      } catch {
+        return [];
+      }
+    }
+  );
+  const [schemaUrlDialog, setSchemaUrlDialog] = useState<{
+    url: string;
+    busy: boolean;
+    error?: string;
+  } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [showIssues, setShowIssues] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout>>();
@@ -319,6 +339,34 @@ export default function App() {
     },
     [applyEdit]
   );
+
+  const submitSchemaUrl = useCallback(async () => {
+    if (!schemaUrlDialog || schemaUrlDialog.busy) return;
+    const url = schemaUrlDialog.url.trim();
+    if (!url) return;
+    setSchemaUrlDialog({ url, busy: true });
+    try {
+      const id = urlSchemaId(url);
+      await loadSchema(id); // fetch + shape validation (cached on success)
+      setUrlSchemas((prev) => {
+        if (prev.some((s) => s.id === id)) return prev;
+        const next = [...prev, { id, label: urlSchemaLabel(url) }];
+        localStorage.setItem(
+          "as3b-url-schemas",
+          JSON.stringify(next.map((s) => s.id.slice(4)))
+        );
+        return next;
+      });
+      setSchemaId(id);
+      setSchemaUrlDialog(null);
+    } catch (err) {
+      setSchemaUrlDialog({
+        url,
+        busy: false,
+        error: String(err instanceof Error ? err.message : err),
+      });
+    }
+  }, [schemaUrlDialog]);
 
   const { issues, ready: validatorReady } = useValidation(
     schemaEntry.schema,
@@ -581,6 +629,8 @@ export default function App() {
       <Toolbar
         schemaId={schemaId}
         onSchemaChange={setSchemaId}
+        urlSchemas={urlSchemas}
+        onAddSchemaUrl={() => setSchemaUrlDialog({ url: "", busy: false })}
         onLoadText={loadText}
         currentText={text}
         isDirty={text !== baselineText}
@@ -595,6 +645,46 @@ export default function App() {
           declarationText={text}
           onClose={() => setShowBigipDialog(false)}
         />
+      )}
+      {schemaUrlDialog && (
+        <div className="modal-backdrop" onClick={() => setSchemaUrlDialog(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h2>Load schema from URL</h2>
+            <p className="ctx-hint">
+              The URL must return a JSON Schema (draft-07 style, like the F5
+              AS3 schemas). Hosts without CORS headers are fetched through the
+              dev-server proxy.
+            </p>
+            <label className="modal-field">
+              <span>Schema URL</span>
+              <input
+                type="text"
+                placeholder="https://raw.githubusercontent.com/F5Networks/f5-appsvcs-extension/main/schema/latest/as3-schema.json"
+                value={schemaUrlDialog.url}
+                autoFocus
+                onChange={(e) =>
+                  setSchemaUrlDialog({ ...schemaUrlDialog, url: e.target.value })
+                }
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void submitSchemaUrl();
+                }}
+              />
+            </label>
+            {schemaUrlDialog.error && (
+              <div className="modal-error">{schemaUrlDialog.error}</div>
+            )}
+            <div className="modal-actions">
+              <button onClick={() => setSchemaUrlDialog(null)}>Cancel</button>
+              <button
+                className="primary"
+                disabled={schemaUrlDialog.busy || schemaUrlDialog.url.trim() === ""}
+                onClick={() => void submitSchemaUrl()}
+              >
+                {schemaUrlDialog.busy ? "Loading…" : "Load schema"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       {showPushDialog && (
         <PushNetboxDialog
