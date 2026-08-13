@@ -283,6 +283,108 @@ body {
   font-style: italic;
 }
 
+.simple-value-hit {
+  cursor: text;
+  border-bottom: 1px dashed transparent;
+  min-width: 24px;
+}
+
+.simple-row:hover .simple-value-hit {
+  border-bottom-color: var(--accent-soft);
+}
+
+.simple-delete {
+  border: none;
+  background: none;
+  color: var(--danger);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 1px 3px;
+  border-radius: 3px;
+  visibility: hidden;
+}
+
+.simple-row:hover .simple-delete {
+  visibility: visible;
+}
+
+.simple-delete:hover {
+  background: var(--danger-bg);
+}
+
+.simple-add {
+  color: var(--faint);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.simple-add:hover {
+  color: var(--accent);
+  background: var(--select-hover);
+}
+
+.inline-edit {
+  font-size: 13px;
+  padding: 1px 6px;
+  border: 1px solid var(--accent-soft);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--text);
+  min-width: 140px;
+}
+
+.inline-edit.pw-invalid {
+  border-color: var(--danger);
+  outline: 1px solid var(--danger);
+}
+
+.inline-popover {
+  position: relative;
+  display: inline-block;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px var(--shadow);
+  padding: 8px;
+  z-index: 20;
+  vertical-align: top;
+}
+
+.inline-popover textarea {
+  width: 360px;
+  max-width: 60vw;
+  font-size: 12px;
+  font-family: inherit;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--text);
+  padding: 6px;
+}
+
+.inline-popover-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.inline-popover-actions button {
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.inline-popover-actions button.primary {
+  background: var(--green-btn);
+  border-color: var(--green-btn);
+  color: #fff;
+}
+
 .simple-hint {
   color: var(--faint);
   font-size: 11px;

@@ -19,8 +19,10 @@ import {
   applicationMemberClasses,
   buildClassRegistry,
   effectiveSchema,
+  extractXrefClasses,
   extrasFromAs3,
   getAtPath,
+  indexClassInstances,
   getContext,
   isPlainObject,
   resolveDrop,
@@ -300,6 +302,58 @@ export default function App() {
     schemaEntry.schema,
     schemaEntry.id,
     lastGoodDoc
+  );
+
+  // Which inline editor fits the value at this path (simplified view).
+  const getInlineSpec = useCallback(
+    (path: JsonPath, value: unknown) => {
+      const fallback = {
+        kind: (typeof value === "number"
+          ? "number"
+          : typeof value === "boolean"
+            ? "boolean"
+            : "string") as "number" | "boolean" | "string",
+      };
+      const schema = resolveSchemaForPath(root, registry, lastGoodDoc, path);
+      if (!schema) return fallback;
+      let eff;
+      try {
+        eff = effectiveSchema(root, schema, value);
+      } catch {
+        return fallback;
+      }
+      if (eff.enum && eff.enum.length > 0) {
+        return {
+          kind: "enum" as const,
+          enumValues: eff.enum.filter(
+            (v): v is string | number =>
+              typeof v === "string" || typeof v === "number"
+          ),
+          schema: eff,
+        };
+      }
+      if (eff.type === "boolean") return { kind: "boolean" as const, schema: eff };
+      const classes = extractXrefClasses(root, schema);
+      if (classes) {
+        const seen = new Set<string>();
+        const xrefOptions: { name: string; className: string }[] = [];
+        for (const inst of indexClassInstances(lastGoodDoc)) {
+          if (classes.length > 0 && !classes.includes(inst.className)) continue;
+          if (seen.has(inst.name)) continue;
+          seen.add(inst.name);
+          xrefOptions.push({ name: inst.name, className: inst.className });
+        }
+        if (xrefOptions.length > 0)
+          return { kind: "xref" as const, xrefOptions, schema: eff };
+      }
+      if (eff.type === "integer" || eff.type === "number")
+        return { kind: "number" as const, schema: eff };
+      const long =
+        (typeof value === "string" && value.length > 40) ||
+        (eff.maxLength ?? 0) > 100;
+      return { kind: long ? ("longtext" as const) : ("string" as const), schema: eff };
+    },
+    [root, registry, lastGoodDoc]
   );
 
   const xrefAt = useCallback(
@@ -598,6 +652,9 @@ export default function App() {
               cursorPath={context.path}
               isModified={isModifiedPath}
               onSelect={(path) => navigateToPath(path)}
+              getInlineSpec={getInlineSpec}
+              onEditValue={handleEdit}
+              onEditMany={applyEditMany}
             />
           )}
           <div
