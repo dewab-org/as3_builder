@@ -42,14 +42,17 @@ export function applicationGraphQuery(appId: number | string): string {
       service_port vs_type protocol
       destination_addresses { id address }
       virtual_addresses { id address }
-      policies { id name policy_type rules description }
+      policies { id name policy_type rules description last_updated }
       persistence
       ssl_profile {
         id name profile_type last_updated
         certificates { id name description distinguished_name }
         cipher_group {
-          id name description
-          cipher_rules { id priority name description ciphers dh_groups signature_algorithms }
+          id name description last_updated
+          cipher_rules {
+            id priority name description ciphers dh_groups signature_algorithms
+            last_updated
+          }
         }
         ciphers tls_versions mtls options
       }
@@ -57,12 +60,15 @@ export function applicationGraphQuery(appId: number | string): string {
         id name profile_type last_updated
         certificates { id name description distinguished_name }
         cipher_group {
-          id name description
-          cipher_rules { id priority name description ciphers dh_groups signature_algorithms }
+          id name description last_updated
+          cipher_rules {
+            id priority name description ciphers dh_groups signature_algorithms
+            last_updated
+          }
         }
         ciphers tls_versions mtls options
       }
-      protocol_profiles { id name protocol_type options }
+      protocol_profiles { id name protocol_type options last_updated }
       snat_pool { id name description members { id address } }
       extra_parameters
     }

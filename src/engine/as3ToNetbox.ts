@@ -8,6 +8,7 @@
 // tool in the current session.
 
 import { LEGACY_LB_ALIASES, sanitizeKey } from "./netboxAs3";
+import { decodeBase64 } from "./base64";
 import { isPlainObject } from "./types";
 
 type Dict = Record<string, unknown>;
@@ -466,10 +467,142 @@ function tlsFieldsFromAs3(tls: Dict): { fields: Dict; unsupported: string[] } {
   };
 }
 
+
+// ---- relation-object kinds (W5) --------------------------------------------
+//
+// policies, protocol profiles and cipher objects each store a *complete* AS3
+// object in a JSON column (Policy.rules, ProtocolProfile.options) or map
+// field-for-field (cipher rules/groups). They are separate NetBox objects, so
+// editing one is an ordinary PATCH once it carries a manifest entry.
+
+// Policy.rules holds the COMPLETE AS3 object, not a bare script or rule list.
+// Write-back therefore rebuilds that wrapper from the stored one and swaps in
+// the edited content — writing the inner value alone would leave a record the
+// renderer can no longer read.
+//
+// The renderer also has nowhere to put an iRule policy's description, so
+// description is deliberately not diffed here: an unrepresentable field must
+// never be pushed, or every push would blank it.
+function iruleFieldsFromNetbox(p: Dict): Dict {
+  return { rules: isPlainObject(p.rules) ? { ...p.rules } : (p.rules ?? null) };
+}
+
+/** Rebuild a policy wrapper, preserving keys (and the legacy source key) the
+ * stored record used. */
+function iruleWrapper(snapshot: Dict | undefined, tcl: string): Dict {
+  const stored = isPlainObject(snapshot?.rules) ? { ...snapshot.rules } : {};
+  const legacy = !("iRule" in stored) && typeof stored.rules === "string";
+  return { class: "iRule", ...stored, [legacy ? "rules" : "iRule"]: tcl };
+}
+
+function iruleFieldsFromAs3(
+  a: Dict,
+  snapshot?: Dict
+): { fields: Dict; unsupported: string[] } {
+  const unsupported: string[] = [];
+  const source = a.iRule;
+  let tcl: string | null = null;
+  if (isPlainObject(source) && typeof source.base64 === "string") {
+    try {
+      tcl = decodeBase64(source.base64);
+    } catch {
+      unsupported.push("iRule base64 could not be decoded");
+    }
+  } else if (typeof source === "string") {
+    tcl = source; // AS3 also allows the script inline
+  } else if (source !== undefined) {
+    unsupported.push("iRule must be a base64 wrapper or a string");
+  }
+  const fields: Dict = {};
+  if (tcl !== null) fields.rules = iruleWrapper(snapshot, tcl);
+  else if (snapshot) fields.rules = snapshot.rules;
+  return { fields, unsupported };
+}
+
+// Same wrapper rule as iRules: rules holds {class, rules: [...], strategy?}.
+// strategy is part of that JSON, not a column of its own.
+function policyFieldsFromNetbox(p: Dict): Dict {
+  return {
+    description: desc64(p.description),
+    rules: isPlainObject(p.rules) ? { ...p.rules } : (p.rules ?? null),
+  };
+}
+
+function policyFieldsFromAs3(
+  a: Dict,
+  snapshot?: Dict
+): { fields: Dict; unsupported: string[] } {
+  const unsupported: string[] = [];
+  if (a.rules !== undefined && !Array.isArray(a.rules))
+    unsupported.push("rules must be an array — not pushed");
+  const stored = isPlainObject(snapshot?.rules) ? { ...snapshot.rules } : {};
+  const wrapper: Dict = { class: "Endpoint_Policy", ...stored };
+  if (Array.isArray(a.rules)) wrapper.rules = a.rules;
+  if (typeof a.strategy === "string") wrapper.strategy = a.strategy;
+  else delete wrapper.strategy;
+  // label maps to the description column, so it never belongs in the JSON.
+  delete wrapper.label;
+  return {
+    fields: { description: desc64(a.label), rules: wrapper },
+    unsupported,
+  };
+}
+
+function protocolProfileFieldsFromNetbox(pp: Dict): Dict {
+  const options = isPlainObject(pp.options) ? pp.options : {};
+  return { options: { ...options } };
+}
+
+function protocolProfileFieldsFromAs3(
+  a: Dict
+): { fields: Dict; unsupported: string[] } {
+  // options holds the AS3 object verbatim, class included — the renderer
+  // spreads everything but class back out, so this round-trips exactly.
+  return { fields: { options: { ...a } }, unsupported: [] };
+}
+
+function cipherRuleFieldsFromNetbox(rule: Dict): Dict {
+  return {
+    description: desc64(rule.description),
+    ciphers: rule.ciphers ?? [],
+    dh_groups: rule.dh_groups ?? [],
+    signature_algorithms: rule.signature_algorithms ?? [],
+  };
+}
+
+function cipherRuleFieldsFromAs3(a: Dict): { fields: Dict; unsupported: string[] } {
+  const list = (v: unknown) => (Array.isArray(v) ? v : []);
+  return {
+    fields: {
+      description: desc64(a.label),
+      ciphers: list(a.cipherSuites),
+      dh_groups: list(a.namedGroups),
+      signature_algorithms: list(a.signatureAlgorithms),
+    },
+    unsupported: [],
+  };
+}
+
+function cipherGroupFieldsFromNetbox(group: Dict): Dict {
+  return { description: desc64(group.description) };
+}
+
+function cipherGroupFieldsFromAs3(a: Dict): { fields: Dict; unsupported: string[] } {
+  const unsupported: string[] = [];
+  if (a.allowCipherRules !== undefined && !Array.isArray(a.allowCipherRules))
+    unsupported.push("allowCipherRules must be an array");
+  return { fields: { description: desc64(a.label) }, unsupported };
+}
+
 interface KindSpec {
   endpoint: string;
   fromNetbox: (n: Dict) => Dict;
-  fromAs3: (a: Dict) => { fields: Dict; unsupported: string[] };
+  /** `snapshot` is the entry's NetBox fields as loaded; specs whose storage
+   * is a whole-AS3-object JSON column use it to preserve unmodelled keys. */
+  fromAs3: (
+    a: Dict,
+    snapshot?: Dict
+  ) => { fields: Dict; unsupported: string[] };
 }
 
 // Application-level: the app object itself maps to the applications endpoint
@@ -496,6 +629,12 @@ const KIND_BY_CLASS: Record<string, KindSpec> = {
   Monitor: { endpoint: "monitors", fromNetbox: monitorFieldsFromNetbox, fromAs3: monitorFieldsFromAs3 },
   TLS_Server: { endpoint: "ssl-profiles", fromNetbox: tlsFieldsFromNetbox, fromAs3: tlsFieldsFromAs3 },
   TLS_Client: { endpoint: "ssl-profiles", fromNetbox: tlsFieldsFromNetbox, fromAs3: tlsFieldsFromAs3 },
+  iRule: { endpoint: "policies", fromNetbox: iruleFieldsFromNetbox, fromAs3: iruleFieldsFromAs3 },
+  Endpoint_Policy: { endpoint: "policies", fromNetbox: policyFieldsFromNetbox, fromAs3: policyFieldsFromAs3 },
+  TCP_Profile: { endpoint: "protocol-profiles", fromNetbox: protocolProfileFieldsFromNetbox, fromAs3: protocolProfileFieldsFromAs3 },
+  HTTP_Profile: { endpoint: "protocol-profiles", fromNetbox: protocolProfileFieldsFromNetbox, fromAs3: protocolProfileFieldsFromAs3 },
+  Cipher_Rule: { endpoint: "cipher-rules", fromNetbox: cipherRuleFieldsFromNetbox, fromAs3: cipherRuleFieldsFromAs3 },
+  Cipher_Group: { endpoint: "cipher-groups", fromNetbox: cipherGroupFieldsFromNetbox, fromAs3: cipherGroupFieldsFromAs3 },
 };
 
 // ---- manifest --------------------------------------------------------------
@@ -573,6 +712,40 @@ export function buildManifest(
         add(m, "Monitor", KIND_BY_CLASS.Monitor, String(m.name));
       }
     }
+    // Policies: exactly one standard policy maps 1:1 to an Endpoint_Policy.
+    // Two or more are merged by the renderer into a synthetic object with no
+    // single NetBox owner, so that stays read-only (explained at diff time).
+    const policies = (vs.policies as Dict[] | undefined) ?? [];
+    const standard = policies.filter((p) => p.policy_type === "standard");
+    if (standard.length === 1) {
+      add(
+        standard[0],
+        "Endpoint_Policy",
+        KIND_BY_CLASS.Endpoint_Policy,
+        String(standard[0].name)
+      );
+    }
+    for (const p of policies) {
+      if (p.policy_type === "irule")
+        add(p, "iRule", KIND_BY_CLASS.iRule, String(p.name));
+    }
+
+    for (const pp of (vs.protocol_profiles as Dict[] | undefined) ?? []) {
+      const cls = isPlainObject(pp.options) ? pp.options.class : undefined;
+      // Service_* options are spread into the virtual server's own fields by
+      // the renderer, so they have no standalone AS3 object to edit.
+      if (cls === "TCP_Profile" || cls === "HTTP_Profile")
+        add(pp, cls, KIND_BY_CLASS[cls], String(pp.name));
+    }
+
+    for (const profile of [vs.ssl_profile, vs.server_ssl_profile]) {
+      const group = isPlainObject(profile) ? profile.cipher_group : undefined;
+      if (!isPlainObject(group)) continue;
+      add(group, "Cipher_Group", KIND_BY_CLASS.Cipher_Group, String(group.name));
+      for (const rule of (group.cipher_rules as Dict[] | undefined) ?? [])
+        add(rule, "Cipher_Rule", KIND_BY_CLASS.Cipher_Rule, String(rule.name));
+    }
+
     if (vs.ssl_profile) {
       add(
         vs.ssl_profile as Dict,
@@ -815,7 +988,7 @@ export function computeUpdates(
       continue;
     }
     const spec = KIND_BY_CLASS[entry.className];
-    const { fields, unsupported } = spec.fromAs3(current);
+    const { fields, unsupported } = spec.fromAs3(current, entry.fields);
     for (const u of unsupported) notes.push(`"${entry.as3Key}": ${u}`);
 
     const changes: FieldChange[] = [];
@@ -1051,7 +1224,9 @@ export function computeUpdates(
         !valueEq(value, manifest.artifacts[key])
       ) {
         notes.push(
-          `"${key}" (${value.class}) was edited but is derived data (certificates, policies) — pushing it ships in a later phase.`
+          value.class === "Endpoint_Policy"
+            ? `"${key}" was edited but is a merged view of several NetBox policies on one virtual server — there is no single object to write it back to. Edit the individual policies in NetBox.`
+            : `"${key}" (${value.class}) was edited but is derived data with no NetBox object of its own — not pushable.`
         );
       }
       continue;

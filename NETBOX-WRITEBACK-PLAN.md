@@ -105,7 +105,11 @@ the exact inverse of `netboxAs3.ts`:
 | member entries (per servicePort/state group, ungrouped back to one row per address) | `pool-members`: `service_port`, `node` (get-or-create IP), `enabled` (adminState), `ratio`, `priority_group` |
 | Monitor `monitorType/interval/timeout/label` | `monitor_type/interval/timeout/description`; other props → `conditions` JSON |
 | TLS profile flags/ciphers/cipherGroup/authenticationMode | `tls_versions` (labels→ints), `ciphers`, `cipher_group`, `mtls` |
-| Endpoint_Policy `rules` | `policies.rules` (only for 1:1 policies; MERGED multi-policies are read-only — see limits) |
+| Endpoint_Policy `rules`/`strategy`/`label` | `policies.rules` (the complete AS3 object) + `description`, for 1:1 policies; MERGED multi-policies stay read-only — see limits |
+| iRule `iRule` (base64) | `policies.rules` as `{class: "iRule", iRule: "<tcl>"}`, decoded; legacy `rules.rules` records keep their shape |
+| TCP_Profile / HTTP_Profile | `protocol-profiles.options` (the complete AS3 object) |
+| Cipher_Rule `cipherSuites`/`namedGroups`/`signatureAlgorithms`/`label` | `cipher-rules.ciphers`/`dh_groups`/`signature_algorithms`/`description` |
+| Cipher_Group `label` | `cipher-groups.description` |
 | any unmapped property on App/Service/Pool/member | `extra_parameters` JSON |
 
 Unmappable constructs produce structured "cannot push" findings, never
@@ -166,6 +170,11 @@ the current declaration id) → dialog in the BigipDialog style:
 - **Phase W4 — extra_parameters + edge classes.** Unmapped-property
   absorption into extra_parameters; policies/cipher groups write; the
   "cannot push" report becomes exhaustive.
+- **Phase W5 — relation objects.** Manifest entries and field updates for
+  policies (endpoint policies and iRules), protocol profiles and cipher
+  rules/groups, so editing them is an ordinary PATCH. Still out of scope:
+  creating these objects from the builder, changing which policy/profile a
+  virtual server points at, and SNAT pool membership.
 
 ## 5. Known limits (state up front, revisit later)
 
@@ -178,6 +187,13 @@ the current declaration id) → dialog in the BigipDialog style:
 - Certificates: NetBox stores metadata only; cert content edits (`{text}`)
   cannot be pushed (report as "cannot push — manage via Venafi").
 - GSLB objects are out of scope until the reader supports them.
+- An iRule policy's NetBox `description` has nowhere to live in AS3 (the
+  renderer emits only `{class: "iRule", iRule}`), so it is never diffed —
+  pushing an iRule edit leaves the description untouched rather than
+  blanking it.
+- `snat`, `policyEndpoint`, `iRules`, `profileTCP`/`profileHTTP` still point
+  at whatever NetBox already links; retargeting them from the builder is not
+  implemented, so those edits are reported, not written.
 
 ## 6. Test strategy
 
