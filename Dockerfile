@@ -20,7 +20,12 @@ RUN npm run build && npm run build:server && npm run precompress
 # Runtime stage: distroless — no shell, no package manager, no npm, and a
 # non-root user (uid 65532) baked in. The attack surface is node plus two
 # directories of static output.
-FROM gcr.io/distroless/nodejs22-debian12:nonroot@sha256:13593b7570658e8477de39e2f4a1dd25db2f836d68a0ba771251572d23bb4f8e
+#
+# Debian 13 (trixie), not 12: the bookworm variant ships libssl3 3.0.18 and
+# glibc u13, which trivy flags with 1 CRITICAL and 5 HIGH that have fixes
+# upstream but no rebuilt base image. Trixie carries none of them — its only
+# findings are unfixed MEDIUMs shared by every glibc.
+FROM gcr.io/distroless/nodejs22-debian13:nonroot@sha256:939d6f1671529d230f50b563578e9b5d206af58f038b10ebd7e1233023d4e167
 
 WORKDIR /app
 ENV NODE_ENV=production \

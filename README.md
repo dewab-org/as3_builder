@@ -59,7 +59,10 @@ The image is built in two stages: a Node builder that compiles the SPA and
 bundles the server, and a **distroless** runtime (`nonroot`, uid 65532) with no
 shell, no package manager and no `node_modules` — `server/index.ts` is bundled
 into a single ~10KB file by esbuild, so nothing but Node and the built output
-ships. Both base images are pinned by digest. The container runs read-only with
+ships. Both base images are pinned by digest — the runtime is the Debian 13
+(trixie) distroless variant, whose only trivy findings are unfixed MEDIUMs
+shared by every glibc; the bookworm variant ships a libssl3 with a CRITICAL
+that has an upstream fix but no rebuilt image. The container runs read-only with
 all capabilities dropped and `no-new-privileges`; `docker-compose.yml` sets
 those, a 16MB noexec tmpfs for `/tmp`, CPU/memory limits and log rotation, and
 binds to loopback (the proxy routes reach whatever the container can route to,
@@ -84,6 +87,10 @@ Ajv compiles each JSON Schema into a function at runtime, and "load schema from
 URL" means that can't move to build time. Without it the app throws `EvalError`
 and renders nothing. No third-party script origin is allowed, so there is no
 external code to eval.
+
+Scan it with `trivy image as3-builder:latest` after a build. Expect 0 secrets,
+0 misconfigurations, and 0 fixable OS vulnerabilities; anything else means the
+pinned base digest has aged and wants refreshing.
 
 ## Editing features
 
