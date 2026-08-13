@@ -7,7 +7,7 @@ import {
   buildClassRegistry,
 } from "../classRegistry";
 import { resolveSchemaForPath } from "../pathResolver";
-import { getContext, getContextForPath } from "../context";
+import { getContext, getContextForPath, xrefCandidatesAt } from "../context";
 import { stubValue } from "../stubber";
 import { indexClassInstances } from "../docIndex";
 import { validateValue } from "../validation";
@@ -303,6 +303,33 @@ describe("validation", () => {
     expect(validateValue(arr, ["a"]).valid).toBe(true);
     expect(validateValue(arr, []).valid).toBe(false);
     expect(validateValue(arr, ["a", "b", "c"]).valid).toBe(false);
+  });
+});
+
+describe("xref candidates", () => {
+  const doc = {
+    schemaVersion: "3.55.0",
+    myApp: {
+      class: "Application",
+      web: { class: "Service_HTTP", virtualAddresses: ["10.0.0.1"], pool: "pool1" },
+      pool1: { class: "Pool" },
+      pool2: { class: "Pool" },
+      mon1: { class: "Monitor", monitorType: "http" },
+    },
+  };
+  const text = JSON.stringify(doc, null, 2);
+
+  it("offers Pool objects inside a pool value", () => {
+    const offset = text.indexOf('"pool1"', text.indexOf('"pool":')) + 2;
+    const c = xrefCandidatesAt(root, registry, text, offset);
+    expect(c).not.toBeNull();
+    expect(c!.names.map((n) => n.name).sort()).toEqual(["pool1", "pool2"]);
+    expect(text.slice(c!.start, c!.start + c!.length)).toBe('"pool1"');
+  });
+
+  it("returns null for non-reference strings", () => {
+    const offset = text.indexOf('"10.0.0.1"') + 2;
+    expect(xrefCandidatesAt(root, registry, text, offset)).toBeNull();
   });
 });
 

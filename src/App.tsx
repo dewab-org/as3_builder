@@ -21,6 +21,7 @@ import {
   isPlainObject,
   resolveSchemaForPath,
   stubValue,
+  xrefCandidatesAt,
   type JsonPath,
   type JsonSchemaRoot,
 } from "./engine";
@@ -237,6 +238,12 @@ export default function App() {
     [applyEdit]
   );
 
+  const xrefAt = useCallback(
+    (editorText: string, offset: number) =>
+      xrefCandidatesAt(root, registry, editorText, offset),
+    [root, registry]
+  );
+
   // After applyEdit, the Monaco model receives the new text on the next React
   // commit; navigating before that clamps the offset. Poll briefly until the
   // model holds the expected text, then jump.
@@ -436,6 +443,7 @@ export default function App() {
             }}
             onCursorOffsetChange={setCursorOffset}
             choiceValueStartAt={choiceValueStartAt}
+            xrefCandidatesAt={xrefAt}
             deletableRowPath={deletableRowPath}
             onDeleteRow={handleDeleteRow}
           />

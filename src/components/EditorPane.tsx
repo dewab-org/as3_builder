@@ -17,6 +17,16 @@ interface EditorPaneProps {
   /** Path of the JSON property/array element that starts on this line, or
    * null when the line isn't deletable (structural brackets, root, …). */
   deletableRowPath?: (text: string, lineStartOffset: number) => unknown;
+  /** Document objects a string value at this offset may reference (pool
+   * names, use-pointers, …); null when the value isn't a cross-reference. */
+  xrefCandidatesAt?: (
+    text: string,
+    offset: number
+  ) => {
+    names: { name: string; className: string }[];
+    start: number;
+    length: number;
+  } | null;
   /** Delete the row (property or array element) whose value starts on the
    * given line. Receives the path returned by deletableRowPath. */
   onDeleteRow?: (path: unknown) => void;
@@ -56,6 +66,44 @@ export default function EditorPane(props: EditorPaneProps) {
       onChange={(value) => onTextChange(value ?? "")}
       onMount={(editorInstance, monacoApi) => {
         onEditorMount?.(editorInstance);
+
+        // Cross-reference completions: inside a pointer-typed string value
+        // (a Service's `pool`, a `use` reference, …) suggest the matching
+        // objects defined in the document.
+        monacoApi.languages.registerCompletionItemProvider("json", {
+          triggerCharacters: ['"'],
+          provideCompletionItems: (
+            model: editor.ITextModel,
+            position: { lineNumber: number; column: number }
+          ) => {
+            if (model !== editorInstance.getModel()) return { suggestions: [] };
+            const offset = model.getOffsetAt(position);
+            const info = propsRef.current.xrefCandidatesAt?.(
+              model.getValue(),
+              offset
+            );
+            if (!info) return { suggestions: [] };
+            // Replace the inside of the string (between the quotes).
+            const start = model.getPositionAt(info.start + 1);
+            const end = model.getPositionAt(info.start + info.length - 1);
+            const range = {
+              startLineNumber: start.lineNumber,
+              startColumn: start.column,
+              endLineNumber: end.lineNumber,
+              endColumn: end.column,
+            };
+            return {
+              suggestions: info.names.map((n) => ({
+                label: n.name,
+                detail: n.className,
+                kind: monacoApi.languages.CompletionItemKind.Reference,
+                insertText: n.name,
+                range,
+                sortText: `0_${n.name}`, // ahead of generic suggestions
+              })),
+            };
+          },
+        });
 
         // Hover-to-delete: show a ✕ glyph in the margin of the hovered line
         // when that line starts a deletable property / array element.
@@ -113,10 +161,15 @@ export default function EditorPane(props: EditorPaneProps) {
           propsRef.current.onCursorOffsetChange?.(offset);
           // Mouse click on an enum/boolean/const value → open the pick list.
           if (e.source !== "mouse") return;
-          const valueStart = propsRef.current.choiceValueStartAt?.(
+          // Enum/boolean/const values AND cross-reference values both pop the
+          // pick list on click.
+          const xref = propsRef.current.xrefCandidatesAt?.(
             model.getValue(),
             offset
           );
+          const valueStart = xref
+            ? xref.start + 1
+            : propsRef.current.choiceValueStartAt?.(model.getValue(), offset);
           if (valueStart !== null && valueStart !== undefined) {
             // Defer past the click's own event handling (which dismisses a
             // synchronously opened suggest widget), move the cursor to the

@@ -4,6 +4,7 @@ import { getAtPath, isPlainObject } from "./types";
 import type { ClassRegistry } from "./classRegistry";
 import { deref, effectiveSchema } from "./refResolver";
 import { resolveSchemaForPath } from "./pathResolver";
+import { indexClassInstances } from "./docIndex";
 
 export interface PropertyInfo {
   name: string;
@@ -53,7 +54,7 @@ function detectType(eff: JsonSchema): string {
 // Pull the class list out of an f5PostProcess pointer tag, wherever the AS3
 // schema hides it: on the schema itself, a then/else branch, a union branch,
 // or the `use` property of a pointer object.
-function extractXrefClasses(
+export function extractXrefClasses(
   root: JsonSchemaRoot,
   schema: JsonSchema,
   depth = 0
@@ -128,6 +129,47 @@ export function normalizeToObjectPath(doc: unknown, path: JsonPath): JsonPath {
   const p = [...path];
   while (p.length > 0 && !isPlainObject(getAtPath(doc, p))) p.pop();
   return p;
+}
+
+export interface XrefCandidates {
+  /** Names of matching objects defined in the document. */
+  names: { name: string; className: string }[];
+  /** Text range of the value node the pick list should replace. */
+  start: number;
+  length: number;
+}
+
+// When the offset sits inside a STRING VALUE whose schema is a pointer to
+// another object in the declaration (a Service's `pool`, a `use` reference,
+// …), return the document objects it may point at.
+export function xrefCandidatesAt(
+  root: JsonSchemaRoot,
+  registry: ClassRegistry,
+  text: string,
+  offset: number
+): XrefCandidates | null {
+  const loc = getLocation(text, offset);
+  if (loc.isAtPropertyKey || loc.path.length === 0) return null;
+  const node = loc.previousNode;
+  if (!node || node.type !== "string") return null;
+  if (offset < node.offset || offset > node.offset + node.length) return null;
+  const doc = parse(text, [], { allowTrailingComma: true }) as unknown;
+  const schema = resolveSchemaForPath(root, registry, doc, loc.path as JsonPath);
+  if (!schema) return null;
+  const classes = extractXrefClasses(root, schema);
+  if (!classes) return null;
+  const instances = indexClassInstances(doc).filter(
+    (i) => classes.length === 0 || classes.includes(i.className)
+  );
+  const seen = new Set<string>();
+  const names: { name: string; className: string }[] = [];
+  for (const inst of instances) {
+    if (seen.has(inst.name)) continue;
+    seen.add(inst.name);
+    names.push({ name: inst.name, className: inst.className });
+  }
+  if (names.length === 0) return null;
+  return { names, start: node.offset, length: node.length };
 }
 
 export function getContext(

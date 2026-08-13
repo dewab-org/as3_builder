@@ -8,6 +8,8 @@ interface PropertyWidgetProps {
   contextPath: JsonPath;
   onEdit: (path: JsonPath, value: unknown) => void;
   onNavigate: (path: JsonPath) => void;
+  /** Document objects this property may reference (for xref dropdowns). */
+  xrefOptions?: { name: string; className: string }[];
 }
 
 function summarize(value: unknown): string {
@@ -23,6 +25,7 @@ export default function PropertyWidget({
   contextPath,
   onEdit,
   onNavigate,
+  xrefOptions,
 }: PropertyWidgetProps) {
   const propPath = [...contextPath, prop.name];
   const [draft, setDraft] = useState(typeof value === "string" ? value : "");
@@ -58,6 +61,32 @@ export default function PropertyWidget({
           ⤷
         </button>
       </span>
+    );
+  } else if (
+    xrefOptions &&
+    xrefOptions.length > 0 &&
+    (value === undefined || typeof value === "string")
+  ) {
+    // Cross-reference: pick from the matching objects in the document.
+    const current = typeof value === "string" ? value : "";
+    const known = xrefOptions.some((o) => o.name === current);
+    control = (
+      <select
+        value={current}
+        onChange={(e) => onEdit(propPath, e.target.value)}
+        title={prop.description}
+      >
+        {(current === "" || !known) && (
+          <option value={current}>
+            {current === "" ? "(select…)" : `${current} (not in document)`}
+          </option>
+        )}
+        {xrefOptions.map((o) => (
+          <option key={o.name} value={o.name}>
+            {o.name} ({o.className})
+          </option>
+        ))}
+      </select>
     );
   } else if (prop.type === "enum" && prop.enumValues) {
     control = (

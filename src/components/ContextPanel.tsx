@@ -1,5 +1,5 @@
 import type { ClassInfo, JsonPath, NodeContext } from "../engine";
-import { getAtPath, isPlainObject } from "../engine";
+import { getAtPath, indexClassInstances, isPlainObject } from "../engine";
 import PropertyWidget from "./PropertyWidget";
 import ConfirmButton from "./ConfirmButton";
 import AddableList, {
@@ -32,6 +32,22 @@ export default function ContextPanel({
   onClassChange,
 }: ContextPanelProps) {
   const docNode = getAtPath(doc, context.path);
+
+  // Cross-reference options: document objects grouped once, filtered per
+  // property by its allowed classes.
+  const instances = indexClassInstances(doc);
+  const xrefOptionsFor = (classes: string[] | undefined) => {
+    if (!classes) return undefined;
+    const seen = new Set<string>();
+    const out: { name: string; className: string }[] = [];
+    for (const inst of instances) {
+      if (classes.length > 0 && !classes.includes(inst.className)) continue;
+      if (seen.has(inst.name)) continue;
+      seen.add(inst.name);
+      out.push({ name: inst.name, className: inst.className });
+    }
+    return out.length > 0 ? out : undefined;
+  };
 
   // A member object with no class yet: the schema can't say anything useful
   // until the discriminator is chosen, so offer the class picker first.
@@ -183,6 +199,7 @@ export default function ContextPanel({
                 contextPath={context.path}
                 onEdit={onEdit}
                 onNavigate={onNavigate}
+                xrefOptions={xrefOptionsFor(p.xrefClasses)}
               />
             )
           )}
