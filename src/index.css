@@ -282,6 +282,57 @@ body {
   font-style: italic;
 }
 
+/* --- simplified view: folding --- */
+
+.simple-tools {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.simple-tools button {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.simple-tools button:hover {
+  background: var(--select-hover);
+  color: var(--text);
+}
+
+.fold-btn {
+  border: none;
+  background: none;
+  color: var(--faint);
+  cursor: pointer;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 3px;
+  border-radius: 3px;
+  flex: 0 0 auto;
+}
+
+.fold-btn:hover {
+  background: var(--select-hover);
+  color: var(--accent);
+}
+
+.fold-summary {
+  font-size: 11px;
+  color: var(--faint);
+  font-style: italic;
+}
+
+/* A collapsed card is a single line: drop the body's rounded seam. */
+.obj-card.collapsed > .obj-card-head {
+  border-bottom: none;
+}
+
 /* --- simplified view: object cards --- */
 
 .obj-card {
