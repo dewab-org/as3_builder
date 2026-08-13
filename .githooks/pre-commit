@@ -16,6 +16,26 @@ else
   echo "  (gitleaks not installed — pattern scan only)"
 fi
 
+# Trivy: dependency CVEs always (about a second), Dockerfile misconfiguration
+# when the Dockerfile is touched. The image scan needs a full build, so it is
+# opt-in here — run `npm run scan:image` (or set AS3B_SCAN_IMAGE=1) for that.
+if command -v trivy >/dev/null 2>&1; then
+  echo "pre-commit: scan"
+  trivy fs --quiet --scanners vuln --severity CRITICAL,HIGH \
+    --ignore-unfixed --exit-code 1 .
+
+  if git diff --cached --name-only --diff-filter=ACMR | grep -q '^Dockerfile$'; then
+    trivy config --quiet --severity CRITICAL,HIGH,MEDIUM --exit-code 1 .
+  fi
+
+  if [ "$AS3B_SCAN_IMAGE" = "1" ]; then
+    echo "pre-commit: scan (image)"
+    npm run --silent scan:image
+  fi
+else
+  echo "pre-commit: scan skipped (trivy not installed)"
+fi
+
 if [ -n "$staged_ts" ]; then
   echo "pre-commit: lint"
   # Errors block the commit; warnings are printed and let through.

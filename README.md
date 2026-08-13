@@ -32,11 +32,18 @@ npm run build      # production build in dist/
 
 `npm install` points git at `.githooks/`, which installs a **pre-commit hook**
 that scans staged content for credentials (`scripts/check-secrets.mjs`, plus
-`gitleaks protect --staged` when gitleaks is installed) and — when TypeScript
-or JavaScript is staged — runs eslint, `tsc -b`, and the test suite. Lint
-warnings print but don't block; errors do. Enable it by hand with
+`gitleaks protect --staged` when gitleaks is installed), runs `trivy fs` for
+dependency CVEs, runs `trivy config` when the Dockerfile changed, and — when
+TypeScript or JavaScript is staged — runs eslint, `tsc -b`, and the test suite.
+Lint warnings print but don't block; errors do. Enable it by hand with
 `git config core.hooksPath .githooks`, bypass one commit with
 `git commit --no-verify`.
+
+The trivy steps gate on CRITICAL/HIGH with a fix available, and are skipped
+(with a note) when trivy isn't installed. Image scanning needs a full `docker
+build`, so it stays out of the commit path: run `npm run scan:image` for it, or
+set `AS3B_SCAN_IMAGE=1` to have the hook do it too. `npm run scan` runs the two
+fast scans by hand.
 
 The ephemeral NetBox container's `admin`/`admin` is allowlisted in the secret
 scan, as are documentation placeholders; test fixtures and generated schema
@@ -88,7 +95,7 @@ URL" means that can't move to build time. Without it the app throws `EvalError`
 and renders nothing. No third-party script origin is allowed, so there is no
 external code to eval.
 
-Scan it with `trivy image as3-builder:latest` after a build. Expect 0 secrets,
+Scan it with `npm run scan:image` after a build. Expect 0 secrets,
 0 misconfigurations, and 0 fixable OS vulnerabilities; anything else means the
 pinned base digest has aged and wants refreshing.
 
