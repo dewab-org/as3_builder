@@ -960,6 +960,106 @@ body {
   max-width: 55%;
 }
 
+/* --- push-to-netbox dialog --- */
+
+.push-list {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  margin-top: 8px;
+  max-height: 45vh;
+  overflow-y: auto;
+}
+
+.push-row {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-faint);
+}
+
+.push-row:last-child {
+  border-bottom: none;
+}
+
+.push-row.drifted {
+  background: var(--warn-bg);
+}
+
+.push-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.push-kind {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 0 6px;
+}
+
+.push-name {
+  font-weight: 600;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex: 1 1 auto;
+}
+
+.push-class {
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--faint);
+}
+
+.push-drift {
+  font-size: 11px;
+  color: var(--warn-text);
+  font-weight: 600;
+}
+
+.push-ok {
+  color: var(--green);
+  font-weight: 700;
+}
+
+.push-fail {
+  color: var(--danger);
+}
+
+.push-field {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  margin: 3px 0 0 26px;
+}
+
+.push-field code {
+  flex: 0 0 auto;
+}
+
+.push-from {
+  color: var(--danger);
+  text-decoration: line-through;
+}
+
+.push-arrow {
+  color: var(--faint);
+}
+
+.push-to {
+  color: var(--green);
+  font-weight: 600;
+}
+
+.push-noop {
+  color: var(--faint);
+  font-style: italic;
+}
+
 /* --- editor decorations --- */
 
 .row-delete-glyph {

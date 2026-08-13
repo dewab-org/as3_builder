@@ -4,6 +4,7 @@ import { findNodeAtLocation, getLocation, parse, parseTree } from "jsonc-parser"
 import Toolbar from "./components/Toolbar";
 import BigipDialog from "./components/BigipDialog";
 import NetboxDialog from "./components/NetboxDialog";
+import PushNetboxDialog from "./components/PushNetboxDialog";
 import EditorPane from "./components/EditorPane";
 import TreePane from "./components/TreePane";
 import ContextPanel from "./components/ContextPanel";
@@ -57,6 +58,7 @@ export default function App() {
   const [baselineText, setBaselineText] = useState(INITIAL_TEXT);
   const [showBigipDialog, setShowBigipDialog] = useState(false);
   const [showNetboxDialog, setShowNetboxDialog] = useState(false);
+  const [showPushDialog, setShowPushDialog] = useState(false);
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const modifiedDecosRef = useRef<editor.IEditorDecorationsCollection | null>(
@@ -381,6 +383,7 @@ export default function App() {
         isDirty={text !== baselineText}
         onValidateOnBigip={() => setShowBigipDialog(true)}
         onLoadFromNetbox={() => setShowNetboxDialog(true)}
+        onPushToNetbox={() => setShowPushDialog(true)}
         theme={theme}
         onToggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
       />
@@ -388,6 +391,13 @@ export default function App() {
         <BigipDialog
           declarationText={text}
           onClose={() => setShowBigipDialog(false)}
+        />
+      )}
+      {showPushDialog && (
+        <PushNetboxDialog
+          declarationText={text}
+          onReloaded={loadText}
+          onClose={() => setShowPushDialog(false)}
         />
       )}
       {showNetboxDialog && (

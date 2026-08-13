@@ -23,13 +23,13 @@ export const APPLICATION_LIST_QUERY = `query {
 export function applicationGraphQuery(appId: number | string): string {
   return `query {
   application_list(filters: { id: ${Number(appId)} }) {
-    id name snow_sys_id description
+    id name snow_sys_id description last_updated
     virtual_servers {
-      id name slug description enabled
+      id name slug description enabled last_updated
       applications { id name }
       backend_pool {
-        id name description load_balancing_algorithm
-        monitors { id name description monitor_type interval timeout conditions }
+        id name description load_balancing_algorithm last_updated
+        monitors { id name description monitor_type interval timeout conditions last_updated }
         priority_group_activation priority_group_threshold extra_parameters
         members {
           id
@@ -43,7 +43,7 @@ export function applicationGraphQuery(appId: number | string): string {
       policies { id name policy_type rules description }
       persistence
       ssl_profile {
-        id name profile_type
+        id name profile_type last_updated
         certificates { id name description distinguished_name }
         cipher_group {
           id name description
@@ -52,7 +52,7 @@ export function applicationGraphQuery(appId: number | string): string {
         ciphers tls_versions mtls options
       }
       server_ssl_profile {
-        id name profile_type
+        id name profile_type last_updated
         certificates { id name description distinguished_name }
         cipher_group {
           id name description
@@ -74,7 +74,7 @@ type Dict = Record<string, unknown>;
 
 // NetBox LB plugin < 0.3.0 exposed pre-AS3 load-balancing values; normalize
 // them forward (same map as f5_toolbox _LEGACY_LB_ALIASES).
-const LEGACY_LB_ALIASES: Record<string, string> = {
+export const LEGACY_LB_ALIASES: Record<string, string> = {
   "least-connections": "least-connections-member",
   "source-ip": "round-robin",
 };

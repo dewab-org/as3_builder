@@ -10,6 +10,7 @@ interface ToolbarProps {
   isDirty: boolean;
   onValidateOnBigip: () => void;
   onLoadFromNetbox: () => void;
+  onPushToNetbox: () => void;
   theme: "light" | "dark";
   onToggleTheme: () => void;
 }
@@ -22,6 +23,7 @@ export default function Toolbar({
   isDirty,
   onValidateOnBigip,
   onLoadFromNetbox,
+  onPushToNetbox,
   theme,
   onToggleTheme,
 }: ToolbarProps) {
@@ -84,6 +86,9 @@ export default function Toolbar({
       <div className="spacer" />
       <button onClick={onLoadFromNetbox} title="Read a load-balancer application from NetBox as AS3">
         Load from NetBox…
+      </button>
+      <button onClick={onPushToNetbox} title="Write edited fields back to the NetBox objects this declaration came from">
+        Push to NetBox…
       </button>
       <button onClick={onValidateOnBigip} title="Dry-run this declaration against a BIG-IP">
         Validate on BIG-IP…
