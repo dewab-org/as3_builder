@@ -5,6 +5,7 @@
 import type { JsonSchema, JsonSchemaRoot } from "./types";
 import { isPlainObject } from "./types";
 import { deref, effectiveSchema } from "./refResolver";
+import type { FieldDocumentation, TmshEquivalency } from "./documentation";
 
 export interface SchemaBranch {
   type: string;
@@ -13,12 +14,15 @@ export interface SchemaBranch {
 
 export interface SchemaDocs {
   description?: string;
+  /** Expanded operational behavior supplied by the generated F5 docs index. */
+  behavior?: string;
   type: string;
   constraints: string[];
   defaultValue?: unknown;
   enumValues?: (string | number)[];
   /** oneOf/anyOf alternatives ("integer" OR "Firewall_Port_List reference"). */
   branches?: SchemaBranch[];
+  tmsh?: TmshEquivalency;
 }
 
 const FORMAT_HINTS: Record<string, string> = {
@@ -96,7 +100,8 @@ function branchSummary(root: JsonSchemaRoot, branch: JsonSchema): SchemaBranch {
 export function describeSchema(
   root: JsonSchemaRoot,
   schema: JsonSchema,
-  docValue?: unknown
+  docValue?: unknown,
+  augmentation?: FieldDocumentation
 ): SchemaDocs {
   let eff: JsonSchema;
   try {
@@ -106,8 +111,10 @@ export function describeSchema(
   }
   const docs: SchemaDocs = {
     description: (eff.description ?? eff.title) as string | undefined,
+    behavior: augmentation?.behavior,
     type: typeName(eff),
     constraints: constraintsOf(eff),
+    tmsh: augmentation?.tmsh,
   };
   if (eff.default !== undefined) docs.defaultValue = eff.default;
   if (eff.enum)

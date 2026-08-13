@@ -61,8 +61,10 @@ equivalent proxy in front.
   now-invalid leftovers with one-click removal. **Modified objects** (vs the
   loaded baseline) highlight amber in the tree and editor margin.
 - **Docs everywhere**: hover/ⓘ cards show the full schema description,
-  rules (ranges, patterns, formats), defaults, union alternatives, and link
-  to the exact section of the official F5 schema reference.
+  expanded behavior, rules (ranges, patterns, formats), defaults, union
+  alternatives, documented TMOS/tmsh equivalencies, and a link to the exact
+  section of the official F5 schema reference. The normalized, machine-readable
+  index covers every definition and field in the bundled 3.56 schema.
 - Light/dark theme (Home Depot palette), status-bar breadcrumb, Ajv error
   list with click-to-jump.
 
@@ -116,6 +118,21 @@ button performs the real deployment behind an are-you-sure confirmation.
 
 - Schemas live in `src/schemas/`; the per-app schema is the default, the two
   full AS3 schemas are code-split and load on selection.
+- `src/schemas/as3-documentation-3.56.0-10.json` is the generated documentation
+  overlay consumed by the detail cards. Run `npm run generate:docs` after
+  changing the source schema or curated behavior/tmsh mappings in
+  `scripts/generate-as3-documentation.mjs`.
+- The bundled schemas mirror the authoritative local copies under
+  `../baseconfig/docs/bigip_as3/`. To generate directly from that source and
+  record its SHA-256 provenance, run
+  `npm run generate:docs -- --schema ../baseconfig/docs/bigip_as3/as3-schema-3.56.0-10.json`.
+- Expanded behavior and tmsh names come from the Apache-2.0-licensed AS3
+  v3.56 implementation's `src/lib/classes.js` and `src/lib/properties.json`.
+  Their normalized snapshot is bundled as
+  `src/schemas/as3-implementation-mappings-3.56.0-10.json`. Refresh it from an
+  AS3 source checkout with `--as3-source <path> --mappings-output
+  src/schemas/as3-implementation-mappings-3.56.0-10.json`; normal generation
+  uses the snapshot and therefore never degrades to schema-only mappings.
 - Monaco is bundled locally (no CDN) for restricted environments.
 - The engine test suite (`src/engine/__tests__/`) runs against the real
   1.2MB per-app schema and f5_toolbox's golden render fixture; the

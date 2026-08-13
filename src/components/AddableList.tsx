@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { JsonPath } from "../engine";
+import type { TmshEquivalency } from "../engine";
 
 export interface ChipPayload {
   name: string;
@@ -13,6 +14,7 @@ export const CHIP_MIME = "application/x-as3-prop";
 export interface AddableDetail {
   type?: string;
   description?: string;
+  behavior?: string;
   defaultValue?: unknown;
   enumValues?: (string | number)[];
   xrefClasses?: string[];
@@ -25,11 +27,13 @@ export interface AddableDetail {
   constraints?: string[];
   /** Union alternatives ("integer" OR "Firewall_Port_List reference"). */
   branches?: { type: string; summary?: string }[];
+  allowedFields?: string[];
+  tmsh?: TmshEquivalency;
+  schemaReference?: string;
 }
 
 export function f5DocUrl(className: string): string {
-  const anchor = className.toLowerCase().replace(/_/g, "-");
-  return `https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#${anchor}`;
+  return `https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schemaref/${encodeURIComponent(className)}.schema.json.html`;
 }
 
 export interface AddableItem {
@@ -57,6 +61,12 @@ export function DetailCard({
       </div>
       {detail.description && (
         <p className="detail-desc">{detail.description}</p>
+      )}
+      {detail.behavior && detail.behavior !== detail.description && (
+        <div className="detail-expanded">
+          <span className="detail-kv-label">Behavior</span>
+          <p className="detail-desc">{detail.behavior}</p>
+        </div>
       )}
       {detail.defaultValue !== undefined && (
         <div className="detail-kv">
@@ -105,10 +115,50 @@ export function DetailCard({
           </span>
         </div>
       )}
+      {detail.allowedFields && detail.allowedFields.length > 0 && (
+        <div className="detail-kv">
+          <span>Allowed fields</span>
+          <span className="detail-enum">
+            {detail.allowedFields.map((field) => (
+              <code key={field}>{field}</code>
+            ))}
+          </span>
+        </div>
+      )}
+      {detail.tmsh && (
+        <div className="detail-expanded">
+          <span className="detail-kv-label">TMOS / tmsh equivalency</span>
+          <p className="detail-desc">
+            <code>
+              {Array.isArray(detail.tmsh.objectType)
+                ? detail.tmsh.objectType.join(" | ")
+                : detail.tmsh.objectType}
+            </code>
+            {detail.tmsh.property && (
+              <> property <code>{detail.tmsh.property}</code></>
+            )}
+          </p>
+          {detail.tmsh.inspectionCommand && (
+            <code>{detail.tmsh.inspectionCommand}</code>
+          )}
+          {detail.tmsh.reference && !Array.isArray(detail.tmsh.reference) && (
+            <p className="detail-doclink">
+              <a
+                href={detail.tmsh.reference}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => e.stopPropagation()}
+              >
+                F5 tmsh reference ↗
+              </a>
+            </p>
+          )}
+        </div>
+      )}
       {detail.docClass && (
         <div className="detail-doclink">
           <a
-            href={f5DocUrl(detail.docClass)}
+            href={detail.schemaReference ?? f5DocUrl(detail.docClass)}
             target="_blank"
             rel="noreferrer"
             onClick={(e) => e.stopPropagation()}

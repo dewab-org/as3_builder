@@ -10,4 +10,5 @@ export * from "./netboxAs3";
 export * from "./as3ToNetbox";
 export * from "./inserter";
 export * from "./describe";
+export * from "./documentation";
 export * from "./base64";

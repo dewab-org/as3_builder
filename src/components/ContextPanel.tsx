@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import type {
   ClassInfo,
   JsonPath,
@@ -7,9 +8,13 @@ import type {
 } from "../engine";
 import {
   describeSchema,
+  definitionDocumentation,
+  fieldDocumentation,
   getAtPath,
   indexClassInstances,
   isPlainObject,
+  loadAs3Documentation,
+  type DocumentationIndex,
 } from "../engine";
 import PropertyWidget from "./PropertyWidget";
 import ConfirmButton from "./ConfirmButton";
@@ -44,6 +49,17 @@ export default function ContextPanel({
   onDeleteNode,
   onClassChange,
 }: ContextPanelProps) {
+  const [documentation, setDocumentation] = useState<DocumentationIndex>();
+  useEffect(() => {
+    let active = true;
+    void loadAs3Documentation().then((index) => {
+      if (active) setDocumentation(index);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const docNode = getAtPath(doc, context.path);
 
   // Cross-reference options: document objects grouped once, filtered per
@@ -73,10 +89,16 @@ export default function ContextPanel({
 
   // Everything the schema knows about a property, for detail cards and ⓘ.
   const detailFor = (p: PropertyInfo) => {
-    const docs = describeSchema(schemaRoot, p.schema);
+    const augmentation = fieldDocumentation(
+      documentation,
+      context.className,
+      p.name
+    );
+    const docs = describeSchema(schemaRoot, p.schema, undefined, augmentation);
     return {
       type: docs.type === "enum" ? "string (enum)" : docs.type,
       description: docs.description ?? p.description,
+      behavior: docs.behavior,
       defaultValue: docs.defaultValue ?? p.default,
       enumValues: docs.enumValues ?? p.enumValues,
       constraints: docs.constraints,
@@ -84,6 +106,9 @@ export default function ContextPanel({
       xrefClasses: p.xrefClasses,
       required: p.required,
       docClass: context.className,
+      tmsh: docs.tmsh,
+      schemaReference: definitionDocumentation(documentation, context.className)
+        ?.documentation.schemaReference,
     };
   };
 
@@ -98,22 +123,29 @@ export default function ContextPanel({
 
   const classItems: AddableItem[] = [...memberClasses]
     .sort((a, b) => a.className.localeCompare(b.className))
-    .map((c) => ({
-    key: c.className,
-    label: c.className,
-    detail: {
-      type: "object",
-      description: c.description,
-      required: false,
-      docClass: c.className,
-    },
-    payload: {
-      name: c.className,
-      sourcePath: context.path,
-      isClassObject: true,
-      className: c.className,
-    },
-  }));
+    .map((c) => {
+      const docs = definitionDocumentation(documentation, c.definitionName);
+      return {
+        key: c.className,
+        label: c.className,
+        detail: {
+          type: "object",
+          description: docs?.schemaDescription ?? c.description,
+          behavior: docs?.behavior,
+          required: false,
+          docClass: c.className,
+          allowedFields: docs?.allowedFields,
+          tmsh: docs?.tmsh,
+          schemaReference: docs?.documentation.schemaReference,
+        },
+        payload: {
+          name: c.className,
+          sourcePath: context.path,
+          isClassObject: true,
+          className: c.className,
+        },
+      };
+    });
 
   // Class choices for the class dropdown: sibling-level member classes, plus
   // the current class if it's something else (e.g. Application itself).
