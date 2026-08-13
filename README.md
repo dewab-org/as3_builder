@@ -26,8 +26,21 @@ backend service.
 npm install
 npm run dev        # http://localhost:5173
 npm test           # engine test suite (vitest)
+npm run lint       # eslint
 npm run build      # production build in dist/
 ```
+
+`npm install` points git at `.githooks/`, which installs a **pre-commit hook**
+that scans staged content for credentials (`scripts/check-secrets.mjs`, plus
+`gitleaks protect --staged` when gitleaks is installed) and — when TypeScript
+or JavaScript is staged — runs eslint, `tsc -b`, and the test suite. Lint
+warnings print but don't block; errors do. Enable it by hand with
+`git config core.hooksPath .githooks`, bypass one commit with
+`git commit --no-verify`.
+
+The ephemeral NetBox container's `admin`/`admin` is allowlisted in the secret
+scan, as are documentation placeholders; test fixtures and generated schema
+artifacts under `src/schemas/` are skipped.
 
 The **dev/preview server is required** for the NetBox and BIG-IP features:
 browsers cannot call iControl REST or the NetBox API directly (no CORS

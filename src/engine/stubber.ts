@@ -61,7 +61,7 @@ export function stubValue(
   if (eff.const !== undefined) return eff.const;
   if (eff.enum && eff.enum.length > 0) return eff.enum[0];
 
-  let type = schemaType(eff);
+  const type = schemaType(eff);
   if (!type) {
     const union = eff.anyOf ?? eff.oneOf;
     const first = union?.[0];

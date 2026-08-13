@@ -1,0 +1,93 @@
+#!/usr/bin/env node
+// Scans staged content for credentials. gitleaks does the heavy lifting when
+// it is installed; these rules run everywhere and cover what this project is
+// actually likely to leak — BIG-IP and NetBox credentials.
+//
+// Test fixtures and this file's own patterns are excluded, and the ephemeral
+// NetBox container's admin/admin is explicitly allowed (documented in README).
+
+import { execFileSync } from "node:child_process";
+
+const MAX_BYTES = 2_000_000; // generated schema artifacts are far bigger
+
+const SKIP_PATH = [
+  /(^|\/)package-lock\.json$/,
+  /(^|\/)__tests__\//,
+  /(^|\/)scripts\/check-secrets\.mjs$/,
+  /^src\/schemas\//,
+  /^dist\//,
+];
+
+// Values that look like secrets but are not: the throwaway NetBox container,
+// documentation placeholders, and schema example hostnames.
+const ALLOW_VALUE =
+  /^(admin|password|passwd|secret|token|bearer|none|null|undefined|changeme|example|placeholder|your[-_]?\w*|<[^>]+>|\$\{[^}]+\}|\*+|x+|1234\d*)$/i;
+
+const RULES = [
+  {
+    name: "private key",
+    re: /-----BEGIN (?:RSA |EC |OPENSSH |PGP |DSA )?PRIVATE KEY-----/,
+  },
+  { name: "AWS access key id", re: /\bAKIA[0-9A-Z]{16}\b/ },
+  { name: "GitHub token", re: /\bgh[pousr]_[A-Za-z0-9]{36,}\b/ },
+  { name: "Slack token", re: /\bxox[abprs]-[A-Za-z0-9-]{10,}\b/ },
+  { name: "NetBox API token", re: /\bnbt_[A-Za-z0-9]{10,}\.[A-Za-z0-9]{10,}\b/ },
+  { name: "JSON Web Token", re: /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\./ },
+  // key = "value" / "key": "value" — the value is captured so it can be
+  // checked against ALLOW_VALUE before we cry wolf.
+  {
+    name: "hardcoded credential",
+    // No leading \b: camelCase names like bigipPassword must match too.
+    re: /(?:password|passwd|passphrase|secret|api[-_]?key|auth[-_]?token|access[-_]?token|credential)["'\s]*[:=]\s*["'`]([^"'`\n]{4,})["'`]/i,
+    valueGroup: 1,
+  },
+];
+
+function staged() {
+  const out = execFileSync(
+    "git",
+    ["diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z"],
+    { encoding: "utf8" }
+  );
+  return out.split("\0").filter(Boolean);
+}
+
+function stagedContent(file) {
+  try {
+    return execFileSync("git", ["show", `:${file}`], {
+      encoding: "utf8",
+      maxBuffer: MAX_BYTES,
+    });
+  } catch {
+    return undefined; // binary, deleted, or larger than MAX_BYTES
+  }
+}
+
+const findings = [];
+for (const file of staged()) {
+  if (SKIP_PATH.some((re) => re.test(file))) continue;
+  const content = stagedContent(file);
+  if (content === undefined) continue;
+  const lines = content.split("\n");
+  for (const rule of RULES) {
+    for (const [i, line] of lines.entries()) {
+      const m = rule.re.exec(line);
+      if (!m) continue;
+      const value = rule.valueGroup ? m[rule.valueGroup] : undefined;
+      if (value !== undefined && ALLOW_VALUE.test(value.trim())) continue;
+      findings.push({ file, line: i + 1, rule: rule.name, text: m[0] });
+    }
+  }
+}
+
+if (findings.length > 0) {
+  console.error("Possible secrets in staged changes:\n");
+  for (const f of findings) {
+    const shown = f.text.length > 80 ? `${f.text.slice(0, 77)}…` : f.text;
+    console.error(`  ${f.file}:${f.line}  [${f.rule}]  ${shown}`);
+  }
+  console.error(
+    "\nRemove them, or if these are false positives commit with --no-verify."
+  );
+  process.exit(1);
+}

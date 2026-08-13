@@ -1,0 +1,30 @@
+#!/bin/sh
+# Enabled by `npm install` (see the "prepare" script) or manually with:
+#   git config core.hooksPath .githooks
+# Bypass a single commit with `git commit --no-verify`.
+set -e
+
+cd "$(git rev-parse --show-toplevel)"
+
+staged_ts=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.(ts|tsx|js|mjs)$' || true)
+
+echo "pre-commit: secrets"
+node scripts/check-secrets.mjs
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks protect --staged --redact --no-banner
+else
+  echo "  (gitleaks not installed — pattern scan only)"
+fi
+
+if [ -n "$staged_ts" ]; then
+  echo "pre-commit: lint"
+  # Errors block the commit; warnings are printed and let through.
+  # shellcheck disable=SC2086
+  npx eslint $staged_ts
+
+  echo "pre-commit: types"
+  npx tsc -b
+
+  echo "pre-commit: tests"
+  npx vitest run --silent
+fi
