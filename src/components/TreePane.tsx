@@ -11,16 +11,28 @@ interface TreePaneProps {
   isModified: (path: JsonPath) => boolean;
 }
 
-const MAX_DEPTH = 3;
+// Deep enough to reach policy rules and their conditions/actions
+// (app → policy → rules → rule → conditions → condition).
+const MAX_DEPTH = 7;
 
 function pathsEqual(a: JsonPath, b: JsonPath): boolean {
   return a.length === b.length && a.every((seg, i) => String(seg) === String(b[i]));
 }
 
 function nodeLabel(key: string | number, value: unknown): string {
-  if (isPlainObject(value) && typeof value.class === "string") {
-    return `${key} (${value.class})`;
+  if (isPlainObject(value)) {
+    if (typeof value.class === "string") return `${key} (${value.class})`;
+    // Array items are indexes; show their name/type so policy rules,
+    // conditions and actions are identifiable.
+    if (typeof key === "number") {
+      const hint =
+        (typeof value.name === "string" && value.name) ||
+        (typeof value.type === "string" && value.type);
+      if (hint) return `#${key + 1} ${hint}`;
+      return `#${key + 1}`;
+    }
   }
+  if (typeof key === "number") return `#${key + 1}`;
   return String(key);
 }
 

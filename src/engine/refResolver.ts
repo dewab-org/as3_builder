@@ -134,9 +134,16 @@ export function effectiveSchema(
   // then absorb the branch with the best property overlap. This surfaces
   // properties hidden inside then/oneOf constructs (e.g. Pool_Member's
   // serverAddresses) without auto-picking unions when no doc is available.
+  // Absorbing a branch can expose a further union (Policy_Action_Forward
+  // hides `select` in a oneOf inside its allOf), so keep resolving until no
+  // new one appears.
   if (docNode !== undefined) {
-    const union = out.anyOf ?? out.oneOf;
-    if (union) {
+    const seen = new Set<JsonSchema[]>();
+    for (let pass = 0; pass < 4; pass++) {
+      const union = out.anyOf ?? out.oneOf;
+      if (!union || seen.has(union)) break;
+      seen.add(union);
+
       let best: JsonSchema | undefined;
       let bestScore = -1;
       for (const branch of union) {
@@ -159,8 +166,64 @@ export function effectiveSchema(
           best = branch;
         }
       }
-      if (best) absorb(best);
+      if (best) {
+        absorb(best);
+        continue;
+      }
+      // Nothing matched. A union that gates on `required` can never match an
+      // object that doesn't have the key yet (Policy_Action_Forward's
+      // `select`), so offer every branch's properties as candidates — the
+      // user needs them to reach a valid state, and the validator still
+      // enforces the real constraint. Skipped for class-discriminated
+      // unions (Application members), where a class picker is the right UI.
+      if (union.length <= UNION_CANDIDATE_LIMIT && !isClassUnion(root, union)) {
+        for (const branch of union) mergeCandidateProperties(root, out, branch);
+      }
     }
   }
   return out;
+}
+
+// Unions bigger than this are structural (every AS3 class, every monitor
+// type); offering all their properties at once would be noise, not help.
+const UNION_CANDIDATE_LIMIT = 12;
+
+function isClassUnion(root: JsonSchemaRoot, union: JsonSchema[]): boolean {
+  return union.some((branch) => {
+    try {
+      const b = deref(root, branch);
+      const cls = b.properties?.class;
+      if (!cls) return false;
+      const c = deref(root, cls);
+      return c.const !== undefined || Array.isArray(c.enum);
+    } catch {
+      return false;
+    }
+  });
+}
+
+// Merge only the property definitions of a branch (never its `required` or
+// type constraints) so unmatched alternatives become offerable options.
+function mergeCandidateProperties(
+  root: JsonSchemaRoot,
+  target: JsonSchema,
+  branch: JsonSchema,
+  depth = 0
+): void {
+  if (depth > 3) return;
+  let b: JsonSchema;
+  try {
+    b = deref(root, branch);
+  } catch {
+    return;
+  }
+  if (b.properties) {
+    const props = (target.properties ??= {});
+    for (const [name, schema] of Object.entries(b.properties)) {
+      if (!(name in props)) props[name] = schema;
+    }
+  }
+  for (const sub of b.allOf ?? []) {
+    mergeCandidateProperties(root, target, sub, depth + 1);
+  }
 }
