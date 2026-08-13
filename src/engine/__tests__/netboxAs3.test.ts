@@ -91,6 +91,110 @@ describe("netbox → AS3 renderer (golden fixture)", () => {
   });
 });
 
+describe("policy rendering (NetBox stores the whole AS3 object in rules)", () => {
+  const standardPolicy = (name: string, ruleName: string) => ({
+    id: "1",
+    name,
+    policy_type: "standard",
+    description: `desc ${name}`,
+    rules: {
+      class: "Endpoint_Policy",
+      strategy: "first-match",
+      rules: [
+        {
+          name: ruleName,
+          actions: [{ type: "forward", event: "request" }],
+          conditions: [],
+        },
+      ],
+    },
+  });
+
+  const irulePolicy = (name: string, tcl: string) => ({
+    id: "2",
+    name,
+    policy_type: "irule",
+    rules: { class: "iRule", iRule: tcl },
+  });
+
+  function renderWith(policies: unknown[]) {
+    return renderNetboxApp({
+      id: "600",
+      name: "app600",
+      virtual_servers: [
+        {
+          name: "vs1",
+          protocol: "https",
+          service_port: 443,
+          virtual_addresses: [{ address: "10.0.0.20/32" }],
+          policies,
+        },
+      ],
+    });
+  }
+
+  it("unwraps rules.rules for a single standard policy", () => {
+    const { declaration, warnings } = renderWith([
+      standardPolicy("pol-web", "rule-web"),
+    ]);
+    const app = declaration.app600 as Dict;
+    const policy = app["pol-web"] as Dict;
+    expect(policy.class).toBe("Endpoint_Policy");
+    expect(policy.rules).toHaveLength(1);
+    expect((policy.rules as Dict[])[0].name).toBe("rule-web");
+    expect(policy.strategy).toBe("first-match");
+    expect((app.vs1 as Dict).policyEndpoint).toEqual({ use: "pol-web" });
+    expect(warnings).toEqual([]);
+  });
+
+  it("merges several standard policies, preserving every rule", () => {
+    const { declaration } = renderWith([
+      standardPolicy("pol-api", "rule-api"),
+      standardPolicy("pol-web", "rule-web"),
+    ]);
+    const app = declaration.app600 as Dict;
+    const merged = app["vs1-endpoint-policy"] as Dict;
+    expect(merged.rules).toHaveLength(2);
+    expect((merged.rules as Dict[]).map((r) => r.name)).toEqual([
+      "rule-api",
+      "rule-web",
+    ]);
+    expect(merged.strategy).toBe("first-match");
+    expect((app.vs1 as Dict).policyEndpoint).toEqual({
+      use: "vs1-endpoint-policy",
+    });
+  });
+
+  it("base64-encodes the Tcl itself, not the wrapper JSON", () => {
+    const tcl = 'when HTTP_REQUEST {\n  HTTP::respond 301\n}';
+    const { declaration } = renderWith([irulePolicy("rs-pol-redirect", tcl)]);
+    const app = declaration.app600 as Dict;
+    const rule = app["rs-pol-redirect"] as Dict;
+    const encoded = (rule.iRule as Dict).base64 as string;
+    expect(Buffer.from(encoded, "base64").toString("utf-8")).toBe(tcl);
+    expect((app.vs1 as Dict).iRules).toEqual(["rs-pol-redirect"]);
+  });
+
+  it("accepts the legacy iRule shape (rules.rules as a string)", () => {
+    const tcl = "when CLIENT_ACCEPTED { log local0. hi }";
+    const { declaration } = renderWith([
+      { id: "3", name: "legacy", policy_type: "irule", rules: { rules: tcl } },
+    ]);
+    const rule = (declaration.app600 as Dict).legacy as Dict;
+    expect(
+      Buffer.from((rule.iRule as Dict).base64 as string, "base64").toString("utf-8")
+    ).toBe(tcl);
+  });
+
+  it("warns instead of emitting an empty policy when the shape is wrong", () => {
+    const { declaration, warnings } = renderWith([
+      { id: "4", name: "broken", policy_type: "standard", rules: [] },
+    ]);
+    expect((declaration.app600 as Dict).broken).toBeUndefined();
+    expect(warnings.some((w) => w.includes("broken"))).toBe(true);
+  });
+});
+
 describe("netbox renderer edge cases", () => {
   it("sanitizes AS3 keys", () => {
     expect(sanitizeKey("9bad name!")).toBe("A_9bad_name_");

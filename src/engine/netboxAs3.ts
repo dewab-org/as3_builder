@@ -4,6 +4,8 @@
 // the GraphQL application shape (APPLICATION_GRAPH_QUERY below), matching
 // what f5_toolbox queries.
 
+import { isPlainObject } from "./types";
+
 export interface NetboxRenderResult {
   declaration: Record<string, unknown>;
   warnings: string[];
@@ -300,36 +302,102 @@ class Renderer {
     return this.addObject(key, obj);
   }
 
+  // NetBox's Policy.rules holds the COMPLETE AS3 object for the policy —
+  // {class: "Endpoint_Policy", rules: [...], strategy} for standard policies
+  // and {class: "iRule", iRule: "<tcl>"} for iRules — not a bare rules array.
+  private policyRules(p: Dict): unknown[] | null {
+    const r = p.rules;
+    if (isPlainObject(r) && Array.isArray(r.rules)) return r.rules;
+    return null;
+  }
+
+  private policyStrategy(p: Dict): string | undefined {
+    const r = p.rules;
+    return isPlainObject(r) && typeof r.strategy === "string"
+      ? r.strategy
+      : undefined;
+  }
+
+  // Canonical shape stores the Tcl in rules.iRule; older records used
+  // rules.rules (f5_toolbox accepts both, so we do too).
+  private iRuleSource(p: Dict): string | null {
+    const r = p.rules;
+    if (!isPlainObject(r)) return null;
+    const source = typeof r.iRule === "string" ? r.iRule : r.rules;
+    return typeof source === "string" && source.trim() !== "" ? source : null;
+  }
+
   renderPolicies(vsKey: string, service: Dict, policies: Dict[]): void {
     const standard = policies.filter((p) => p.policy_type === "standard");
     const irules = policies.filter((p) => p.policy_type === "irule");
 
     if (standard.length === 1) {
       const p = standard[0];
-      const key = sanitizeKey(String(p.name));
-      const obj: Dict = { class: "Endpoint_Policy", rules: p.rules ?? [] };
-      if (p.description) obj.remark = sanitizeLabel(String(p.description));
-      service.policyEndpoint = { use: this.addObject(key, obj) };
+      const rules = this.policyRules(p);
+      if (!rules) {
+        this.warn(
+          `Policy "${p.name}": rules data is not in the expected AS3 shape ({rules: [...]}) — not rendered`
+        );
+      } else {
+        const key = sanitizeKey(String(p.name));
+        const obj: Dict = { class: "Endpoint_Policy", rules };
+        const strategy = this.policyStrategy(p);
+        if (strategy) obj.strategy = strategy;
+        if (p.description) obj.label = sanitizeLabel(String(p.description));
+        if (rules.length === 0)
+          this.warn(`Policy "${p.name}" has no rules in NetBox`);
+        service.policyEndpoint = { use: this.addObject(key, obj) };
+      }
     } else if (standard.length > 1) {
-      // f5_toolbox merges multiple standard policies into one per-VS policy.
+      // BIG-IP rejects several forwarding policies on one virtual server, so
+      // f5_toolbox merges same-virtual standard policies into one.
+      const merged: unknown[] = [];
+      const strategies = new Set<string>();
+      for (const p of standard) {
+        const rules = this.policyRules(p);
+        if (!rules) {
+          this.warn(
+            `Policy "${p.name}": rules data is not in the expected AS3 shape — omitted from the merged policy`
+          );
+          continue;
+        }
+        merged.push(...rules);
+        const strategy = this.policyStrategy(p);
+        if (strategy) strategies.add(strategy);
+      }
       const key = sanitizeKey(`${vsKey}-endpoint-policy`);
-      const rules = standard.flatMap((p) =>
-        Array.isArray(p.rules) ? (p.rules as unknown[]) : []
-      );
-      this.addObject(key, { class: "Endpoint_Policy", rules });
-      service.policyEndpoint = { use: key };
+      const obj: Dict = {
+        class: "Endpoint_Policy",
+        rules: merged,
+        label: sanitizeLabel(`Merged endpoint policies for ${vsKey}`),
+      };
+      if (strategies.size === 1) {
+        obj.strategy = [...strategies][0];
+      } else if (strategies.size > 1) {
+        this.warn(
+          `Virtual server "${vsKey}": merged policies disagree on strategy (${[...strategies].join(", ")}) — strategy omitted`
+        );
+      }
+      if (merged.length === 0)
+        this.warn(`Virtual server "${vsKey}": merged policy has no rules`);
+      service.policyEndpoint = { use: this.addObject(key, obj) };
     }
 
     if (irules.length > 0) {
       const names: string[] = [];
       for (const p of irules) {
+        const source = this.iRuleSource(p);
+        if (source === null) {
+          this.warn(
+            `iRule policy "${p.name}" has no Tcl source (rules.iRule) — not rendered`
+          );
+          continue;
+        }
         const key = sanitizeKey(String(p.name));
-        const content =
-          typeof p.rules === "string" ? p.rules : JSON.stringify(p.rules ?? "");
-        this.addObject(key, { class: "iRule", iRule: { base64: toBase64(content) } });
+        this.addObject(key, { class: "iRule", iRule: { base64: toBase64(source) } });
         names.push(key);
       }
-      service.iRules = names;
+      if (names.length > 0) service.iRules = names;
     }
   }
 
