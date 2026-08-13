@@ -1,10 +1,15 @@
-# Extends gitleaks' default rules. The only exemption is the disposable
-# self-signed key used to stand in for real certificate material during BIG-IP
-# dry runs — see the header of the exempted file for why it exists and why it
-# is worthless.
+# Extends gitleaks' default rules. One exemption: the disposable self-signed
+# key used to stand in for real certificate material during BIG-IP dry runs.
+#
+# Scope matters here. The file stores the key base64-encoded so it does NOT
+# reach the built bundle in a form scanners recognise — the container image
+# scans clean, which is what protects anyone consuming it. gitleaks decodes
+# base64 while scanning source, so it still sees it here; this allowlist is
+# for that one source file only. Every other path, and the artifact itself,
+# stays fully scanned.
 [extend]
 useDefault = true
 
 [[allowlists]]
-description = "Throwaway dry-run certificate placeholder"
+description = "Throwaway dry-run certificate placeholder (source only)"
 paths = ['''src/engine/dryRunCertificate\.ts''']
