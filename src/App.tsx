@@ -388,6 +388,26 @@ export default function App() {
 
   // Setting/changing an object's class: write the class, stub every
   // required property the object is missing, and flash them as needing input.
+  // Append a schema-stubbed object item (e.g. a pool member with its
+  // required props) and focus it once the text has propagated.
+  const handleAppendObjectItem = useCallback(
+    (arrayPath: JsonPath, index: number) => {
+      const itemPath = [...arrayPath, index];
+      const schema = resolveSchemaForPath(root, registry, lastGoodDoc, itemPath);
+      let stub: unknown = {};
+      if (schema) {
+        try {
+          stub = stubValue(root, schema);
+        } catch {
+          stub = {};
+        }
+      }
+      const next = applyEdit(itemPath, stub);
+      navigateWhenReady(itemPath, next, { flash: true });
+    },
+    [root, registry, lastGoodDoc, applyEdit, navigateWhenReady]
+  );
+
   // Drop from the context panel into the editor: insert into the nearest
   // valid ancestor at the drop point (PLAN.md §8).
   const handleChipDrop = useCallback(
@@ -655,6 +675,7 @@ export default function App() {
               getInlineSpec={getInlineSpec}
               onEditValue={handleEdit}
               onEditMany={applyEditMany}
+              onAppendObjectItem={handleAppendObjectItem}
             />
           )}
           <div
