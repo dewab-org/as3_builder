@@ -227,13 +227,16 @@ export default function App() {
   // What the pointer is over, in either view. Drives the info pane's hover
   // preview; the cursor-driven context underneath is left alone.
   const [hoverPath, setHoverPath] = useState<JsonPath | null>(null);
+  // Resolve against the live text, not debouncedText: the offset comes from
+  // Monaco's current model, so during the parse debounce the two disagree and
+  // the preview would describe the wrong node.
   const hoverOffsetToPath = useCallback(
     (offset: number | null) => {
       if (offset === null) return setHoverPath(null);
-      const path = getLocation(debouncedText, offset).path as JsonPath;
+      const path = getLocation(text, offset).path as JsonPath;
       setHoverPath(path.length > 0 ? path : null);
     },
-    [debouncedText]
+    [text]
   );
 
   // Baseline = the document as loaded/saved; anything differing from it is

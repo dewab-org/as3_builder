@@ -7,7 +7,7 @@ import tseslint from "typescript-eslint";
 export default tseslint.config(
   {
     // Build output and the generated documentation/schema artifacts.
-    ignores: ["dist", "src/schemas/*.json"],
+    ignores: ["dist", "dist-server", "src/schemas/*.json"],
   },
   {
     files: ["**/*.{ts,tsx}"],

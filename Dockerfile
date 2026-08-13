@@ -51,5 +51,4 @@ CMD ["dist-server/index.mjs"]
 
 LABEL org.opencontainers.image.title="AS3 Builder" \
       org.opencontainers.image.description="Schema-aware editor for F5 AS3 per-app declarations, with NetBox and BIG-IP integration" \
-      org.opencontainers.image.source="https://github.com/dewab-org/as3_builder" \
-      org.opencontainers.image.licenses="MIT"
+      org.opencontainers.image.source="https://github.com/dewab-org/as3_builder"

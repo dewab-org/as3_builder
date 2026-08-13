@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { JsonPath } from "../engine";
 import type { TmshEquivalency } from "../engine";
+import { CHIP_MIME, f5DocUrl } from "./chips";
 
 export interface ChipPayload {
   name: string;
@@ -8,8 +9,6 @@ export interface ChipPayload {
   isClassObject?: boolean;
   className?: string;
 }
-
-export const CHIP_MIME = "application/x-as3-prop";
 
 export interface AddableDetail {
   type?: string;
@@ -30,10 +29,6 @@ export interface AddableDetail {
   allowedFields?: string[];
   tmsh?: TmshEquivalency;
   schemaReference?: string;
-}
-
-export function f5DocUrl(className: string): string {
-  return `https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schemaref/${encodeURIComponent(className)}.schema.json.html`;
 }
 
 export interface AddableItem {

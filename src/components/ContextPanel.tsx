@@ -21,10 +21,10 @@ import HoverDetail from "./HoverDetail";
 import PropertyWidget from "./PropertyWidget";
 import ConfirmButton from "./ConfirmButton";
 import AddableList, {
-  f5DocUrl,
   type AddableItem,
   type ChipPayload,
 } from "./AddableList";
+import { f5DocUrl } from "./chips";
 
 interface ContextPanelProps {
   context: NodeContext;

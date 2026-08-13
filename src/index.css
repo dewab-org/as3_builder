@@ -600,6 +600,22 @@ body {
   margin-top: 4px;
 }
 
+/* Wraps the longer prose blocks (behavior, tmsh) inside a detail card,
+   separating them from the terse schema line above. */
+.detail-expanded {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-faint);
+}
+
+.detail-expanded code {
+  font-size: 11px;
+  background: var(--panel-2);
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
 .detail-kv-label {
   color: var(--faint);
   font-size: 10px;
