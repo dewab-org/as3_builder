@@ -30,6 +30,9 @@ interface EditorPaneProps {
   /** Delete the row (property or array element) whose value starts on the
    * given line. Receives the path returned by deletableRowPath. */
   onDeleteRow?: (path: unknown) => void;
+  /** A chip/row from the context panel was dropped at this text offset
+   * (null when the drop landed below the last line). */
+  onChipDrop?: (payloadJson: string, offset: number | null) => void;
 }
 
 export default function EditorPane(props: EditorPaneProps) {
@@ -139,6 +142,33 @@ export default function EditorPane(props: EditorPaneProps) {
           ]);
         });
         editorInstance.onMouseLeave(() => clearGlyph());
+
+        // Drag-and-drop from the context panel: Monaco's DOM node needs the
+        // dragover preventDefault for drops to be allowed at all.
+        const domNode = editorInstance.getDomNode();
+        if (domNode) {
+          domNode.addEventListener("dragover", (e) => {
+            if (e.dataTransfer?.types.includes("application/x-as3-prop")) {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "copy";
+            }
+          });
+          domNode.addEventListener("drop", (e) => {
+            const payload = e.dataTransfer?.getData("application/x-as3-prop");
+            if (!payload) return;
+            e.preventDefault();
+            const target = editorInstance.getTargetAtClientPoint(
+              e.clientX,
+              e.clientY
+            );
+            const model = editorInstance.getModel();
+            const offset =
+              target?.position && model
+                ? model.getOffsetAt(target.position)
+                : null;
+            propsRef.current.onChipDrop?.(payload, offset);
+          });
+        }
         editorInstance.onMouseDown((e) => {
           if (
             e.target.type === monacoApi.editor.MouseTargetType.GUTTER_GLYPH_MARGIN &&

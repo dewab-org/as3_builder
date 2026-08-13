@@ -12,6 +12,7 @@ import type { ChipPayload } from "./components/AddableList";
 import { DEFAULT_SCHEMA_ID, getSchema } from "./schemas";
 import { getTemplate } from "./templates";
 import { useDocument } from "./hooks/useDocument";
+import { useValidation } from "./hooks/useValidation";
 import {
   applicationMemberClasses,
   buildClassRegistry,
@@ -19,9 +20,11 @@ import {
   getAtPath,
   getContext,
   isPlainObject,
+  resolveDrop,
   resolveSchemaForPath,
   stubValue,
   xrefCandidatesAt,
+  type DropPayload,
   type JsonPath,
   type JsonSchemaRoot,
 } from "./engine";
@@ -61,6 +64,15 @@ export default function App() {
   const [showNetboxDialog, setShowNetboxDialog] = useState(false);
   const [showPushDialog, setShowPushDialog] = useState(false);
   const [theme, setTheme] = useState<Theme>(initialTheme);
+  const [toast, setToast] = useState<string | null>(null);
+  const [showIssues, setShowIssues] = useState(false);
+  const toastTimer = useRef<ReturnType<typeof setTimeout>>();
+
+  const flashToast = useCallback((msg: string) => {
+    setToast(msg);
+    clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 3500);
+  }, []);
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const modifiedDecosRef = useRef<editor.IEditorDecorationsCollection | null>(
     null
@@ -238,6 +250,12 @@ export default function App() {
     [applyEdit]
   );
 
+  const { issues, ready: validatorReady } = useValidation(
+    schemaEntry.schema,
+    schemaEntry.id,
+    lastGoodDoc
+  );
+
   const xrefAt = useCallback(
     (editorText: string, offset: number) =>
       xrefCandidatesAt(root, registry, editorText, offset),
@@ -270,6 +288,42 @@ export default function App() {
 
   // Setting/changing an object's class: write the class, stub every
   // required property the object is missing, and flash them as needing input.
+  // Drop from the context panel into the editor: insert into the nearest
+  // valid ancestor at the drop point (PLAN.md §8).
+  const handleChipDrop = useCallback(
+    (payloadJson: string, offset: number | null) => {
+      let payload: DropPayload;
+      try {
+        payload = JSON.parse(payloadJson) as DropPayload;
+      } catch {
+        return;
+      }
+      const editorText = editorRef.current?.getModel()?.getValue() ?? text;
+      const doc = parse(editorText, [], { allowTrailingComma: true }) as unknown;
+      if (doc === undefined) {
+        flashToast("Cannot insert while the JSON is invalid");
+        return;
+      }
+      const dropOffset = offset ?? editorText.length - 1;
+      const dropPath = getLocation(editorText, dropOffset).path as JsonPath;
+      const res = resolveDrop(root, registry, doc, dropPath, payload);
+      if (!res.ok) {
+        flashToast(res.reason);
+        return;
+      }
+      const targetPath = [...res.parentPath, res.key];
+      const next = applyEdit(targetPath, res.value);
+      const requiredChildren = isPlainObject(res.value)
+        ? Object.keys(res.value).filter((k) => k !== "class")
+        : [];
+      navigateWhenReady(targetPath, next, {
+        flashChildren: requiredChildren.length > 0 ? requiredChildren : undefined,
+        flash: requiredChildren.length === 0,
+      });
+    },
+    [root, registry, text, applyEdit, navigateWhenReady, flashToast]
+  );
+
   const handleClassChange = useCallback(
     (path: JsonPath, className: string) => {
       const info = registry.get(className);
@@ -444,6 +498,7 @@ export default function App() {
             onCursorOffsetChange={setCursorOffset}
             choiceValueStartAt={choiceValueStartAt}
             xrefCandidatesAt={xrefAt}
+            onChipDrop={handleChipDrop}
             deletableRowPath={deletableRowPath}
             onDeleteRow={handleDeleteRow}
           />
@@ -462,19 +517,52 @@ export default function App() {
           />
         </div>
       </div>
-      <div className="errorbar">
-        <span className="statusbar-crumb" title="Cursor context — new properties and objects insert here">
-          ◎ {context.breadcrumb}
-        </span>
-        {context.isApplication && (
-          <span className="statusbar-hint">new objects drop into this application</span>
+      <div className="errorbar-wrap">
+        {showIssues && issues.length > 0 && (
+          <div className="issue-list">
+            {issues.map((issue, i) => (
+              <div
+                key={`${issue.instancePath}-${i}`}
+                className="issue-row"
+                onClick={() => navigateToPath(issue.path)}
+              >
+                <span className="issue-path">{issue.instancePath}</span>
+                <span>{issue.message}</span>
+              </div>
+            ))}
+          </div>
         )}
-        {!context.isApplication && context.className && (
-          <span className="statusbar-hint">
-            new properties drop into this {context.className}
+        <div className="errorbar">
+          <span className="statusbar-crumb" title="Cursor context — new properties and objects insert here">
+            ◎ {context.breadcrumb}
           </span>
-        )}
+          {context.isApplication && (
+            <span className="statusbar-hint">new objects drop into this application</span>
+          )}
+          {!context.isApplication && context.className && (
+            <span className="statusbar-hint">
+              new properties drop into this {context.className}
+            </span>
+          )}
+          <span className="statusbar-spacer" />
+          {isStale ? (
+            <span className="statusbar-issues warn">syntax error — fix JSON</span>
+          ) : !validatorReady ? (
+            <span className="statusbar-hint">validating…</span>
+          ) : issues.length === 0 ? (
+            <span className="ok">✓ schema valid</span>
+          ) : (
+            <button
+              className="statusbar-issues"
+              onClick={() => setShowIssues(!showIssues)}
+              title="Click to show/hide the error list"
+            >
+              ✗ {issues.length} schema error{issues.length === 1 ? "" : "s"}
+            </button>
+          )}
+        </div>
       </div>
+      {toast && <div className="toast">{toast}</div>}
     </div>
   );
 }

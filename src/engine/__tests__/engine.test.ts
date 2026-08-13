@@ -11,6 +11,7 @@ import { getContext, getContextForPath, xrefCandidatesAt } from "../context";
 import { stubValue } from "../stubber";
 import { indexClassInstances } from "../docIndex";
 import { validateValue } from "../validation";
+import { resolveDrop } from "../inserter";
 
 const root = perAppSchema as unknown as JsonSchemaRoot;
 const registry = buildClassRegistry(root);
@@ -330,6 +331,68 @@ describe("xref candidates", () => {
   it("returns null for non-reference strings", () => {
     const offset = text.indexOf('"10.0.0.1"') + 2;
     expect(xrefCandidatesAt(root, registry, text, offset)).toBeNull();
+  });
+});
+
+describe("inserter (drag-drop resolution)", () => {
+  it("inserts a property at the deepest valid ancestor", () => {
+    // Drop point inside the pool member; virtualAddresses only fits the Service.
+    const res = resolveDrop(root, registry, DOC, ["myApp", "web", "pool"], {
+      name: "virtualPort",
+    });
+    expect(res).toMatchObject({
+      ok: true,
+      parentPath: ["myApp", "web"],
+      key: "virtualPort",
+    });
+  });
+
+  it("walks up past objects that already have the property", () => {
+    const res = resolveDrop(
+      root,
+      registry,
+      DOC,
+      ["myApp", "web", "virtualAddresses", 0],
+      { name: "virtualAddresses" }
+    );
+    // web already has it; no other ancestor allows it
+    expect(res.ok).toBe(false);
+  });
+
+  it("drops loadBalancingMode into the pool from inside a member", () => {
+    const res = resolveDrop(
+      root,
+      registry,
+      DOC,
+      ["myApp", "pool1", "members", 0, "servicePort"],
+      { name: "loadBalancingMode" }
+    );
+    expect(res).toMatchObject({
+      ok: true,
+      parentPath: ["myApp", "pool1"],
+      key: "loadBalancingMode",
+    });
+  });
+
+  it("creates class objects in the nearest Application with a unique name", () => {
+    const res = resolveDrop(root, registry, DOC, ["myApp", "web"], {
+      name: "Pool",
+      isClassObject: true,
+      className: "Pool",
+    });
+    expect(res).toMatchObject({ ok: true, parentPath: ["myApp"], key: "newPool1" });
+    if (res.ok) {
+      expect((res.value as Record<string, unknown>).class).toBe("Pool");
+    }
+  });
+
+  it("rejects class drops outside an Application", () => {
+    const res = resolveDrop(root, registry, DOC, ["schemaVersion"], {
+      name: "Pool",
+      isClassObject: true,
+      className: "Pool",
+    });
+    expect(res.ok).toBe(false);
   });
 });
 

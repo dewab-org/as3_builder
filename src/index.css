@@ -187,14 +187,73 @@ body {
   padding: 8px;
 }
 
-.errorbar {
+.errorbar-wrap {
   flex: 0 0 auto;
-  max-height: 120px;
-  overflow: auto;
   border-top: 1px solid var(--border);
   background: var(--panel);
+}
+
+.errorbar {
   font-size: 12px;
   padding: 4px 12px;
+}
+
+.issue-list {
+  max-height: 140px;
+  overflow: auto;
+  border-bottom: 1px solid var(--border-light);
+  font-size: 12px;
+}
+
+.issue-row {
+  display: flex;
+  gap: 10px;
+  padding: 2px 12px;
+  cursor: pointer;
+}
+
+.issue-row:hover {
+  background: var(--select-hover);
+}
+
+.issue-path {
+  color: var(--danger);
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  flex: 0 0 auto;
+}
+
+.statusbar-spacer {
+  flex: 1 1 auto;
+}
+
+.statusbar-issues {
+  border: none;
+  background: none;
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+
+.statusbar-issues.warn {
+  color: var(--warn-text);
+  cursor: default;
+}
+
+.toast {
+  position: fixed;
+  bottom: 44px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--danger);
+  color: #ffffff;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 13px;
+  box-shadow: 0 4px 16px var(--shadow-strong);
+  z-index: 200;
 }
 
 .errorbar .ok {
