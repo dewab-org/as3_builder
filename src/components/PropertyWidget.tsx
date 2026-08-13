@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import type { JsonPath, PropertyInfo } from "../engine";
-import { validateValue } from "../engine";
+import { isBase64Wrapper, validateValue } from "../engine";
 import { DetailCard, type AddableDetail } from "./AddableList";
+import Base64Editor from "./Base64Editor";
 
 interface PropertyWidgetProps {
   prop: PropertyInfo;
@@ -35,6 +36,7 @@ export default function PropertyWidget({
   const [draft, setDraft] = useState(typeof value === "string" ? value : "");
   const [error, setError] = useState<string | undefined>();
   const [showInfo, setShowInfo] = useState(false);
+  const [showBase64, setShowBase64] = useState(false);
 
   const requiredEmpty = (v: string) =>
     prop.required && v === "" ? "Input required" : undefined;
@@ -57,7 +59,21 @@ export default function PropertyWidget({
 
   let control: React.ReactNode;
 
-  if (typeof value === "object" && value !== null) {
+  if (isBase64Wrapper(value)) {
+    // Base64-wrapped text (iRules, policy bodies, PEM): edit as cleartext.
+    control = (
+      <span className="pw-summary">
+        <span className="b64-badge">base64</span>
+        <button
+          className="pw-goto"
+          title={showBase64 ? "Hide decoded text" : "Edit decoded text"}
+          onClick={() => setShowBase64(!showBase64)}
+        >
+          {showBase64 ? "▾ decoded" : "▸ decoded"}
+        </button>
+      </span>
+    );
+  } else if (typeof value === "object" && value !== null) {
     // Objects and arrays are edited in place in the text; offer navigation.
     control = (
       <span className="pw-summary">
@@ -193,6 +209,14 @@ export default function PropertyWidget({
         </button>
       </div>
       {shownError && <div className="pw-error">{shownError}</div>}
+      {showBase64 && isBase64Wrapper(value) && (
+        <Base64Editor
+          wrapper={value}
+          onCommit={(v) => onEdit(propPath, v)}
+          onClose={() => setShowBase64(false)}
+          compact
+        />
+      )}
       {showInfo && detail && <DetailCard label={prop.name} detail={detail} />}
     </div>
   );

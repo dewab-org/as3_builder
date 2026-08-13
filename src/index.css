@@ -1412,6 +1412,94 @@ body {
   font-style: italic;
 }
 
+/* --- base64 cleartext window --- */
+
+.b64-badge {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--purple);
+  border: 1px solid var(--purple);
+  border-radius: 8px;
+  padding: 0 5px;
+  flex: 0 0 auto;
+}
+
+.b64-panel {
+  margin: 4px 0 6px;
+  border: 1px solid var(--purple);
+  border-radius: 6px;
+  /* deliberately unlike the normal editing surfaces: this is decoded data */
+  background: color-mix(in srgb, var(--purple) 8%, var(--panel));
+  padding: 6px 8px;
+}
+
+.b64-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+}
+
+.b64-note {
+  font-size: 11px;
+  color: var(--muted);
+  flex: 1 1 auto;
+}
+
+.b64-size {
+  font-size: 10px;
+  color: var(--faint);
+}
+
+.b64-text {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--text);
+  padding: 6px;
+  resize: vertical;
+}
+
+.b64-text[readonly] {
+  opacity: 0.75;
+  cursor: not-allowed;
+}
+
+.b64-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 5px;
+}
+
+.b64-actions button {
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.b64-actions button.primary {
+  background: var(--green-btn);
+  border-color: var(--green-btn);
+  color: #fff;
+}
+
+.b64-actions button.primary:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 /* --- editor decorations --- */
 
 .row-delete-glyph {
