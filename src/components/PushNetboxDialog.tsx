@@ -228,7 +228,10 @@ export default function PushNetboxDialog({
     }
   }
 
-  async function applyUpdate(change: ObjectChange): Promise<void> {
+  async function applyUpdate(
+    change: ObjectChange,
+    keyToId: Map<string, number>
+  ): Promise<void> {
     const { entry } = change;
     const base = `${PLUGIN_BASE}/${entry.endpoint}`;
     if (change.changes.length > 0) {
@@ -267,6 +270,36 @@ export default function PushNetboxDialog({
           });
           break;
         }
+        case "pool-monitors": {
+          const ids: number[] = [];
+          for (const key of op.keys) {
+            const id = keyToId.get(key);
+            if (id === undefined)
+              throw new Error(`monitor reference "${key}" does not resolve`);
+            ids.push(id);
+          }
+          await netboxRest(`${base}/${entry.id}/`, {
+            method: "PATCH",
+            body: { monitors: ids },
+          });
+          break;
+        }
+        case "vs-ref": {
+          let id: number | null = null;
+          if (op.targetKey !== null) {
+            const resolved = keyToId.get(op.targetKey);
+            if (resolved === undefined)
+              throw new Error(
+                `reference "${op.targetKey}" does not resolve to a NetBox object`
+              );
+            id = resolved;
+          }
+          await netboxRest(`${base}/${entry.id}/`, {
+            method: "PATCH",
+            body: { [op.field]: id },
+          });
+          break;
+        }
       }
     }
   }
@@ -290,7 +323,7 @@ export default function PushNetboxDialog({
       try {
         if (row.kind === "create")
           await applyCreate(row.create, keyToId, manifest.appId);
-        else if (row.kind === "update") await applyUpdate(row.change);
+        else if (row.kind === "update") await applyUpdate(row.change, keyToId);
         else
           await netboxRest(
             `${PLUGIN_BASE}/${row.del.entry.endpoint}/${row.del.entry.id}/`,

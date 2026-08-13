@@ -12,11 +12,13 @@ import type { ChipPayload } from "./components/AddableList";
 import { DEFAULT_SCHEMA_ID, getSchema } from "./schemas";
 import { getTemplate } from "./templates";
 import { useDocument } from "./hooks/useDocument";
+import { netboxSession } from "./netboxSession";
 import { useValidation } from "./hooks/useValidation";
 import {
   applicationMemberClasses,
   buildClassRegistry,
   effectiveSchema,
+  extrasFromAs3,
   getAtPath,
   getContext,
   isPlainObject,
@@ -30,6 +32,38 @@ import {
 } from "./engine";
 
 const INITIAL_TEXT = getTemplate("http-app").content;
+
+// Deep link contract (used by the future "Edit in AS3 Builder" callout in the
+// netbox-load-balancer plugin — see NETBOX-DEEPLINK-PLAN.md):
+//   ?netbox=<origin>          NetBox base URL; opens the Load dialog prefilled
+//   &app=<id>                 application id to load once connected
+//   &object=<endpoint>:<id>   jump to the object after loading (via manifest)
+//   &focus=<field>            highlight; "extra_parameters" flashes the props
+//                             that map to the NetBox extras field
+interface DeepLink {
+  netbox: string;
+  appId?: string;
+  object?: { endpoint: string; id: number };
+  focus?: string;
+}
+
+function parseDeepLink(): DeepLink | null {
+  const params = new URLSearchParams(window.location.search);
+  const netbox = params.get("netbox");
+  if (!netbox) return null;
+  let object: DeepLink["object"];
+  const objectParam = params.get("object");
+  if (objectParam) {
+    const m = /^([a-z-]+):(\d+)$/.exec(objectParam);
+    if (m) object = { endpoint: m[1], id: Number(m[2]) };
+  }
+  return {
+    netbox,
+    appId: params.get("app") ?? undefined,
+    object,
+    focus: params.get("focus") ?? undefined,
+  };
+}
 
 type Theme = "light" | "dark";
 
@@ -62,6 +96,16 @@ export default function App() {
   const [baselineText, setBaselineText] = useState(INITIAL_TEXT);
   const [showBigipDialog, setShowBigipDialog] = useState(false);
   const [showNetboxDialog, setShowNetboxDialog] = useState(false);
+  const deepLinkRef = useRef<DeepLink | null>(null);
+
+  // Deep link: prefill the NetBox connection and open the Load dialog.
+  useEffect(() => {
+    const link = parseDeepLink();
+    if (!link) return;
+    deepLinkRef.current = link;
+    netboxSession.url = link.netbox;
+    setShowNetboxDialog(true);
+  }, []);
   const [showPushDialog, setShowPushDialog] = useState(false);
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [toast, setToast] = useState<string | null>(null);
@@ -463,12 +507,57 @@ export default function App() {
       )}
       {showNetboxDialog && (
         <NetboxDialog
+          autoLoadAppId={deepLinkRef.current?.appId}
           onLoad={(newText) => {
             if (
               text === baselineText ||
               window.confirm("Replace the current document with the NetBox render?")
             ) {
               loadText(newText);
+              // Deep link: jump to the object the callout referenced, using
+              // the provenance manifest to map endpoint:id → AS3 key.
+              const link = deepLinkRef.current;
+              if (link?.object) {
+                deepLinkRef.current = null;
+                const declId = String(
+                  (parse(newText, [], { allowTrailingComma: true }) as Record<
+                    string,
+                    unknown
+                  >)?.id ?? ""
+                );
+                const manifest = netboxSession.manifests.get(declId);
+                const entry = manifest?.entries.find(
+                  (e) =>
+                    e.endpoint === link.object!.endpoint &&
+                    e.id === link.object!.id
+                );
+                if (manifest && entry) {
+                  const path = entry.isApplication
+                    ? [manifest.appKey]
+                    : [manifest.appKey, entry.as3Key];
+                  let flashChildren: string[] | undefined;
+                  if (link.focus === "extra_parameters") {
+                    const obj = getAtPath(
+                      parse(newText, [], { allowTrailingComma: true }),
+                      path
+                    );
+                    if (isPlainObject(obj)) {
+                      flashChildren = Object.keys(
+                        extrasFromAs3(entry.endpoint, obj) ?? {}
+                      );
+                    }
+                  } else if (link.focus) {
+                    flashChildren = [link.focus];
+                  }
+                  navigateWhenReady(path, newText, {
+                    flashChildren:
+                      flashChildren && flashChildren.length > 0
+                        ? flashChildren
+                        : undefined,
+                    flash: !flashChildren || flashChildren.length === 0,
+                  });
+                }
+              }
             }
           }}
           onClose={() => setShowNetboxDialog(false)}

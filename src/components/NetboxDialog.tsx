@@ -15,6 +15,8 @@ import {
 interface NetboxDialogProps {
   onLoad: (text: string) => void;
   onClose: () => void;
+  /** Deep link: load this application automatically once connected. */
+  autoLoadAppId?: string;
 }
 
 // Fuzzy match: rank contiguous substring hits above in-order subsequence
@@ -34,7 +36,11 @@ export function fuzzyRank(name: string, query: string): number | null {
   return 2;
 }
 
-export default function NetboxDialog({ onLoad, onClose }: NetboxDialogProps) {
+export default function NetboxDialog({
+  onLoad,
+  onClose,
+  autoLoadAppId,
+}: NetboxDialogProps) {
   const [url, setUrl] = useState(netboxSession.url);
   const [username, setUsername] = useState(netboxSession.username);
   const [password, setPassword] = useState(netboxSession.password);
@@ -75,7 +81,12 @@ export default function NetboxDialog({ onLoad, onClose }: NetboxDialogProps) {
       );
       netboxSession.apps = list;
       setApps(list);
-      if (list.length > 0) setSelectedApp(list[0].id);
+      if (autoLoadAppId && list.some((a) => a.id === autoLoadAppId)) {
+        setSelectedApp(autoLoadAppId);
+        void loadApp(autoLoadAppId);
+      } else if (list.length > 0) {
+        setSelectedApp(list[0].id);
+      }
     } catch (err) {
       invalidateNetboxAuth(); // stale token? re-provision next time
       setError(String(err instanceof Error ? err.message : err));

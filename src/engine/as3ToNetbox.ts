@@ -36,9 +36,19 @@ export interface ManifestEntry {
   members?: MemberRow[];
   /** Virtual-server entries: VIP addresses as loaded (W2). */
   vips?: { id: number; address: string }[];
+  /** Pool entries: monitor AS3 keys as loaded (W4). */
+  monitorKeys?: string[];
+  /** Virtual-server entries: relation names as loaded (W4). */
+  refNames?: {
+    backend_pool: string | null;
+    ssl_profile: string | null;
+    server_ssl_profile: string | null;
+  };
+  /** The application-level entry (label/extras map to the app object). */
+  isApplication?: boolean;
 }
 
-/** Granular write operations beyond a scalar PATCH (W2). */
+/** Granular write operations beyond a scalar PATCH (W2/W4). */
 export type WriteOp =
   | {
       op: "member-create";
@@ -53,6 +63,17 @@ export type WriteOp =
       addresses: string[]; // full desired set, with masks
       adds: string[];
       removes: string[];
+      label: string;
+    }
+  | {
+      op: "pool-monitors";
+      keys: string[]; // monitor AS3 keys, resolved to ids at apply
+      label: string;
+    }
+  | {
+      op: "vs-ref";
+      field: "backend_pool" | "ssl_profile" | "server_ssl_profile";
+      targetKey: string | null; // null clears the reference
       label: string;
     };
 
@@ -145,6 +166,12 @@ const PROTOCOL_BY_CLASS: Record<string, string> = {
   Service_HTTPS: "https",
   Service_UDP: "udp",
 };
+
+// The renderer truncates labels/remarks to 64 chars; snapshot descriptions
+// must match or long descriptions would false-diff on every round trip.
+function desc64(v: unknown): string {
+  return String(v ?? "").slice(0, 64);
+}
 
 function stripMask(address: string): string {
   return String(address).replace(/\/\d+$/, "");
@@ -250,21 +277,89 @@ function vipAddressesFromAs3(
 // field set: one from the NetBox graph node (load time), one from the edited
 // AS3 object (push time). Diffing them yields the PATCH body.
 
+// AS3 properties accounted for by other machinery, per endpoint. Everything
+// ELSE on the object is treated as extra_parameters (or conditions/options)
+// and pushed to the JSON catch-all field (W4).
+const NON_EXTRA_PROPS: Record<string, string[]> = {
+  "virtual-servers": [
+    "class",
+    "virtualPort",
+    "remark",
+    "enable",
+    "virtualType",
+    "persistenceMethods",
+    "virtualAddresses", // W2 op
+    "pool", // W4 ref op
+    "serverTLS", // W4 ref op
+    "clientTLS", // W4 ref op
+    "snat", // relation, noted
+    "policyEndpoint", // relation, noted
+    "iRules", // relation, noted
+    "profileTCP", // relation, noted
+    "profileHTTP", // relation, noted
+  ],
+  "backend-pools": [
+    "class",
+    "loadBalancingMode",
+    "label",
+    "minimumMembersActive",
+    "members", // W2 ops
+    "monitors", // W4 op
+  ],
+  monitors: ["class", "monitorType", "interval", "timeout", "label"],
+  "ssl-profiles": [
+    "class",
+    "ciphers",
+    "authenticationMode",
+    "tls1_0Enabled",
+    "tls1_1Enabled",
+    "tls1_2Enabled",
+    "tls1_3Enabled",
+    "certificates", // relation, noted
+    "clientCertificate", // relation, noted
+    "cipherGroup", // relation, noted
+  ],
+  applications: ["class", "label"],
+};
+
+// The JSON catch-all field name per endpoint.
+const EXTRA_FIELD: Record<string, string> = {
+  "virtual-servers": "extra_parameters",
+  "backend-pools": "extra_parameters",
+  monitors: "conditions",
+  "ssl-profiles": "options",
+  applications: "extra_parameters",
+};
+
+// Complement of the handled props = the object's extras. For applications,
+// member objects (anything with a class) are excluded too.
+export function extrasFromAs3(endpoint: string, obj: Dict): Dict | null {
+  const known = new Set(NON_EXTRA_PROPS[endpoint] ?? []);
+  const out: Dict = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (known.has(k)) continue;
+    if (endpoint === "applications" && isPlainObject(v) && "class" in v) continue;
+    out[k] = v;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
 function vsFieldsFromNetbox(vs: Dict): Dict {
   return {
     protocol: vs.protocol,
     service_port: vs.service_port,
-    description: vs.description ?? "",
+    description: desc64(vs.description),
     enabled: vs.enabled !== false,
     vs_type: vs.vs_type ?? "standard",
     persistence: vs.persistence ?? [],
+    extra_parameters: vs.extra_parameters ?? null, // snapshot only
   };
 }
 
 function vsFieldsFromAs3(svc: Dict): { fields: Dict; unsupported: string[] } {
   const unsupported: string[] = [];
   const fields: Dict = {
-    description: svc.remark ?? "",
+    description: desc64(svc.remark),
     enabled: svc.enable !== false,
     vs_type: svc.virtualType ?? "standard",
     persistence: svc.persistenceMethods ?? [],
@@ -283,9 +378,10 @@ function poolFieldsFromNetbox(pool: Dict): Dict {
   const rawLb = pool.load_balancing_algorithm as string | undefined;
   return {
     load_balancing_algorithm: rawLb ? (LEGACY_LB_ALIASES[rawLb] ?? rawLb) : null,
-    description: pool.description ?? "",
+    description: desc64(pool.description),
     priority_group_activation: pool.priority_group_activation === true,
     priority_group_threshold: pool.priority_group_threshold ?? null,
+    extra_parameters: pool.extra_parameters ?? null, // snapshot only
   };
 }
 
@@ -297,7 +393,7 @@ function poolFieldsFromAs3(pool: Dict): { fields: Dict; unsupported: string[] } 
   return {
     fields: {
       load_balancing_algorithm: pool.loadBalancingMode ?? null,
-      description: pool.label ?? "",
+      description: desc64(pool.label),
       priority_group_activation: threshold !== null,
       priority_group_threshold: threshold,
     },
@@ -310,7 +406,8 @@ function monitorFieldsFromNetbox(m: Dict): Dict {
     monitor_type: m.monitor_type,
     interval: m.interval ?? null,
     timeout: m.timeout ?? null,
-    description: m.description ?? "",
+    description: desc64(m.description),
+    conditions: m.conditions ?? null, // snapshot only
   };
 }
 
@@ -320,7 +417,7 @@ function monitorFieldsFromAs3(m: Dict): { fields: Dict; unsupported: string[] } 
       monitor_type: m.monitorType,
       interval: typeof m.interval === "number" ? m.interval : null,
       timeout: typeof m.timeout === "number" ? m.timeout : null,
-      description: m.label ?? "",
+      description: desc64(m.label),
     },
     unsupported: [],
   };
@@ -340,6 +437,7 @@ function tlsFieldsFromNetbox(profile: Dict): Dict {
     ciphers: profile.ciphers ?? [],
     mtls: profile.mtls ?? "ignore",
     tls_versions: [...versions].sort(),
+    options: profile.options ?? null, // snapshot only
   };
 }
 
@@ -371,7 +469,22 @@ interface KindSpec {
   fromAs3: (a: Dict) => { fields: Dict; unsupported: string[] };
 }
 
+// Application-level: the app object itself maps to the applications endpoint
+// (label ↔ description, plus the extras catch-all handled in the diff loop).
+const APPLICATION_KIND: KindSpec = {
+  endpoint: "applications",
+  fromNetbox: (app) => ({
+    description: desc64(app.description),
+    extra_parameters: app.extra_parameters ?? null, // snapshot only
+  }),
+  fromAs3: (appObj) => ({
+    fields: { description: desc64(appObj.label) },
+    unsupported: [],
+  }),
+};
+
 const KIND_BY_CLASS: Record<string, KindSpec> = {
+  Application: APPLICATION_KIND,
   Service_TCP: { endpoint: "virtual-servers", fromNetbox: vsFieldsFromNetbox, fromAs3: vsFieldsFromAs3 },
   Service_HTTP: { endpoint: "virtual-servers", fromNetbox: vsFieldsFromNetbox, fromAs3: vsFieldsFromAs3 },
   Service_HTTPS: { endpoint: "virtual-servers", fromNetbox: vsFieldsFromNetbox, fromAs3: vsFieldsFromAs3 },
@@ -418,11 +531,25 @@ export function buildManifest(
     };
     if (spec.endpoint === "backend-pools") {
       entry.members = memberRowsFromNetbox(netboxObj);
+      entry.monitorKeys = (
+        (netboxObj.monitors as Dict[] | undefined) ?? []
+      ).map((m) => sanitizeKey(String(m.name)));
     }
     if (spec.endpoint === "virtual-servers") {
       entry.vips = (
         (netboxObj.virtual_addresses as Dict[] | undefined) ?? []
       ).map((v) => ({ id: Number(v.id), address: withMask(String(v.address)) }));
+      const refName = (o: unknown) =>
+        isPlainObject(o) && o.name ? sanitizeKey(String(o.name)) : null;
+      // Live GraphQL: singular backend_pool; offline payloads: plural list.
+      const firstPool =
+        netboxObj.backend_pool ??
+        ((netboxObj.backend_pools as Dict[] | undefined) ?? [])[0];
+      entry.refNames = {
+        backend_pool: refName(firstPool),
+        ssl_profile: refName(netboxObj.ssl_profile),
+        server_ssl_profile: refName(netboxObj.server_ssl_profile),
+      };
     }
     entries.push(entry);
   }
@@ -459,6 +586,20 @@ export function buildManifest(
         String((vs.server_ssl_profile as Dict).name)
       );
     }
+  }
+
+  // Application-level entry: label ↔ description + app extras (W4).
+  if (isPlainObject(application)) {
+    entries.unshift({
+      as3Key: appKey,
+      endpoint: "applications",
+      id: Number(app.id),
+      className: "Application",
+      fields: APPLICATION_KIND.fromNetbox(app),
+      as3Snapshot: JSON.parse(JSON.stringify(application)),
+      lastUpdated: app.last_updated as string | undefined,
+      isApplication: true,
+    });
   }
 
   const artifacts: Record<string, unknown> = {};
@@ -645,7 +786,9 @@ export function computeUpdates(
   const knownKeys = new Set(manifest.entries.map((e) => e.as3Key));
 
   for (const entry of manifest.entries) {
-    const current = application[entry.as3Key];
+    const current = entry.isApplication
+      ? application
+      : application[entry.as3Key];
     if (current === undefined) {
       deletes.push({
         entry,
@@ -747,17 +890,113 @@ export function computeUpdates(
       }
     }
 
-    // Did the object change in ways the diffs above didn't capture?
+    // W4: pool monitor list (M2M by AS3 key).
+    if (entry.monitorKeys) {
+      const desired: string[] = [];
+      let linkable = true;
+      for (const m of (current.monitors as unknown[] | undefined) ?? []) {
+        if (isPlainObject(m) && typeof m.use === "string") {
+          desired.push(sanitizeKey(m.use));
+        } else {
+          notes.push(
+            `"${entry.as3Key}": monitor reference ${JSON.stringify(m).slice(0, 30)} has no NetBox object — monitor list not pushed`
+          );
+          linkable = false;
+        }
+      }
+      if (
+        linkable &&
+        !valueEq([...desired].sort(), [...entry.monitorKeys].sort())
+      ) {
+        ops.push({
+          op: "pool-monitors",
+          keys: desired,
+          label: `set monitors to ${desired.join(", ") || "(none)"}`,
+        });
+      }
+    }
+
+    // W4: virtual-server relation rewiring by name.
+    if (entry.refNames) {
+      const refOf = (v: unknown): string | null | undefined => {
+        if (v === undefined) return null;
+        if (typeof v === "string") return sanitizeKey(v);
+        if (isPlainObject(v) && typeof v.use === "string")
+          return sanitizeKey(v.use);
+        return undefined; // {bigip} etc. — not a document reference
+      };
+      const refProps: [
+        string,
+        "backend_pool" | "ssl_profile" | "server_ssl_profile",
+      ][] = [
+        ["pool", "backend_pool"],
+        ["serverTLS", "ssl_profile"],
+        ["clientTLS", "server_ssl_profile"],
+      ];
+      for (const [as3Prop, field] of refProps) {
+        const target = refOf(current[as3Prop]);
+        if (target === undefined) {
+          if (!valueEq(current[as3Prop], (entry.as3Snapshot as Dict)[as3Prop]))
+            notes.push(
+              `"${entry.as3Key}": ${as3Prop} points outside the declaration — not pushed`
+            );
+          continue;
+        }
+        if (target !== entry.refNames[field]) {
+          ops.push({
+            op: "vs-ref",
+            field,
+            targetKey: target,
+            label:
+              target === null
+                ? `clear ${as3Prop}`
+                : `set ${as3Prop} to "${target}"`,
+          });
+        }
+      }
+    }
+
+    // W4: extras catch-all (extra_parameters / conditions / options). Only
+    // pushable when the loaded extras round-trip cleanly — if the renderer
+    // merged data from other sources (protocol profiles etc.), pushing the
+    // complement would smuggle it into the catch-all field.
+    const extraField = EXTRA_FIELD[entry.endpoint];
+    if (extraField) {
+      const currentExtras = extrasFromAs3(entry.endpoint, current);
+      const snapshotExtras = extrasFromAs3(
+        entry.endpoint,
+        entry.as3Snapshot as Dict
+      );
+      if (!valueEq(currentExtras, snapshotExtras)) {
+        if (!valueEq(snapshotExtras, entry.fields[extraField] ?? null)) {
+          notes.push(
+            `"${entry.as3Key}": edited properties map to ${extraField}, but the loaded value has mixed provenance — not pushed`
+          );
+        } else {
+          changes.push({
+            field: extraField,
+            from: entry.fields[extraField] ?? null,
+            to: currentExtras,
+          });
+        }
+      }
+    }
+
+    // Anything left that the diffs above don't cover (relation props that
+    // only note): changed?
+    const noted = NOTED_RELATION_PROPS[entry.endpoint] ?? [];
+    const pickNoted = (o: Dict) =>
+      Object.fromEntries(noted.map((p) => [p, o[p]]));
     const outOfScope = !valueEq(
-      stripKnown(current, entry),
-      stripKnown(entry.as3Snapshot as Dict, entry)
+      pickNoted(current),
+      pickNoted(entry.as3Snapshot as Dict)
     );
 
     if (changes.length > 0 || ops.length > 0 || outOfScope) {
       updates.push({ entry, changes, ops, outOfScope });
       if (outOfScope) {
         notes.push(
-          `"${entry.as3Key}" has additional edits outside the pushable scope (certificates, policies, profiles, …) that will NOT be pushed.`
+          `"${entry.as3Key}" has relation edits (snat, policies, profiles, certificates, …) that are NOT pushable yet.`
         );
       }
     }
@@ -821,42 +1060,15 @@ export function computeUpdates(
   return { updates, creates, deletes, notes };
 }
 
-// Remove the properties the W1 field extractors already account for, so the
-// remainder shows whether out-of-scope edits exist.
-const KNOWN_AS3_PROPS: Record<string, string[]> = {
+// Relation-shaped properties that only NOTE on change (no write support):
+// their NetBox counterparts are relations we don't rewire yet.
+const NOTED_RELATION_PROPS: Record<string, string[]> = {
   "virtual-servers": [
-    "class",
-    "virtualPort",
-    "remark",
-    "enable",
-    "virtualType",
-    "persistenceMethods",
-    "virtualAddresses", // handled by the vs-addresses op (W2)
+    "snat",
+    "policyEndpoint",
+    "iRules",
+    "profileTCP",
+    "profileHTTP",
   ],
-  "backend-pools": [
-    "class",
-    "loadBalancingMode",
-    "label",
-    "minimumMembersActive",
-    "members", // handled by member ops (W2)
-  ],
-  monitors: ["class", "monitorType", "interval", "timeout", "label"],
-  "ssl-profiles": [
-    "class",
-    "ciphers",
-    "authenticationMode",
-    "tls1_0Enabled",
-    "tls1_1Enabled",
-    "tls1_2Enabled",
-    "tls1_3Enabled",
-  ],
+  "ssl-profiles": ["certificates", "clientCertificate", "cipherGroup"],
 };
-
-function stripKnown(obj: Dict, entry: ManifestEntry): Dict {
-  const known = new Set(KNOWN_AS3_PROPS[entry.endpoint] ?? []);
-  const out: Dict = {};
-  for (const [k, v] of Object.entries(obj)) {
-    if (!known.has(k)) out[k] = v;
-  }
-  return out;
-}
