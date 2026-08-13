@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { SCHEMAS } from "../schemas";
+import { SCHEMA_LIST } from "../schemas";
 import { TEMPLATES, getTemplate } from "../templates";
 
 interface ToolbarProps {
@@ -63,7 +63,7 @@ export default function Toolbar({
       <label>
         Schema
         <select value={schemaId} onChange={(e) => onSchemaChange(e.target.value)}>
-          {SCHEMAS.map((s) => (
+          {SCHEMA_LIST.map((s) => (
             <option key={s.id} value={s.id}>
               {s.label}
             </option>

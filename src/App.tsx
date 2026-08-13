@@ -10,7 +10,12 @@ import TreePane from "./components/TreePane";
 import ContextPanel from "./components/ContextPanel";
 import SimplifiedPane from "./components/SimplifiedPane";
 import type { ChipPayload } from "./components/AddableList";
-import { DEFAULT_SCHEMA_ID, getSchema } from "./schemas";
+import {
+  DEFAULT_SCHEMA_ENTRY,
+  DEFAULT_SCHEMA_ID,
+  loadSchema,
+  type SchemaEntry,
+} from "./schemas";
 import { getTemplate } from "./templates";
 import { useDocument } from "./hooks/useDocument";
 import { netboxSession } from "./netboxSession";
@@ -142,7 +147,24 @@ export default function App() {
     applyEditMany,
   } = docState;
 
-  const schemaEntry = useMemo(() => getSchema(schemaId), [schemaId]);
+  // Full AS3 schemas are code-split; keep the previous schema active while
+  // the newly selected one loads.
+  const [schemaEntry, setSchemaEntry] = useState<SchemaEntry>(
+    DEFAULT_SCHEMA_ENTRY
+  );
+  useEffect(() => {
+    let cancelled = false;
+    loadSchema(schemaId)
+      .then((entry) => {
+        if (!cancelled) setSchemaEntry(entry);
+      })
+      .catch(() => {
+        if (!cancelled) flashToast(`Failed to load schema ${schemaId}`);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [schemaId, flashToast]);
   const root = schemaEntry.schema as JsonSchemaRoot;
   const registry = useMemo(() => buildClassRegistry(root), [root]);
   const memberClasses = useMemo(

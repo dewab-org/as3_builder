@@ -1,0 +1,122 @@
+# AS3 Builder
+
+A schema-aware web editor for F5 **AS3 per-app declarations**, with two-way
+**NetBox** integration (read applications rendered as AS3, push edits back)
+and **BIG-IP dry-run/apply** support.
+
+Everything runs in the browser plus a small dev-server proxy — there is no
+backend service.
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│ Schema ▾  Template ▾   Load from NetBox…  Push to NetBox…          │
+│                        Validate on BIG-IP…  Open  Save  ☾          │
+├───────────┬─────────────────────────────────┬──────────────────────┤
+│ Document  │  Editor (JSON ⇄ Simple toggle)  │ Context panel        │
+│ tree      │  Monaco with schema validation, │ schema-aware widgets │
+│           │  autocomplete, click-to-pick    │ add-lists, docs      │
+├───────────┴─────────────────────────────────┴──────────────────────┤
+│ ◎ breadcrumb of cursor · drop target        ✓ schema valid / ✗ N   │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+## Running
+
+```bash
+npm install
+npm run dev        # http://localhost:5173
+npm test           # engine test suite (vitest)
+npm run build      # production build in dist/
+```
+
+The **dev/preview server is required** for the NetBox and BIG-IP features:
+browsers cannot call iControl REST or the NetBox API directly (no CORS
+headers, self-signed certs), so `vite.config.ts` ships two proxy middlewares
+(`/bigip-proxy/*`, `/netbox-proxy/*`) that forward requests with credentials
+passed through per request. If you host `dist/` statically, put an
+equivalent proxy in front.
+
+## Editing features
+
+- **Schema engine** (`src/engine/`, pure TypeScript, fully unit-tested):
+  resolves which schema rule governs the JSON node under the cursor,
+  including AS3's class-discriminated unions, `allOf` chains, and
+  draft-07 `if/then/else`.
+- **Context panel**: properties of the current object as typed widgets
+  (enums/booleans as dropdowns, bounded numbers, live-validated strings —
+  ports, `f5ip`/CIDR, hostnames, patterns), an alphabetical filterable
+  add-list with drag/double-click/+ insertion, class-aware object creation,
+  and cross-reference dropdowns (a Service's `pool` offers the Pools defined
+  in the document).
+- **Editor intelligence**: schema validation squiggles and autocomplete
+  (Monaco), click an enum/boolean/reference value to get a pick list,
+  hover a row for a margin ✕ that deletes the property/element, drag rows
+  from the panel into the editor (nearest-valid-ancestor insertion).
+- **Simple view**: JSON ⇄ Simple toggle renders the document as indented
+  key-value pairs without JSON syntax. Click a key to focus, click a value
+  to edit in place (schema-appropriate widget, popover for long text),
+  Enter in a list commits and starts the next item, `+ add member`-style
+  rows append schema-stubbed objects.
+- **Class changes** populate missing required properties and list
+  now-invalid leftovers with one-click removal. **Modified objects** (vs the
+  loaded baseline) highlight amber in the tree and editor margin.
+- **Docs everywhere**: hover/ⓘ cards show the full schema description,
+  rules (ranges, patterns, formats), defaults, union alternatives, and link
+  to the exact section of the official F5 schema reference.
+- Light/dark theme (Home Depot palette), status-bar breadcrumb, Ajv error
+  list with click-to-jump.
+
+## NetBox integration
+
+Works against the `netbox-load-balancer` plugin (tested with NetBox 4.6 /
+plugin 0.7.0).
+
+- **Load from NetBox…** — connect with URL + username/password (an API token
+  is provisioned automatically; v1 and v2 token formats supported), pick an
+  application (fuzzy search), and it renders as a per-app AS3 declaration —
+  a TypeScript port of f5_toolbox's `graphql_to_as3` mapping, validated
+  against its golden fixtures.
+- **Push to NetBox…** — a provenance manifest recorded at load maps every
+  AS3 object back to its NetBox endpoint/id. The push preview shows
+  CREATE / UPDATE / DELETE rows with field-level diffs, granular ops
+  (members, virtual addresses, monitor links, relation rewiring,
+  `extra_parameters`), per-object drift detection (`last_updated`), and
+  explicit "not pushed" notes for anything unsupported. Deletions are never
+  pre-selected. IPs and certificate stubs are get-or-created as needed.
+  Applying re-fetches and re-renders so the editor shows the round-tripped
+  truth.
+- **Deep links** (see `NETBOX-DEEPLINK-PLAN.md`):
+  `/?netbox=<origin>&app=<id>&object=<endpoint>:<id>&focus=extra_parameters`
+  opens the dialog prefilled, auto-loads the app, and jumps to the object.
+  Credentials never ride in URLs.
+
+Write-back requires loading through this tool in the same session (the
+manifest is in-memory only). See `NETBOX-WRITEBACK-PLAN.md` for the design
+and current limits (snat pools, policies, cipher groups, protocol profiles,
+GSLB are read-only for now).
+
+## BIG-IP validation
+
+**Validate on BIG-IP…** asks for host, credentials, tenant (default
+`Applications`), and a TLS-verification checkbox; it checks
+`/mgmt/shared/appsvcs/info` first, then submits the declaration with
+`controls.dryRun: true` (no changes) to
+`/mgmt/shared/appsvcs/declare/<tenant>/applications`. A separate **Apply…**
+button performs the real deployment behind an are-you-sure confirmation.
+
+## Repository documents
+
+| File | Purpose |
+|---|---|
+| `PLAN.md` | Original build specification (phases 1–5, engine contracts) |
+| `NETBOX-WRITEBACK-PLAN.md` | Write-back design (manifest, ChangeSet, phases W1–W4 — all implemented) |
+| `NETBOX-DEEPLINK-PLAN.md` | NetBox→builder deep-link contract + future plugin callout |
+
+## Notes
+
+- Schemas live in `src/schemas/`; the per-app schema is the default, the two
+  full AS3 schemas are code-split and load on selection.
+- Monaco is bundled locally (no CDN) for restricted environments.
+- The engine test suite (`src/engine/__tests__/`) runs against the real
+  1.2MB per-app schema and f5_toolbox's golden render fixture; the
+  render→invert round trip producing an empty ChangeSet is a test invariant.
