@@ -1082,6 +1082,16 @@ body {
   padding: 0 6px;
 }
 
+.push-kind.create {
+  color: var(--green);
+  border-color: var(--green);
+}
+
+.push-kind.delete {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
 .push-name {
   font-weight: 600;
   display: flex;

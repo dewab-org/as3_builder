@@ -35,8 +35,13 @@ describe("write-back manifest", () => {
 describe("write-back changeset (W1)", () => {
   it("round-trips to an EMPTY changeset when nothing was edited", () => {
     const { declaration, manifest } = freshRender();
-    const { updates, notes } = computeUpdates(declaration, manifest);
+    const { updates, creates, deletes, notes } = computeUpdates(
+      declaration,
+      manifest
+    );
     expect(updates).toEqual([]);
+    expect(creates).toEqual([]);
+    expect(deletes).toEqual([]);
     expect(notes).toEqual([]);
   });
 
@@ -88,19 +93,100 @@ describe("write-back changeset (W1)", () => {
     expect(fields.mtls).toBe("require");
   });
 
-  it("flags deletions/creations/class changes as notes, not updates", () => {
+  it("turns removals into delete rows and additions into create rows", () => {
     const { declaration, manifest } = freshRender();
     const appObj = declaration[appName] as Dict;
     delete appObj.sg_web;
-    appObj.newPool = { class: "Pool", members: [] };
+    appObj.newPool = {
+      class: "Pool",
+      members: [{ servicePort: 8080, serverAddresses: ["10.9.9.1"] }],
+    };
     (appObj.vs_ssl_app as Dict).class = "Service_HTTP";
-    const { updates, notes } = computeUpdates(declaration, manifest);
+    const { updates, creates, deletes, notes } = computeUpdates(
+      declaration,
+      manifest
+    );
     expect(updates).toEqual([]);
-    expect(notes.some((n) => n.includes("sg_web") && n.includes("W3"))).toBe(true);
-    expect(notes.some((n) => n.includes("newPool"))).toBe(true);
+    expect(deletes).toMatchObject([{ entry: { as3Key: "sg_web" } }]);
+    expect(creates).toMatchObject([
+      {
+        as3Key: "newPool",
+        endpoint: "backend-pools",
+        fields: { name: "newPool", load_balancing_algorithm: "round-robin" },
+        members: [{ addressWithMask: "10.9.9.1/32", servicePort: 8080 }],
+      },
+    ]);
     expect(
       notes.some((n) => n.includes("vs_ssl_app") && n.includes("class"))
     ).toBe(true);
+  });
+
+  it("builds full service create specs with refs, slug, and vips", () => {
+    const { declaration, manifest } = freshRender();
+    const appObj = declaration[appName] as Dict;
+    appObj.newVip = {
+      class: "Service_Address",
+      virtualAddress: "10.7.7.7/32",
+    };
+    appObj.newWeb = {
+      class: "Service_HTTP",
+      virtualAddresses: [{ use: "newVip" }],
+      pool: "sg_web",
+    };
+    const { creates, notes } = computeUpdates(declaration, manifest);
+    expect(creates).toMatchObject([
+      {
+        as3Key: "newWeb",
+        endpoint: "virtual-servers",
+        fields: {
+          name: "newWeb",
+          slug: "newweb",
+          protocol: "http",
+          service_port: 80, // AS3 default for http
+          vs_type: "standard",
+        },
+        refs: [{ field: "backend_pool", targetKey: "sg_web" }],
+        vipAddresses: ["10.7.7.7/32"],
+      },
+    ]);
+    expect(notes).toEqual([]);
+  });
+
+  it("orders creates and deletes FK-safely", () => {
+    const { declaration, manifest } = freshRender();
+    const appObj = declaration[appName] as Dict;
+    // create a service + a pool + a monitor
+    appObj.zNewVs = {
+      class: "Service_HTTP",
+      virtualAddresses: ["10.7.7.8"],
+      virtualPort: 80,
+    };
+    appObj.aNewPool = { class: "Pool" };
+    appObj.mNewMon = { class: "Monitor", monitorType: "http" };
+    // delete the existing pool and vs
+    delete appObj.sg_web;
+    delete appObj.vs_ssl_app;
+    const { creates, deletes } = computeUpdates(declaration, manifest);
+    expect(creates.map((c) => c.endpoint)).toEqual([
+      "monitors",
+      "backend-pools",
+      "virtual-servers",
+    ]);
+    expect(deletes.map((d) => d.entry.endpoint)).toEqual([
+      "virtual-servers",
+      "backend-pools",
+    ]);
+  });
+
+  it("TLS profile creates require certificates", () => {
+    const { declaration, manifest } = freshRender();
+    const appObj = declaration[appName] as Dict;
+    appObj.newTls = { class: "TLS_Server", certificates: [] };
+    const { creates, notes } = computeUpdates(declaration, manifest);
+    expect(creates).toEqual([]);
+    expect(notes.some((n) => n.includes("newTls") && n.includes("certificates"))).toBe(
+      true
+    );
   });
 
   it("turns a member port change into delete+create ops", () => {

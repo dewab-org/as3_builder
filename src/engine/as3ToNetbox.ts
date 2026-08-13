@@ -82,12 +82,62 @@ export interface ObjectChange {
   outOfScope: boolean;
 }
 
+/** A new object to POST (W3). References are resolved at apply time. */
+export interface CreateObject {
+  as3Key: string;
+  className: string;
+  endpoint: string;
+  /** Scalar POST body (no relations). */
+  fields: Dict;
+  /** Pool creates: member rows to add after the POST. */
+  members?: MemberRow[];
+  /** Service creates: VIP addresses (masked); null = unpushable. */
+  vipAddresses?: string[] | null;
+  /** FK fields referencing sibling objects by AS3 key (resolved to ids). */
+  refs: { field: string; targetKey: string }[];
+  /** Pool creates: monitor references by AS3 key (M2M). */
+  monitorRefs?: string[];
+  /** TLS profile creates: certificate names (get-or-created by name). */
+  certificateNames?: string[];
+  label: string;
+}
+
+/** A manifest object no longer present in the declaration (W3). */
+export interface DeleteObject {
+  entry: ManifestEntry;
+  label: string;
+}
+
 export interface ChangeSet {
   updates: ObjectChange[];
-  /** Human-readable findings that produce no PATCH (deletions, creations,
-   * unsupported edits). */
+  creates: CreateObject[];
+  deletes: DeleteObject[];
+  /** Human-readable findings that produce no write. */
   notes: string[];
 }
+
+export function slugify(name: string): string {
+  return (
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "obj"
+  );
+}
+
+/** FK-safe orders: create dependencies first, delete dependents first. */
+export const CREATE_ORDER = [
+  "monitors",
+  "ssl-profiles",
+  "backend-pools",
+  "virtual-servers",
+];
+export const DELETE_ORDER = [
+  "virtual-servers",
+  "ssl-profiles",
+  "backend-pools",
+  "monitors",
+];
 
 const PROTOCOL_BY_CLASS: Record<string, string> = {
   Service_TCP: "tcp",
@@ -429,6 +479,143 @@ export function buildManifest(
   };
 }
 
+// ---- create specs (W3) -----------------------------------------------------
+
+const DEFAULT_PORT_BY_PROTOCOL: Record<string, number> = {
+  http: 80,
+  https: 443,
+};
+
+// Build a CreateObject for a declaration object with no manifest entry.
+// Returns null (with notes) when the object cannot be created.
+function buildCreate(
+  as3Key: string,
+  obj: Dict,
+  notes: string[]
+): CreateObject | null {
+  const className = String(obj.class);
+  const spec = KIND_BY_CLASS[className];
+  if (!spec) return null; // caller notes unknown classes
+
+  if (spec.endpoint === "backend-pools") {
+    const { fields } = poolFieldsFromAs3(obj);
+    if (!fields.load_balancing_algorithm)
+      fields.load_balancing_algorithm = "round-robin";
+    const { rows, notes: memberNotes } = memberRowsFromAs3(obj, as3Key);
+    notes.push(...memberNotes);
+    const monitorRefs: string[] = [];
+    for (const m of (obj.monitors as unknown[] | undefined) ?? []) {
+      if (isPlainObject(m) && typeof m.use === "string") {
+        monitorRefs.push(sanitizeKey(m.use));
+      } else if (typeof m === "string") {
+        notes.push(
+          `"${as3Key}": built-in monitor "${m}" has no NetBox object — not linked`
+        );
+      } else {
+        notes.push(`"${as3Key}": unsupported monitor reference — not linked`);
+      }
+    }
+    return {
+      as3Key,
+      className,
+      endpoint: spec.endpoint,
+      fields: { name: as3Key, ...fields },
+      members: rows,
+      refs: [],
+      monitorRefs,
+      label: `create Pool "${as3Key}"${rows.length ? ` with ${rows.length} member${rows.length === 1 ? "" : "s"}` : ""}`,
+    };
+  }
+
+  if (spec.endpoint === "monitors") {
+    const { fields } = monitorFieldsFromAs3(obj);
+    if (typeof fields.monitor_type !== "string") {
+      notes.push(`"${as3Key}": Monitor without monitorType cannot be created`);
+      return null;
+    }
+    // NetBox requires interval/timeout; fall back to the AS3 defaults.
+    if (fields.interval == null) fields.interval = 5;
+    if (fields.timeout == null) fields.timeout = 16;
+    return {
+      as3Key,
+      className,
+      endpoint: spec.endpoint,
+      fields: { name: as3Key, ...fields },
+      refs: [],
+      label: `create Monitor "${as3Key}" (${fields.monitor_type})`,
+    };
+  }
+
+  if (spec.endpoint === "ssl-profiles") {
+    const { fields } = tlsFieldsFromAs3(obj);
+    const profileType = className === "TLS_Server" ? "client" : "server";
+    const certificateNames: string[] = [];
+    if (className === "TLS_Server") {
+      for (const c of (obj.certificates as unknown[] | undefined) ?? []) {
+        if (isPlainObject(c) && typeof c.certificate === "string")
+          certificateNames.push(sanitizeKey(c.certificate));
+      }
+    } else if (typeof obj.clientCertificate === "string") {
+      certificateNames.push(sanitizeKey(obj.clientCertificate));
+    }
+    if (certificateNames.length === 0) {
+      notes.push(
+        `"${as3Key}": ${className} without certificates cannot be created (NetBox requires at least one)`
+      );
+      return null;
+    }
+    return {
+      as3Key,
+      className,
+      endpoint: spec.endpoint,
+      fields: { name: as3Key, profile_type: profileType, ...fields },
+      refs: [],
+      certificateNames,
+      label: `create ${className} "${as3Key}"`,
+    };
+  }
+
+  // virtual-servers
+  const { fields } = vsFieldsFromAs3(obj);
+  if (!fields.protocol) {
+    notes.push(`"${as3Key}": ${className} has no NetBox protocol mapping`);
+    return null;
+  }
+  if (typeof fields.service_port !== "number") {
+    const dflt = DEFAULT_PORT_BY_PROTOCOL[String(fields.protocol)];
+    if (dflt === undefined) {
+      notes.push(
+        `"${as3Key}": virtualPort is required to create a ${fields.protocol} virtual server`
+      );
+      return null;
+    }
+    fields.service_port = dflt;
+  }
+  const refs: CreateObject["refs"] = [];
+  if (typeof obj.pool === "string")
+    refs.push({ field: "backend_pool", targetKey: sanitizeKey(obj.pool) });
+  const serverTLS = obj.serverTLS;
+  if (isPlainObject(serverTLS) && typeof serverTLS.use === "string")
+    refs.push({ field: "ssl_profile", targetKey: sanitizeKey(serverTLS.use) });
+  const clientTLS = obj.clientTLS;
+  if (isPlainObject(clientTLS) && typeof clientTLS.use === "string")
+    refs.push({
+      field: "server_ssl_profile",
+      targetKey: sanitizeKey(clientTLS.use),
+    });
+  if (obj.snat !== undefined)
+    notes.push(`"${as3Key}": snat is not part of virtual-server creation — set it in NetBox`);
+  return {
+    as3Key,
+    className,
+    endpoint: "virtual-servers",
+    fields: { name: as3Key, slug: slugify(as3Key), ...fields },
+    vipAddresses: null, // filled by the caller (needs the application object)
+    refs,
+    label: `create ${className} "${as3Key}"`,
+  };
+}
+
 // ---- changeset -------------------------------------------------------------
 
 function valueEq(a: unknown, b: unknown): boolean {
@@ -441,12 +628,16 @@ export function computeUpdates(
 ): ChangeSet {
   const notes: string[] = [];
   const updates: ObjectChange[] = [];
+  const creates: CreateObject[] = [];
+  const deletes: DeleteObject[] = [];
   const application = declaration[manifest.appKey] as Dict | undefined;
   if (!isPlainObject(application)) {
     return {
       updates: [],
+      creates: [],
+      deletes: [],
       notes: [
-        `Application key "${manifest.appKey}" not found in the declaration — was it renamed? Renames are not supported in W1.`,
+        `Application key "${manifest.appKey}" not found in the declaration — was it renamed? Renames are not supported.`,
       ],
     };
   }
@@ -456,9 +647,10 @@ export function computeUpdates(
   for (const entry of manifest.entries) {
     const current = application[entry.as3Key];
     if (current === undefined) {
-      notes.push(
-        `"${entry.as3Key}" (${entry.className}) was removed from the declaration — deletions ship in phase W3, skipped.`
-      );
+      deletes.push({
+        entry,
+        label: `delete ${entry.className} "${entry.as3Key}" (#${entry.id})`,
+      });
       continue;
     }
     if (!isPlainObject(current)) {
@@ -590,12 +782,43 @@ export function computeUpdates(
       }
       continue;
     }
-    notes.push(
-      `"${key}" (${value.class}) is new — object creation ships in phase W3, skipped.`
-    );
+    const create = buildCreate(key, value, notes);
+    if (!create) {
+      // Service_Address / Certificate objects are consumed by the services
+      // and TLS profiles that reference them — no standalone NetBox object.
+      const cls = String(value.class);
+      if (
+        !KIND_BY_CLASS[cls] &&
+        cls !== "Service_Address" &&
+        cls !== "Certificate"
+      ) {
+        notes.push(`"${key}" (${cls}) has no NetBox model — cannot be created.`);
+      }
+      continue;
+    }
+    if (create.endpoint === "virtual-servers") {
+      const { addresses, notes: vipNotes } = vipAddressesFromAs3(
+        value,
+        application,
+        key
+      );
+      notes.push(...vipNotes);
+      create.vipAddresses = addresses;
+    }
+    creates.push(create);
   }
 
-  return { updates, notes };
+  // FK-safe ordering for the apply loop.
+  creates.sort(
+    (a, b) => CREATE_ORDER.indexOf(a.endpoint) - CREATE_ORDER.indexOf(b.endpoint)
+  );
+  deletes.sort(
+    (a, b) =>
+      DELETE_ORDER.indexOf(a.entry.endpoint) -
+      DELETE_ORDER.indexOf(b.entry.endpoint)
+  );
+
+  return { updates, creates, deletes, notes };
 }
 
 // Remove the properties the W1 field extractors already account for, so the
