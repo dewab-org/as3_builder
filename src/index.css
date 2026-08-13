@@ -145,9 +145,14 @@ body {
   cursor: pointer;
 }
 
-.toolbar button:hover,
+.toolbar button:hover:not(:disabled),
 .toolbar select:hover {
   background: var(--toolbar-btn-hover);
+}
+
+.toolbar button:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .toolbar .spacer {

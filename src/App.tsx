@@ -165,7 +165,34 @@ export default function App() {
     isStale,
     applyEdit,
     applyEditMany,
+    replaceText,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
   } = docState;
+
+  // ⌘/Ctrl+Z anywhere except inside Monaco, which has its own stack and
+  // handles the shortcut itself. Skipped while typing in a field so text
+  // inputs keep their native undo.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "z") return;
+      const el = e.target instanceof HTMLElement ? e.target : null;
+      if (
+        el?.closest(".monaco-editor") ||
+        el instanceof HTMLInputElement ||
+        el instanceof HTMLTextAreaElement
+      )
+        return;
+      e.preventDefault();
+      if (e.shiftKey) redo();
+      else undo();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [undo, redo]);
+
 
   // Full AS3 schemas are code-split; keep the previous schema active while
   // the newly selected one loads.
@@ -245,7 +272,7 @@ export default function App() {
   }, [debouncedText, lastGoodDoc, isModifiedPath]);
 
   function loadText(newText: string) {
-    setText(newText);
+    replaceText(newText);
     setBaselineText(newText);
     setCursorOffset(0);
   }
@@ -637,6 +664,10 @@ export default function App() {
         onPushToNetbox={() => setShowPushDialog(true)}
         theme={theme}
         onToggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
+        onUndo={undo}
+        onRedo={redo}
+        canUndo={canUndo}
+        canRedo={canRedo}
       />
       {showBigipDialog && (
         <BigipDialog

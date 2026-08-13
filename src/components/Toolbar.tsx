@@ -16,6 +16,10 @@ interface ToolbarProps {
   onPushToNetbox: () => void;
   theme: "light" | "dark";
   onToggleTheme: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
 }
 
 export default function Toolbar({
@@ -31,6 +35,10 @@ export default function Toolbar({
   onPushToNetbox,
   theme,
   onToggleTheme,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
 }: ToolbarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -100,6 +108,22 @@ export default function Toolbar({
           ))}
         </select>
       </label>
+      <button
+        onClick={onUndo}
+        disabled={!canUndo}
+        title="Undo (⌘Z)"
+        aria-label="Undo"
+      >
+        ↶
+      </button>
+      <button
+        onClick={onRedo}
+        disabled={!canRedo}
+        title="Redo (⇧⌘Z)"
+        aria-label="Redo"
+      >
+        ↷
+      </button>
       <div className="spacer" />
       <button onClick={onLoadFromNetbox} title="Read a load-balancer application from NetBox as AS3">
         Load from NetBox…
