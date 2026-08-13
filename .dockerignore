@@ -1,0 +1,12 @@
+.git
+.githooks
+node_modules
+dist
+dist-server
+*.tsbuildinfo
+.DS_Store
+Dockerfile
+.dockerignore
+docker-compose.yml
+*.md
+.claude

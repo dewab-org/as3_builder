@@ -49,6 +49,36 @@ headers, self-signed certs), so `vite.config.ts` ships two proxy middlewares
 passed through per request. If you host `dist/` statically, put an
 equivalent proxy in front.
 
+## Docker
+
+```bash
+docker compose up --build       # http://127.0.0.1:8080
+```
+
+The image is built in two stages: a Node builder that compiles the SPA and
+bundles the server, and a **distroless** runtime (`nonroot`, uid 65532) with no
+shell, no package manager and no `node_modules` — `server/index.ts` is bundled
+into a single ~10KB file by esbuild, so nothing but Node and the built output
+ships. Both base images are pinned by digest. The container runs read-only with
+all capabilities dropped and `no-new-privileges`; `docker-compose.yml` sets
+those, a 16MB noexec tmpfs for `/tmp`, CPU/memory limits and log rotation, and
+binds to loopback (the proxy routes reach whatever the container can route to,
+so don't expose it wider by accident).
+
+`server/index.ts` serves `dist/` and mounts the same `/bigip-proxy`,
+`/netbox-proxy` and `/url-proxy` handlers the dev server uses — they live in
+`server/proxy.ts` and are imported by both — so a deployed image keeps the
+NetBox and BIG-IP features. It also sets a strict CSP, `nosniff`, `DENY`
+framing, no-referrer and COOP/CORP, caps proxied request bodies at 16MB, and
+exposes `/healthz` for the healthcheck. Hashed assets are cached immutably,
+`index.html` never is.
+
+One deliberate CSP concession: `script-src` includes `'unsafe-eval'` because
+Ajv compiles each JSON Schema into a function at runtime, and "load schema from
+URL" means that can't move to build time. Without it the app throws `EvalError`
+and renders nothing. No third-party script origin is allowed, so there is no
+external code to eval.
+
 ## Editing features
 
 - **Schema engine** (`src/engine/`, pure TypeScript, fully unit-tested):

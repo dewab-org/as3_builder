@@ -1,0 +1,44 @@
+services:
+  as3-builder:
+    build: .
+    image: as3-builder:latest
+    ports:
+      # Bind to loopback by default: the proxy routes will reach any BIG-IP or
+      # NetBox the container can route to, so don't expose it wider by accident.
+      - "127.0.0.1:8080:8080"
+    read_only: true
+    user: "65532:65532"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # The server writes nothing; /tmp exists only so Node always has a scratch
+    # path, and it is small, noexec and nosuid.
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    environment:
+      NODE_ENV: production
+      PORT: "8080"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "/nodejs/bin/node",
+          "-e",
+          "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

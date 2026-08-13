@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "test": "vitest run --passWithNoTests",
     "lint": "eslint .",
-    "check:secrets": "node scripts/check-secrets.mjs"
+    "check:secrets": "node scripts/check-secrets.mjs",
+    "build:server": "esbuild server/index.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist-server/index.mjs"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
@@ -23,6 +24,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
+    "@types/node": "^22.20.1",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
