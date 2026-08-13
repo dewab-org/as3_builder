@@ -45,6 +45,8 @@ export interface ManifestEntry {
     ssl_profile: string | null;
     server_ssl_profile: string | null;
   };
+  /** Virtual-server entries: the linked SNAT pool's NetBox name as loaded. */
+  snatPoolName?: string | null;
   /** The application-level entry (label/extras map to the app object). */
   isApplication?: boolean;
 }
@@ -75,6 +77,14 @@ export type WriteOp =
       op: "vs-ref";
       field: "backend_pool" | "ssl_profile" | "server_ssl_profile";
       targetKey: string | null; // null clears the reference
+      label: string;
+    }
+  | {
+      op: "vs-snat";
+      /** SNAT pool name, resolved to an id at apply time; null clears it.
+       * Pools are pre-created estate objects, so a missing name is an error,
+       * never a create. */
+      poolName: string | null;
       label: string;
     };
 
@@ -296,7 +306,7 @@ const NON_EXTRA_PROPS: Record<string, string[]> = {
     "pool", // W4 ref op
     "serverTLS", // W4 ref op
     "clientTLS", // W4 ref op
-    "snat", // relation, noted
+    "snat", // relation op (vs-snat)
     "policyEndpoint", // relation, noted
     "iRules", // relation, noted
     "profileTCP", // relation, noted
@@ -692,6 +702,11 @@ export function buildManifest(
         ssl_profile: refName(netboxObj.ssl_profile),
         server_ssl_profile: refName(netboxObj.server_ssl_profile),
       };
+      // SNAT pools are referenced by NetBox name, not by an AS3 key: they are
+      // estate objects that exist independently of any declaration.
+      entry.snatPoolName = isPlainObject(netboxObj.snat_pool)
+        ? String(netboxObj.snat_pool.name)
+        : null;
     }
     entries.push(entry);
   }
@@ -1137,6 +1152,39 @@ export function computeUpdates(
       }
     }
 
+
+    // SNAT: declarations consume a pre-created pool, they never define one.
+    // AS3 spells that as {bigip: "/Partition/Folder/<name>"}; the keywords
+    // "auto"/"none"/"self" mean "no pool", which clears the link.
+    if (entry.snatPoolName !== undefined) {
+      const snat = current.snat;
+      let desired: string | null | undefined;
+      if (snat === undefined) desired = null;
+      else if (typeof snat === "string")
+        desired = snat === "auto" || snat === "none" || snat === "self"
+          ? null
+          : undefined;
+      else if (isPlainObject(snat) && typeof snat.bigip === "string")
+        desired = String(snat.bigip).split("/").filter(Boolean).pop() ?? null;
+      else desired = undefined;
+
+      if (desired === undefined) {
+        if (!valueEq(snat, (entry.as3Snapshot as Dict).snat))
+          notes.push(
+            `"${entry.as3Key}": snat must be a {bigip: "/Common/Shared/<pool>"} pointer or auto/none/self — "${JSON.stringify(snat)}" was not pushed`
+          );
+      } else if (desired !== entry.snatPoolName) {
+        ops.push({
+          op: "vs-snat",
+          poolName: desired,
+          label:
+            desired === null
+              ? "clear snat pool"
+              : `point snat at pool "${desired}"`,
+        });
+      }
+    }
+
     // W4: extras catch-all (extra_parameters / conditions / options). Only
     // pushable when the loaded extras round-trip cleanly — if the renderer
     // merged data from other sources (protocol profiles etc.), pushing the
@@ -1204,7 +1252,7 @@ export function computeUpdates(
       updates.push({ entry, changes, ops, outOfScope });
       if (outOfScope) {
         notes.push(
-          `"${entry.as3Key}" has relation edits (snat, policies, profiles, certificates, …) that are NOT pushable yet.`
+          `"${entry.as3Key}" changes which policy, profile or certificate it points at — retargeting those references is not implemented, so that part was not pushed.`
         );
       }
     }
@@ -1274,13 +1322,9 @@ export function computeUpdates(
 
 // Relation-shaped properties that only NOTE on change (no write support):
 // their NetBox counterparts are relations we don't rewire yet.
+// Relation properties with no write path yet: editing one is reported, not
+// pushed. `snat` is absent deliberately — retargeting it is a vs-snat op.
 const NOTED_RELATION_PROPS: Record<string, string[]> = {
-  "virtual-servers": [
-    "snat",
-    "policyEndpoint",
-    "iRules",
-    "profileTCP",
-    "profileHTTP",
-  ],
+  "virtual-servers": ["policyEndpoint", "iRules", "profileTCP", "profileHTTP"],
   "ssl-profiles": ["certificates", "clientCertificate", "cipherGroup"],
 };

@@ -145,6 +145,68 @@ describe("relation objects: manifest", () => {
   });
 });
 
+describe("snat pool linkage", () => {
+  /** SNAT pools are pre-created estate objects; a declaration only points at
+   * one, so write-back is a relink by name and never a create. */
+  function appWithSnat(pool: Dict | null) {
+    const app = netboxApp();
+    (app.virtual_servers as Dict[])[0].snat_pool = pool;
+    return app;
+  }
+
+  it("round-trips an existing link without a change", () => {
+    const { declaration, manifest } = fresh(
+      appWithSnat({ id: 70, name: "snat_dmz", members: [] })
+    );
+    expect(computeUpdates(declaration, manifest).updates).toEqual([]);
+  });
+
+  it("relinks the virtual server when the pointer changes", () => {
+    const { declaration, manifest, appKey } = fresh(
+      appWithSnat({ id: 70, name: "snat_dmz", members: [] })
+    );
+    const vs = (declaration[appKey] as Dict).vs_rel as Dict;
+    vs.snat = { bigip: "/Common/Shared/snat_core" };
+
+    const ops = computeUpdates(declaration, manifest).updates.flatMap(
+      (u) => u.ops
+    );
+    expect(ops).toContainEqual({
+      op: "vs-snat",
+      poolName: "snat_core",
+      label: 'point snat at pool "snat_core"',
+    });
+  });
+
+  it("clears the link for auto/none and for a removed pointer", () => {
+    for (const value of ["auto", "none", undefined] as const) {
+      const { declaration, manifest, appKey } = fresh(
+        appWithSnat({ id: 70, name: "snat_dmz", members: [] })
+      );
+      const vs = (declaration[appKey] as Dict).vs_rel as Dict;
+      if (value === undefined) delete vs.snat;
+      else vs.snat = value;
+      const ops = computeUpdates(declaration, manifest).updates.flatMap(
+        (u) => u.ops
+      );
+      expect(ops).toContainEqual({
+        op: "vs-snat",
+        poolName: null,
+        label: "clear snat pool",
+      });
+    }
+  });
+
+  it("reports a declaration-local snat object instead of pushing it", () => {
+    const { declaration, manifest, appKey } = fresh(appWithSnat(null));
+    const vs = (declaration[appKey] as Dict).vs_rel as Dict;
+    vs.snat = { use: "local_snat" };
+    const { updates, notes } = computeUpdates(declaration, manifest);
+    expect(updates.flatMap((u) => u.ops)).toEqual([]);
+    expect(notes.join(" ")).toMatch(/snat must be a \{bigip/);
+  });
+});
+
 describe("relation objects: changeset", () => {
   it("round-trips to an empty changeset when nothing was edited", () => {
     const { declaration, manifest } = fresh();

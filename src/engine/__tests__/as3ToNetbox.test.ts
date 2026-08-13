@@ -238,19 +238,34 @@ describe("write-back changeset (W1)", () => {
     ]);
   });
 
-  it("W4: monitor extra props map to conditions", () => {
+  it("W5: a snat pointer edit relinks the virtual server", () => {
     const { declaration, manifest } = freshRender();
     const appObj = declaration[appName] as Dict;
-    // golden fixture has no monitor; craft one through the manifest of a
-    // different app shape instead: reuse sg_web pool → skip if no monitor.
-    // Simpler: assert via a service extra prop that snat edits only note.
     (appObj.vs_ssl_app as Dict).snat = { bigip: "/Common/Shared/other" };
+    const { updates } = computeUpdates(declaration, manifest);
+    const vsChange = updates.find(
+      (u) => u.entry.endpoint === "virtual-servers"
+    );
+    // SNAT pools are pre-created estate objects: the push relinks, it never
+    // creates, and it is no longer reported as out of scope.
+    expect(vsChange?.ops).toContainEqual({
+      op: "vs-snat",
+      poolName: "other",
+      label: 'point snat at pool "other"',
+    });
+    expect(vsChange?.outOfScope).toBe(false);
+  });
+
+  it("W5: retargeting a policy or profile is still reported, not pushed", () => {
+    const { declaration, manifest } = freshRender();
+    const appObj = declaration[appName] as Dict;
+    (appObj.vs_ssl_app as Dict).profileTCP = { bigip: "/Common/tcp-lan" };
     const { updates, notes } = computeUpdates(declaration, manifest);
     const vsChange = updates.find(
       (u) => u.entry.endpoint === "virtual-servers"
     );
     expect(vsChange?.outOfScope).toBe(true);
-    expect(notes.some((n) => n.includes("relation edits"))).toBe(true);
+    expect(notes.some((n) => n.includes("retargeting"))).toBe(true);
   });
 
   it("TLS profile creates require certificates", () => {

@@ -95,7 +95,7 @@ the exact inverse of `netboxAs3.ts`:
 | `virtualType` | `vs_type` (absence → "standard") |
 | `persistenceMethods` | `persistence` |
 | `pool: "x"` | `backend_pool` → id via manifest lookup of key "x" |
-| `snat: {bigip: /Common/Shared/S}` | `snat_pool` → id by name S |
+| `snat: {bigip: /Common/Shared/S}` | `snat_pool` → id by name S (relink only — pools are pre-created estate objects, never created or edited from a declaration; `auto`/`none`/`self` clear the link, an unknown name is an error) |
 | `serverTLS/clientTLS {use}` | `ssl_profile` / `server_ssl_profile` ids |
 | `virtualAddresses [{use}]` → Service_Address.virtualAddress | `virtual_addresses`: get-or-create `ipam.IPAddress` for each address |
 | Pool `loadBalancingMode` | `load_balancing_algorithm` |
@@ -174,7 +174,7 @@ the current declaration id) → dialog in the BigipDialog style:
   policies (endpoint policies and iRules), protocol profiles and cipher
   rules/groups, so editing them is an ordinary PATCH. Still out of scope:
   creating these objects from the builder, changing which policy/profile a
-  virtual server points at, and SNAT pool membership.
+  virtual server points at.
 
 ## 5. Known limits (state up front, revisit later)
 
@@ -191,8 +191,13 @@ the current declaration id) → dialog in the BigipDialog style:
   renderer emits only `{class: "iRule", iRule}`), so it is never diffed —
   pushing an iRule edit leaves the description untouched rather than
   blanking it.
-- `snat`, `policyEndpoint`, `iRules`, `profileTCP`/`profileHTTP` still point
-  at whatever NetBox already links; retargeting them from the builder is not
+- SNAT pools are outside the scope of an app declaration by design: a
+  declaration consumes a statically pre-created pool. Write-back therefore
+  relinks a virtual server to an existing pool by name and never creates,
+  edits or deletes a pool; pointing at a name NetBox doesn't have fails the
+  push with that message rather than creating one.
+- `policyEndpoint`, `iRules` and `profileTCP`/`profileHTTP` still point at
+  whatever NetBox already links; retargeting them from the builder is not
   implemented, so those edits are reported, not written.
 
 ## 6. Test strategy

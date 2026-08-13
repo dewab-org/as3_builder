@@ -284,6 +284,25 @@ export default function PushNetboxDialog({
           });
           break;
         }
+        case "vs-snat": {
+          let id: number | null = null;
+          if (op.poolName !== null) {
+            const found = await netboxRest<{ results: { id: number }[] }>(
+              `${PLUGIN_BASE}/snat-pools/?name=${encodeURIComponent(op.poolName)}`
+            );
+            // Pools are pre-created estate objects — never create one here.
+            if (found.results.length === 0)
+              throw new Error(
+                `SNAT pool "${op.poolName}" does not exist in NetBox — create it there first`
+              );
+            id = found.results[0].id;
+          }
+          await netboxRest(`${base}/${entry.id}/`, {
+            method: "PATCH",
+            body: { snat_pool: id },
+          });
+          break;
+        }
         case "vs-ref": {
           let id: number | null = null;
           if (op.targetKey !== null) {
@@ -313,13 +332,23 @@ export default function PushNetboxDialog({
     const keyToId = new Map<string, number>();
     for (const entry of manifest.entries) keyToId.set(entry.as3Key, entry.id);
 
+    // Match rows by index, not identity: the first status update replaces the
+    // row object, so a captured reference stops matching and every later
+    // update — including the failure detail — would silently go nowhere.
+    const setStatus = (
+      index: number,
+      status: RowStatus,
+      detail?: string
+    ) =>
+      setRows((prev) =>
+        prev.map((r, i) => (i === index ? { ...r, status, detail } : r))
+      );
+
     // Row order is already creates → updates → deletes (FK-safe).
-    for (const row of rows) {
+    for (const [index, row] of rows.entries()) {
       if (!row.checked || rowOpCount(row) === 0) continue;
       if (failed) break;
-      setRows((prev) =>
-        prev.map((r) => (r === row ? { ...r, status: "applying" } : r))
-      );
+      setStatus(index, "applying");
       try {
         if (row.kind === "create")
           await applyCreate(row.create, keyToId, manifest.appId);
@@ -329,21 +358,13 @@ export default function PushNetboxDialog({
             `${PLUGIN_BASE}/${row.del.entry.endpoint}/${row.del.entry.id}/`,
             { method: "DELETE" }
           );
-        setRows((prev) =>
-          prev.map((r) => (r === row ? { ...r, status: "ok" } : r))
-        );
+        setStatus(index, "ok");
       } catch (err) {
         failed = true;
-        setRows((prev) =>
-          prev.map((r) =>
-            r === row
-              ? {
-                  ...r,
-                  status: "fail",
-                  detail: String(err instanceof Error ? err.message : err),
-                }
-              : r
-          )
+        setStatus(
+          index,
+          "fail",
+          String(err instanceof Error ? err.message : err)
         );
       }
     }
