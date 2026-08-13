@@ -2,7 +2,10 @@
 
 # Build stage: full toolchain, thrown away. Base images are pinned by digest
 # so a rebuild can't silently pick up a different upstream.
-FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS build
+# Pinned to the *build* platform on purpose: everything this stage emits is
+# JavaScript and static files, so there is nothing arch-specific to produce.
+# Building it natively keeps multi-arch builds off QEMU emulation entirely.
+FROM --platform=$BUILDPLATFORM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS build
 
 WORKDIR /build
 ENV NODE_ENV=development

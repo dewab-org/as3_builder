@@ -62,6 +62,20 @@ equivalent proxy in front.
 docker compose up --build       # http://127.0.0.1:8080
 ```
 
+Prebuilt multi-arch images (linux/amd64 + linux/arm64) are published to GHCR by
+`.github/workflows/docker-publish.yml` on every push to `main`, tagged `:main`,
+`:sha-<commit>` and `:latest`; a `v*` tag adds the semver tags.
+
+```bash
+docker run --rm -p 8080:8080 --read-only --cap-drop ALL \
+  --security-opt no-new-privileges ghcr.io/dewab-org/as3_builder:latest
+```
+
+The workflow runs lint, types and tests first, then builds, scans the image
+with trivy (fixable CRITICAL/HIGH fails the run) and only then publishes with
+build provenance and an SBOM attached. Pull requests build and scan but never
+push.
+
 The image is built in two stages: a Node builder that compiles the SPA and
 bundles the server, and a **distroless** runtime (`nonroot`, uid 65532) with no
 shell, no package manager and no `node_modules` — `server/index.ts` is bundled
