@@ -8,7 +8,12 @@ import {
   type AppManifest,
   type ObjectChange,
 } from "../engine";
-import { netboxGraphql, netboxRest, netboxSession } from "../netboxSession";
+import {
+  ensureIpAddress,
+  netboxGraphql,
+  netboxRest,
+  netboxSession,
+} from "../netboxSession";
 
 interface PushNetboxDialogProps {
   declarationText: string;
@@ -91,7 +96,8 @@ export default function PushNetboxDialog({
             return {
               change,
               drifted,
-              checked: change.changes.length > 0 && !drifted,
+              checked:
+                change.changes.length + change.ops.length > 0 && !drifted,
               status: "pending" as RowStatus,
             };
           })
@@ -105,7 +111,55 @@ export default function PushNetboxDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const applicable = rows.filter((r) => r.checked && r.change.changes.length > 0);
+  const pushableCount = (r: Row) =>
+    r.change.changes.length + r.change.ops.length;
+  const applicable = rows.filter((r) => r.checked && pushableCount(r) > 0);
+  const totalOps = applicable.reduce((n, r) => n + pushableCount(r), 0);
+
+  async function applyRow(row: Row): Promise<void> {
+    const { entry } = row.change;
+    const base = `/api/plugins/netbox-load-balancer/${entry.endpoint}`;
+    if (row.change.changes.length > 0) {
+      const body: Record<string, unknown> = {};
+      for (const c of row.change.changes) body[c.field] = c.to;
+      await netboxRest(`${base}/${entry.id}/`, { method: "PATCH", body });
+    }
+    for (const op of row.change.ops) {
+      switch (op.op) {
+        case "member-create": {
+          const nodeId = await ensureIpAddress(op.addressWithMask);
+          await netboxRest(`/api/plugins/netbox-load-balancer/pool-members/`, {
+            method: "POST",
+            body: { pool: entry.id, node: nodeId, ...op.body },
+          });
+          break;
+        }
+        case "member-update":
+          await netboxRest(
+            `/api/plugins/netbox-load-balancer/pool-members/${op.memberId}/`,
+            { method: "PATCH", body: op.body }
+          );
+          break;
+        case "member-delete":
+          await netboxRest(
+            `/api/plugins/netbox-load-balancer/pool-members/${op.memberId}/`,
+            { method: "DELETE" }
+          );
+          break;
+        case "vs-addresses": {
+          const ids: number[] = [];
+          for (const address of op.addresses) {
+            ids.push(await ensureIpAddress(address));
+          }
+          await netboxRest(`${base}/${entry.id}/`, {
+            method: "PATCH",
+            body: { virtual_addresses: ids },
+          });
+          break;
+        }
+      }
+    }
+  }
 
   async function apply() {
     if (!manifest) return;
@@ -113,18 +167,13 @@ export default function PushNetboxDialog({
     setBusy("Applying…");
     let failed = false;
     for (const row of rows) {
-      if (!row.checked || row.change.changes.length === 0) continue;
+      if (!row.checked || pushableCount(row) === 0) continue;
       if (failed) break;
       setRows((prev) =>
         prev.map((r) => (r === row ? { ...r, status: "applying" } : r))
       );
-      const body: Record<string, unknown> = {};
-      for (const c of row.change.changes) body[c.field] = c.to;
       try {
-        await netboxRest(
-          `/api/plugins/netbox-load-balancer/${row.change.entry.endpoint}/${row.change.entry.id}/`,
-          { method: "PATCH", body }
-        );
+        await applyRow(row);
         setRows((prev) =>
           prev.map((r) => (r === row ? { ...r, status: "ok" } : r))
         );
@@ -176,9 +225,9 @@ export default function PushNetboxDialog({
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h2>Push changes to NetBox</h2>
         <p className="ctx-hint">
-          Field-level updates to the NetBox objects this declaration was loaded
-          from. Creations, deletions, and membership changes are not pushed yet
-          (phases W2/W3).
+          Updates the NetBox objects this declaration was loaded from: scalar
+          fields, pool membership, and virtual addresses (IPs are created in
+          IPAM as needed). Creating or deleting whole objects ships in W3.
         </p>
 
         {error && <div className="modal-error">{error}</div>}
@@ -200,7 +249,7 @@ export default function PushNetboxDialog({
                   <input
                     type="checkbox"
                     checked={row.checked}
-                    disabled={row.change.changes.length === 0 || busy !== null}
+                    disabled={pushableCount(row) === 0 || busy !== null}
                     onChange={(e) =>
                       setRows((prev) =>
                         prev.map((r, j) =>
@@ -231,7 +280,18 @@ export default function PushNetboxDialog({
                     <span className="push-to">{fmt(c.to)}</span>
                   </div>
                 ))}
-                {row.change.changes.length === 0 && (
+                {row.change.ops.map((op, j) => (
+                  <div key={`op-${j}`} className="push-field">
+                    <span
+                      className={
+                        op.op === "member-delete" ? "push-from" : "push-to"
+                      }
+                    >
+                      {op.label}
+                    </span>
+                  </div>
+                ))}
+                {pushableCount(row) === 0 && (
                   <div className="push-field push-noop">
                     only out-of-scope edits — nothing pushable
                   </div>
@@ -257,8 +317,9 @@ export default function PushNetboxDialog({
 
         {confirming && manifest && (
           <div className="modal-confirm">
-            <strong>Write to NetBox?</strong> This will PATCH{" "}
-            {applicable.length} object{applicable.length === 1 ? "" : "s"} on{" "}
+            <strong>Write to NetBox?</strong> {totalOps} change
+            {totalOps === 1 ? "" : "s"} across {applicable.length} object
+            {applicable.length === 1 ? "" : "s"} on{" "}
             <code>{netboxSession.url}</code>.
             <div className="modal-confirm-actions">
               <button onClick={() => setConfirming(false)}>Cancel</button>

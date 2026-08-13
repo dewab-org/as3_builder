@@ -12,6 +12,16 @@ import { isPlainObject } from "./types";
 
 type Dict = Record<string, unknown>;
 
+export interface MemberRow {
+  id?: number; // NetBox pool-member pk (absent for rows built from AS3)
+  address: string; // bare address, no mask
+  addressWithMask: string;
+  servicePort: number;
+  enabled: boolean;
+  ratio: number;
+  priorityGroup: number;
+}
+
 export interface ManifestEntry {
   as3Key: string;
   endpoint: string; // plugin REST collection, e.g. "virtual-servers"
@@ -22,7 +32,29 @@ export interface ManifestEntry {
   /** The AS3 object exactly as rendered at load (detects out-of-scope edits). */
   as3Snapshot: unknown;
   lastUpdated?: string;
+  /** Pool entries: member rows as loaded (W2). */
+  members?: MemberRow[];
+  /** Virtual-server entries: VIP addresses as loaded (W2). */
+  vips?: { id: number; address: string }[];
 }
+
+/** Granular write operations beyond a scalar PATCH (W2). */
+export type WriteOp =
+  | {
+      op: "member-create";
+      addressWithMask: string;
+      body: Dict; // service_port + non-default state; pool/node injected at apply
+      label: string;
+    }
+  | { op: "member-update"; memberId: number; body: Dict; label: string }
+  | { op: "member-delete"; memberId: number; label: string }
+  | {
+      op: "vs-addresses";
+      addresses: string[]; // full desired set, with masks
+      adds: string[];
+      removes: string[];
+      label: string;
+    };
 
 export interface AppManifest {
   declarationId: string;
@@ -44,7 +76,9 @@ export interface FieldChange {
 export interface ObjectChange {
   entry: ManifestEntry;
   changes: FieldChange[];
-  /** Object also differs in ways W1 cannot push. */
+  /** Granular member / address operations (W2). */
+  ops: WriteOp[];
+  /** Object also differs in ways the current phases cannot push. */
   outOfScope: boolean;
 }
 
@@ -61,6 +95,105 @@ const PROTOCOL_BY_CLASS: Record<string, string> = {
   Service_HTTPS: "https",
   Service_UDP: "udp",
 };
+
+function stripMask(address: string): string {
+  return String(address).replace(/\/\d+$/, "");
+}
+
+function withMask(address: string): string {
+  if (/\/\d+$/.test(address)) return address;
+  return address.includes(":") ? `${address}/128` : `${address}/32`;
+}
+
+// NetBox graph member rows → normalized rows keyed by (address, port).
+function memberRowsFromNetbox(pool: Dict): MemberRow[] {
+  const rows: MemberRow[] = [];
+  for (const m of (pool.members as Dict[] | undefined) ?? []) {
+    const node = m.node as Dict | undefined;
+    if (!node?.address) continue;
+    rows.push({
+      id: Number(m.id),
+      address: stripMask(String(node.address)),
+      addressWithMask: withMask(String(node.address)),
+      servicePort: Number(m.service_port),
+      enabled: m.enabled !== false,
+      ratio: (m.ratio as number | null) ?? 0,
+      priorityGroup: (m.priority_group as number | null) ?? 0,
+    });
+  }
+  return rows;
+}
+
+// AS3 pool.members (grouped) → normalized rows; unsupported member shapes
+// (fqdn/hostname, bigip refs) come back as notes.
+function memberRowsFromAs3(
+  pool: Dict,
+  poolKey: string
+): { rows: MemberRow[]; notes: string[] } {
+  const rows: MemberRow[] = [];
+  const notes: string[] = [];
+  for (const group of (pool.members as Dict[] | undefined) ?? []) {
+    if (!isPlainObject(group)) continue;
+    if (typeof group.servicePort !== "number") {
+      notes.push(`"${poolKey}": member group without numeric servicePort skipped`);
+      continue;
+    }
+    if (group.hostname || group.addressDiscovery) {
+      notes.push(
+        `"${poolKey}": fqdn/discovery members cannot be pushed yet — skipped`
+      );
+      continue;
+    }
+    const addrs = (group.serverAddresses as unknown[] | undefined) ?? [];
+    for (const a of addrs) {
+      if (typeof a !== "string") continue;
+      rows.push({
+        address: stripMask(a),
+        addressWithMask: withMask(a),
+        servicePort: group.servicePort,
+        enabled: group.adminState !== "disable",
+        ratio: typeof group.ratio === "number" ? group.ratio : 0,
+        priorityGroup:
+          typeof group.priorityGroup === "number" ? group.priorityGroup : 0,
+      });
+    }
+  }
+  return { rows, notes };
+}
+
+// AS3 service.virtualAddresses → desired VIP set (masked). Entries may be raw
+// strings or {use: <Service_Address key>}; {bigip:…} makes the set unpushable.
+function vipAddressesFromAs3(
+  svc: Dict,
+  application: Dict,
+  vsKey: string
+): { addresses: string[] | null; notes: string[] } {
+  const notes: string[] = [];
+  const out: string[] = [];
+  const list = svc.virtualAddresses as unknown[] | undefined;
+  if (!list) return { addresses: [], notes };
+  for (const entry of list) {
+    if (typeof entry === "string") {
+      out.push(withMask(entry));
+    } else if (isPlainObject(entry) && typeof entry.use === "string") {
+      const target = application[entry.use];
+      if (isPlainObject(target) && typeof target.virtualAddress === "string") {
+        out.push(withMask(target.virtualAddress));
+      } else {
+        notes.push(
+          `"${vsKey}": virtualAddresses use-reference "${entry.use}" does not resolve — addresses not pushed`
+        );
+        return { addresses: null, notes };
+      }
+    } else {
+      notes.push(
+        `"${vsKey}": virtualAddresses entry ${JSON.stringify(entry).slice(0, 40)} is not pushable — addresses not pushed`
+      );
+      return { addresses: null, notes };
+    }
+  }
+  return { addresses: out, notes };
+}
 
 // ---- field extractors ------------------------------------------------------
 // For each supported object kind there are two extractors producing the SAME
@@ -224,7 +357,7 @@ export function buildManifest(
     const as3Snapshot = application?.[as3Key];
     if (as3Snapshot === undefined) return; // renderer skipped it
     seen.add(as3Key);
-    entries.push({
+    const entry: ManifestEntry = {
       as3Key,
       endpoint: spec.endpoint,
       id: Number(netboxObj.id),
@@ -232,7 +365,16 @@ export function buildManifest(
       fields: spec.fromNetbox(netboxObj),
       as3Snapshot: JSON.parse(JSON.stringify(as3Snapshot)),
       lastUpdated: netboxObj.last_updated as string | undefined,
-    });
+    };
+    if (spec.endpoint === "backend-pools") {
+      entry.members = memberRowsFromNetbox(netboxObj);
+    }
+    if (spec.endpoint === "virtual-servers") {
+      entry.vips = (
+        (netboxObj.virtual_addresses as Dict[] | undefined) ?? []
+      ).map((v) => ({ id: Number(v.id), address: withMask(String(v.address)) }));
+    }
+    entries.push(entry);
   }
 
   for (const vs of (app.virtual_servers as Dict[] | undefined) ?? []) {
@@ -339,18 +481,91 @@ export function computeUpdates(
       if (!valueEq(from, to)) changes.push({ field, from, to });
     }
 
-    // Did the object change in ways the field diff didn't capture?
-    const outOfScope =
-      !valueEq(current, entry.as3Snapshot) &&
-      changes.length === 0
-        ? true
-        : !valueEq(stripKnown(current, entry), stripKnown(entry.as3Snapshot as Dict, entry));
+    // W2 granular ops: pool membership and VS virtual addresses.
+    const ops: WriteOp[] = [];
+    if (entry.members) {
+      const { rows, notes: memberNotes } = memberRowsFromAs3(
+        current,
+        entry.as3Key
+      );
+      notes.push(...memberNotes);
+      if (memberNotes.length === 0) {
+        const key = (r: MemberRow) => `${r.address}|${r.servicePort}`;
+        const nbByKey = new Map(entry.members.map((r) => [key(r), r]));
+        const as3ByKey = new Map(rows.map((r) => [key(r), r]));
+        for (const [k, row] of as3ByKey) {
+          const existing = nbByKey.get(k);
+          if (!existing) {
+            const body: Dict = { service_port: row.servicePort };
+            if (!row.enabled) body.enabled = false;
+            if (row.ratio) body.ratio = row.ratio;
+            if (row.priorityGroup) body.priority_group = row.priorityGroup;
+            ops.push({
+              op: "member-create",
+              addressWithMask: row.addressWithMask,
+              body,
+              label: `add member ${row.address}:${row.servicePort}`,
+            });
+          } else {
+            const body: Dict = {};
+            if (existing.enabled !== row.enabled) body.enabled = row.enabled;
+            if (existing.ratio !== row.ratio) body.ratio = row.ratio;
+            if (existing.priorityGroup !== row.priorityGroup)
+              body.priority_group = row.priorityGroup;
+            if (Object.keys(body).length > 0 && existing.id !== undefined) {
+              ops.push({
+                op: "member-update",
+                memberId: existing.id,
+                body,
+                label: `update member ${row.address}:${row.servicePort} (${Object.keys(body).join(", ")})`,
+              });
+            }
+          }
+        }
+        for (const [k, row] of nbByKey) {
+          if (!as3ByKey.has(k) && row.id !== undefined) {
+            ops.push({
+              op: "member-delete",
+              memberId: row.id,
+              label: `remove member ${row.address}:${row.servicePort}`,
+            });
+          }
+        }
+      }
+    }
+    if (entry.vips) {
+      const { addresses, notes: vipNotes } = vipAddressesFromAs3(
+        current,
+        application,
+        entry.as3Key
+      );
+      notes.push(...vipNotes);
+      if (addresses !== null) {
+        const before = entry.vips.map((v) => v.address).sort();
+        const after = [...addresses].sort();
+        if (!valueEq(before, after)) {
+          ops.push({
+            op: "vs-addresses",
+            addresses,
+            adds: after.filter((a) => !before.includes(a)),
+            removes: before.filter((a) => !after.includes(a)),
+            label: `set virtual addresses to ${addresses.join(", ") || "(none)"}`,
+          });
+        }
+      }
+    }
 
-    if (changes.length > 0 || outOfScope) {
-      updates.push({ entry, changes, outOfScope });
+    // Did the object change in ways the diffs above didn't capture?
+    const outOfScope = !valueEq(
+      stripKnown(current, entry),
+      stripKnown(entry.as3Snapshot as Dict, entry)
+    );
+
+    if (changes.length > 0 || ops.length > 0 || outOfScope) {
+      updates.push({ entry, changes, ops, outOfScope });
       if (outOfScope) {
         notes.push(
-          `"${entry.as3Key}" has additional edits outside W1 scope (members, addresses, certificates, …) that will NOT be pushed.`
+          `"${entry.as3Key}" has additional edits outside the pushable scope (certificates, policies, profiles, …) that will NOT be pushed.`
         );
       }
     }
@@ -363,9 +578,14 @@ export function computeUpdates(
     if (knownKeys.has(key)) continue;
     if (!isPlainObject(value) || typeof value.class !== "string") continue;
     if (key in manifest.artifacts) {
-      if (!valueEq(value, manifest.artifacts[key])) {
+      // Service_Address edits are covered by the vs-addresses op; other
+      // artifact edits still wait for a later phase.
+      if (
+        value.class !== "Service_Address" &&
+        !valueEq(value, manifest.artifacts[key])
+      ) {
         notes.push(
-          `"${key}" (${value.class}) was edited but is derived data (addresses, certificates, policies) — pushing it ships in a later phase.`
+          `"${key}" (${value.class}) was edited but is derived data (certificates, policies) — pushing it ships in a later phase.`
         );
       }
       continue;
@@ -388,8 +608,15 @@ const KNOWN_AS3_PROPS: Record<string, string[]> = {
     "enable",
     "virtualType",
     "persistenceMethods",
+    "virtualAddresses", // handled by the vs-addresses op (W2)
   ],
-  "backend-pools": ["class", "loadBalancingMode", "label", "minimumMembersActive"],
+  "backend-pools": [
+    "class",
+    "loadBalancingMode",
+    "label",
+    "minimumMembersActive",
+    "members", // handled by member ops (W2)
+  ],
   monitors: ["class", "monitorType", "interval", "timeout", "label"],
   "ssl-profiles": [
     "class",

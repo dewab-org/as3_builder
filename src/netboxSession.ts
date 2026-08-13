@@ -92,6 +92,19 @@ export async function netboxRest<T>(
   return body as T;
 }
 
+// IPAM get-or-create: pool member nodes and VIPs are ipam.IPAddress FKs.
+export async function ensureIpAddress(addressWithMask: string): Promise<number> {
+  const found = await netboxRest<{ results: { id: number }[] }>(
+    `/api/ipam/ip-addresses/?address=${encodeURIComponent(addressWithMask)}`
+  );
+  if (found.results.length > 0) return found.results[0].id;
+  const created = await netboxRest<{ id: number }>(`/api/ipam/ip-addresses/`, {
+    method: "POST",
+    body: { address: addressWithMask },
+  });
+  return created.id;
+}
+
 export function invalidateNetboxAuth(): void {
   netboxSession.authHeader = "";
   netboxSession.apps = undefined;
