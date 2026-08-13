@@ -224,6 +224,18 @@ export default function App() {
     [root, registry, debouncedText, cursorOffset]
   );
 
+  // What the pointer is over, in either view. Drives the info pane's hover
+  // preview; the cursor-driven context underneath is left alone.
+  const [hoverPath, setHoverPath] = useState<JsonPath | null>(null);
+  const hoverOffsetToPath = useCallback(
+    (offset: number | null) => {
+      if (offset === null) return setHoverPath(null);
+      const path = getLocation(debouncedText, offset).path as JsonPath;
+      setHoverPath(path.length > 0 ? path : null);
+    },
+    [debouncedText]
+  );
+
   // Baseline = the document as loaded/saved; anything differing from it is
   // "modified" and highlighted in the tree and the editor margin.
   const baselineDoc = useMemo(
@@ -817,6 +829,7 @@ export default function App() {
               onEditValue={handleEdit}
               onEditMany={applyEditMany}
               onAppendObjectItem={handleAppendObjectItem}
+              onHoverPath={setHoverPath}
             />
           )}
           <div
@@ -833,6 +846,7 @@ export default function App() {
               editorRef.current = ed;
             }}
             onCursorOffsetChange={setCursorOffset}
+            onHoverOffsetChange={hoverOffsetToPath}
             choiceValueStartAt={choiceValueStartAt}
             xrefCandidatesAt={xrefAt}
             onChipDrop={handleChipDrop}
@@ -848,6 +862,8 @@ export default function App() {
             isStale={isStale}
             memberClasses={memberClasses}
             schemaRoot={root}
+            registry={registry}
+            hoverPath={hoverPath}
             onEdit={handleEdit}
             onNavigate={(path) => navigateToPath(path)}
             onAddChip={handleAddChip}

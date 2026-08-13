@@ -212,6 +212,34 @@ body {
   color: #ffffff;
 }
 
+/* --- info pane: hover preview --- */
+
+/* Sits above the cursor-driven context so hovering never costs you your
+   place. Dashed edge marks it as transient. */
+.hover-preview {
+  border: 1px dashed var(--accent);
+  border-radius: 7px;
+  background: var(--panel-2);
+  padding: 6px 8px 2px;
+  margin-bottom: 8px;
+}
+
+.hover-preview-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  margin-bottom: 2px;
+}
+
+.hover-preview .detail-card {
+  border: none;
+  background: none;
+  box-shadow: none;
+  padding: 0;
+  margin: 0;
+}
+
 /* --- simplified view --- */
 
 .simple-pane {

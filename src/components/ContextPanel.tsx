@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type {
   ClassInfo,
+  ClassRegistry,
   JsonPath,
   JsonSchemaRoot,
   NodeContext,
@@ -16,6 +17,7 @@ import {
   loadAs3Documentation,
   type DocumentationIndex,
 } from "../engine";
+import HoverDetail from "./HoverDetail";
 import PropertyWidget from "./PropertyWidget";
 import ConfirmButton from "./ConfirmButton";
 import AddableList, {
@@ -30,6 +32,9 @@ interface ContextPanelProps {
   isStale: boolean;
   memberClasses: ClassInfo[];
   schemaRoot: JsonSchemaRoot;
+  registry: ClassRegistry;
+  /** Document path the pointer is over, previewed above the panel. */
+  hoverPath: JsonPath | null;
   onEdit: (path: JsonPath, value: unknown) => void;
   onNavigate: (path: JsonPath) => void;
   onAddChip: (payload: ChipPayload) => void;
@@ -43,6 +48,8 @@ export default function ContextPanel({
   isStale,
   memberClasses,
   schemaRoot,
+  registry,
+  hoverPath,
   onEdit,
   onNavigate,
   onAddChip,
@@ -162,6 +169,15 @@ export default function ContextPanel({
   return (
     <div>
       {isStale && <div className="stale-banner">Stale — fix JSON to refresh</div>}
+      {hoverPath && (
+        <HoverDetail
+          path={hoverPath}
+          doc={doc}
+          schemaRoot={schemaRoot}
+          registry={registry}
+          documentation={documentation}
+        />
+      )}
       <div className="ctx-breadcrumb">
         <span className="ctx-crumb-text">
           {context.breadcrumb}
