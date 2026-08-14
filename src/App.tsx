@@ -36,6 +36,7 @@ import {
   loadBigipCatalog,
   resolveDrop,
   resolveSchemaForPath,
+  relatedPaths,
   stubValue,
   summarizeEntry,
   xrefCandidatesAt,
@@ -226,6 +227,13 @@ export default function App() {
   const context = useMemo(
     () => getContext(root, registry, debouncedText, cursorOffset),
     [root, registry, debouncedText, cursorOffset]
+  );
+
+  // Both ends of the reference under the cursor: what it points at, and what
+  // points at it. The tree and the simplified view highlight the same set.
+  const relatedKeys = useMemo(
+    () => relatedPaths(lastGoodDoc, context.path),
+    [lastGoodDoc, context.path]
   );
 
   // Estate objects (/Common profiles, monitors, persistence) a pointer can
@@ -851,6 +859,7 @@ export default function App() {
             onSelect={(path) => navigateToPath(path)}
             onDelete={handleDeleteNode}
             isModified={isModifiedPath}
+            relatedKeys={relatedKeys}
           />
         </div>
         <div className="pane-editor">
@@ -880,6 +889,7 @@ export default function App() {
               onEditMany={applyEditMany}
               onAppendObjectItem={handleAppendObjectItem}
               onHoverPath={setHoverPath}
+              relatedKeys={relatedKeys}
             />
           )}
           <div

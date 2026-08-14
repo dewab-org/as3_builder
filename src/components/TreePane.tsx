@@ -1,6 +1,8 @@
+import { useEffect } from "react";
 import type { JsonPath } from "../engine";
-import { isPlainObject } from "../engine";
+import { isPlainObject, pathKey } from "../engine";
 import ConfirmButton from "./ConfirmButton";
+import { revealRelated } from "./revealRelated";
 
 interface TreePaneProps {
   doc: unknown;
@@ -9,6 +11,8 @@ interface TreePaneProps {
   onSelect: (path: JsonPath) => void;
   onDelete: (path: JsonPath) => void;
   isModified: (path: JsonPath) => boolean;
+  /** Path keys on the other end of the selected reference. */
+  relatedKeys: Set<string>;
 }
 
 // Deep enough to reach policy rules and their conditions/actions
@@ -45,6 +49,7 @@ function TreeNode({
   onSelect,
   onDelete,
   isModified,
+  relatedKeys,
 }: {
   nodeKey: string | number;
   value: unknown;
@@ -54,6 +59,7 @@ function TreeNode({
   onSelect: (path: JsonPath) => void;
   onDelete: (path: JsonPath) => void;
   isModified: (path: JsonPath) => boolean;
+  relatedKeys: Set<string>;
 }) {
   const isBranch =
     (isPlainObject(value) || Array.isArray(value)) && depth < MAX_DEPTH;
@@ -67,7 +73,7 @@ function TreeNode({
   return (
     <div className="tree-node">
       <div
-        className={`tree-label${selected ? " selected" : ""}${isModified(path) ? " modified" : ""}`}
+        className={`tree-label${selected ? " selected" : ""}${isModified(path) ? " modified" : ""}${relatedKeys.has(pathKey(path)) ? " related" : ""}`}
         onClick={() => onSelect(path)}
         title={path.map(String).join(" › ") || "(root)"}
       >
@@ -96,6 +102,7 @@ function TreeNode({
                 onSelect={onSelect}
                 onDelete={onDelete}
                 isModified={isModified}
+                relatedKeys={relatedKeys}
               />
             ))}
         </div>
@@ -111,7 +118,15 @@ export default function TreePane({
   onSelect,
   onDelete,
   isModified,
+  relatedKeys,
 }: TreePaneProps) {
+  // Reveal the linked node in this pane too — the tree scrolls independently,
+  // so the highlight can otherwise land out of sight.
+  const relatedKey = [...relatedKeys].sort().join("|");
+  useEffect(() => {
+    revealRelated(document.querySelector(".pane-tree"), ".tree-label.related");
+  }, [relatedKey]);
+
   if (!isPlainObject(doc)) {
     return <div className="pane-placeholder">No parsed document yet.</div>;
   }
@@ -138,6 +153,7 @@ export default function TreePane({
               onSelect={onSelect}
               onDelete={onDelete}
               isModified={isModified}
+              relatedKeys={relatedKeys}
             />
           ))}
       </div>

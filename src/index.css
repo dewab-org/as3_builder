@@ -380,6 +380,7 @@ body {
    serverTLS.use names, or — with the object selected — every pointer aimed at
    it. Distinct from selection (which is one place) and from modified (which is
    about NetBox), so all three can be true at once. */
+.tree-label.related,
 .simple-row.related,
 .obj-card.related {
   box-shadow: inset 3px 0 0 var(--link-accent);

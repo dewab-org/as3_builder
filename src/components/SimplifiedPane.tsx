@@ -5,10 +5,10 @@ import {
   isBase64Wrapper,
   isPlainObject,
   readOnlyReason,
-  relatedPaths,
   validateValue,
 } from "../engine";
 import Base64Editor from "./Base64Editor";
+import { revealRelated } from "./revealRelated";
 
 // Indented key-value rendering of the document, without JSON syntax.
 // Clicking a KEY focuses the node (panel/tree/status bar sync); clicking a
@@ -42,6 +42,8 @@ interface SimplifiedPaneProps {
   onAppendObjectItem: (arrayPath: JsonPath, index: number) => void;
   /** Reports what the pointer is over, for the info pane's hover preview. */
   onHoverPath: (path: JsonPath | null) => void;
+  /** Path keys on the other end of the selected reference. */
+  relatedKeys: Set<string>;
 }
 
 // Fold state lives outside the component so it survives switching to the
@@ -692,6 +694,7 @@ export default function SimplifiedPane({
   onEditMany,
   onAppendObjectItem,
   onHoverPath,
+  relatedKeys,
 }: SimplifiedPaneProps) {
   const [editingPath, setEditingPath] = useState<JsonPath | null>(null);
   const [foldTick, setFoldTick] = useState(0);
@@ -713,6 +716,12 @@ export default function SimplifiedPane({
     if (changed) setFoldTick((n) => n + 1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cursorKey]);
+
+  // Bring the far end of the reference into view when it is off screen.
+  const relatedKey = [...relatedKeys].sort().join("|");
+  useEffect(() => {
+    revealRelated(document.querySelector(".simple-pane"), ".related");
+  }, [relatedKey]);
 
   if (!isPlainObject(doc)) {
     return (
@@ -743,10 +752,9 @@ export default function SimplifiedPane({
     setFoldTick((n) => n + 1);
   };
 
-  const related = relatedPaths(doc, cursorPath);
   const ctx: RowCtx = {
     hover: onHoverPath,
-    isRelated: (path) => related.has(pathKey(path)),
+    isRelated: (path) => relatedKeys.has(pathKey(path)),
     cursorPath,
     isCollapsed,
     toggleCollapse,
