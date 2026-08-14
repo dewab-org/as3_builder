@@ -207,6 +207,80 @@ describe("snat pool linkage", () => {
   });
 });
 
+describe("policy and profile links", () => {
+  it("round-trips the loaded links without a change", () => {
+    const { declaration, manifest } = fresh();
+    expect(computeUpdates(declaration, manifest).updates).toEqual([]);
+  });
+
+  it("relinks when an iRule is detached", () => {
+    const { declaration, manifest, appKey } = fresh();
+    const vs = (declaration[appKey] as Dict).vs_rel as Dict;
+    delete vs.iRules;
+    const ops = computeUpdates(declaration, manifest).updates.flatMap(
+      (u) => u.ops
+    );
+    // The endpoint policy stays; only the iRule leaves the set.
+    expect(ops).toContainEqual({
+      op: "vs-links",
+      field: "policies",
+      targetKeys: ["pol_forward"],
+      label: 'link policies to "pol_forward"',
+    });
+  });
+
+  it("relinks when a protocol profile is swapped", () => {
+    const { declaration, manifest, appKey } = fresh();
+    const vs = (declaration[appKey] as Dict).vs_rel as Dict;
+    vs.profileTCP = { use: "tcp_wan" };
+    const ops = computeUpdates(declaration, manifest).updates.flatMap(
+      (u) => u.ops
+    );
+    expect(ops).toContainEqual({
+      op: "vs-links",
+      field: "protocol_profiles",
+      targetKeys: ["tcp_wan"],
+      label: 'link protocol profiles to "tcp_wan"',
+    });
+  });
+
+  it("detaching everything is an explicit empty set", () => {
+    const { declaration, manifest, appKey } = fresh();
+    const vs = (declaration[appKey] as Dict).vs_rel as Dict;
+    delete vs.policyEndpoint;
+    delete vs.iRules;
+    const ops = computeUpdates(declaration, manifest).updates.flatMap(
+      (u) => u.ops
+    );
+    expect(ops).toContainEqual({
+      op: "vs-links",
+      field: "policies",
+      targetKeys: [],
+      label: "detach all policies",
+    });
+  });
+
+  it("reports a pointer outside the declaration instead of guessing", () => {
+    const { declaration, manifest, appKey } = fresh();
+    const vs = (declaration[appKey] as Dict).vs_rel as Dict;
+    vs.profileTCP = { bigip: "/Common/tcp-lan" };
+    const { updates, notes } = computeUpdates(declaration, manifest);
+    const ops = updates.flatMap((u) => u.ops);
+    expect(ops.filter((o) => o.op === "vs-links")).toEqual([]);
+    expect(notes.join(" ")).toMatch(/not a NetBox object of its own/);
+  });
+
+  it("ignores ordering differences", () => {
+    const { declaration, manifest, appKey } = fresh();
+    const vs = (declaration[appKey] as Dict).vs_rel as Dict;
+    vs.iRules = ["irule_redirect"];
+    vs.policyEndpoint = { use: "pol_forward" };
+    expect(
+      computeUpdates(declaration, manifest).updates.flatMap((u) => u.ops)
+    ).toEqual([]);
+  });
+});
+
 describe("certificates are pointers", () => {
   /** NetBox stores certificate metadata only; the material lives in the
    * certificate estate, so nothing about one is writable from a declaration. */

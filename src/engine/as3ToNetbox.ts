@@ -47,6 +47,12 @@ export interface ManifestEntry {
   };
   /** Virtual-server entries: the linked SNAT pool's NetBox name as loaded. */
   snatPoolName?: string | null;
+  /** Virtual-server entries: linked policy / protocol-profile names as loaded
+   * (AS3-key form), for the M2M relink diffs. */
+  linkNames?: {
+    policies: string[];
+    protocol_profiles: string[];
+  };
   /** The application-level entry (label/extras map to the app object). */
   isApplication?: boolean;
 }
@@ -77,6 +83,15 @@ export type WriteOp =
       op: "vs-ref";
       field: "backend_pool" | "ssl_profile" | "server_ssl_profile";
       targetKey: string | null; // null clears the reference
+      label: string;
+    }
+  | {
+      op: "vs-links";
+      /** Which many-to-many field on the virtual server to set. */
+      field: "policies" | "protocol_profiles";
+      /** Target objects as AS3 keys (resolved via the manifest first, then by
+       * NetBox name — these can be estate objects outside the declaration). */
+      targetKeys: string[];
       label: string;
     }
   | {
@@ -707,6 +722,14 @@ export function buildManifest(
       entry.snatPoolName = isPlainObject(netboxObj.snat_pool)
         ? String(netboxObj.snat_pool.name)
         : null;
+      const linkNames = (list: unknown) =>
+        ((list as Dict[] | undefined) ?? []).map((o) =>
+          sanitizeKey(String(o.name))
+        );
+      entry.linkNames = {
+        policies: linkNames(netboxObj.policies),
+        protocol_profiles: linkNames(netboxObj.protocol_profiles),
+      };
     }
     entries.push(entry);
   }
@@ -1153,6 +1176,75 @@ export function computeUpdates(
     }
 
 
+    // Policies and protocol profiles: AS3 points at them per virtual server,
+    // NetBox links them many-to-many. Retargeting is a relink of that set —
+    // the objects themselves are written (or not) by their own entries.
+    if (entry.linkNames) {
+      /** AS3 key a pointer names, or undefined when it points outside the
+       * declaration (a {bigip} path we cannot resolve to a NetBox row). */
+      const keyOf = (v: unknown): string | undefined => {
+        if (typeof v === "string") return sanitizeKey(v);
+        if (isPlainObject(v) && typeof v.use === "string")
+          return sanitizeKey(v.use);
+        return undefined;
+      };
+      const gather = (
+        values: unknown[]
+      ): { keys: string[]; unresolved: unknown[] } => {
+        const keys: string[] = [];
+        const unresolved: unknown[] = [];
+        for (const v of values) {
+          if (v === undefined) continue;
+          const key = keyOf(v);
+          // A rendered artifact (the merged multi-policy object, say) is not a
+          // NetBox row, so it can never be the target of a link.
+          if (key === undefined || key in manifest.artifacts) unresolved.push(v);
+          else keys.push(key);
+        }
+        return { keys, unresolved };
+      };
+
+      const iRules = Array.isArray(current.iRules) ? current.iRules : [];
+      const linkSets: [
+        "policies" | "protocol_profiles",
+        unknown[],
+        string,
+      ][] = [
+        ["policies", [current.policyEndpoint, ...iRules], "policyEndpoint/iRules"],
+        [
+          "protocol_profiles",
+          [current.profileTCP, current.profileHTTP],
+          "profileTCP/profileHTTP",
+        ],
+      ];
+
+      for (const [field, values, as3Props] of linkSets) {
+        const { keys, unresolved } = gather(values);
+        for (const u of unresolved)
+          notes.push(
+            `"${entry.as3Key}": ${as3Props} points at ${JSON.stringify(u)}, which is not a NetBox object of its own — the link was not changed`
+          );
+        // Order is NetBox's to decide; compare as sets.
+        const same =
+          keys.length === entry.linkNames[field].length &&
+          [...keys].sort().join("\u0000") ===
+            [...entry.linkNames[field]].sort().join("\u0000");
+        if (!same && unresolved.length === 0) {
+          ops.push({
+            op: "vs-links",
+            field,
+            targetKeys: keys,
+            label:
+              keys.length === 0
+                ? `detach all ${field.replace("_", " ")}`
+                : `link ${field.replace("_", " ")} to ${keys
+                    .map((k) => `"${k}"`)
+                    .join(", ")}`,
+          });
+        }
+      }
+    }
+
     // SNAT: declarations consume a pre-created pool, they never define one.
     // AS3 spells that as {bigip: "/Partition/Folder/<name>"}; the keywords
     // "auto"/"none"/"self" mean "no pool", which clears the link.
@@ -1334,6 +1426,7 @@ const CERTIFICATE_NOTE = (key: string, what: string) =>
 // Relation properties with no write path yet: editing one is reported, not
 // pushed. `snat` is absent deliberately — retargeting it is a vs-snat op.
 const NOTED_RELATION_PROPS: Record<string, string[]> = {
-  "virtual-servers": ["policyEndpoint", "iRules", "profileTCP", "profileHTTP"],
+  // Virtual-server relations all have write paths now (vs-ref, vs-snat,
+  // vs-links), so nothing here is merely noted.
   "ssl-profiles": ["certificates", "clientCertificate", "cipherGroup"],
 };

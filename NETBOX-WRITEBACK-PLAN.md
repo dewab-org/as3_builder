@@ -174,7 +174,7 @@ the current declaration id) → dialog in the BigipDialog style:
   policies (endpoint policies and iRules), protocol profiles and cipher
   rules/groups, so editing them is an ordinary PATCH. Still out of scope:
   creating these objects from the builder, changing which policy/profile a
-  virtual server points at.
+  virtual server points at (done — see W5 relinks).
 
 ## 5. Known limits (state up front, revisit later)
 
@@ -200,9 +200,15 @@ the current declaration id) → dialog in the BigipDialog style:
   relinks a virtual server to an existing pool by name and never creates,
   edits or deletes a pool; pointing at a name NetBox doesn't have fails the
   push with that message rather than creating one.
-- `policyEndpoint`, `iRules` and `profileTCP`/`profileHTTP` still point at
-  whatever NetBox already links; retargeting them from the builder is not
-  implemented, so those edits are reported, not written.
+- `policyEndpoint`, `iRules` and `profileTCP`/`profileHTTP` relink the virtual
+  server's `policies` / `protocol_profiles` sets (targets resolved through the
+  manifest first, then by NetBox name, so estate objects outside the
+  declaration work). Two limits: a `{bigip}` pointer names no NetBox row, and
+  the merged multi-policy object is a renderer artifact — both leave the link
+  untouched and say so. Detaching unlinks; it never deletes the object.
+- The simplified view's `use` picker only offers objects present in the
+  declaration, so retargeting to an estate object that is not currently linked
+  has to be typed in the JSON view. The write-back path handles it either way.
 
 ## 6. Test strategy
 

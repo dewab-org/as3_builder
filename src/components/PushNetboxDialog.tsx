@@ -299,6 +299,34 @@ export default function PushNetboxDialog({
           });
           break;
         }
+        case "vs-links": {
+          // Manifest first (objects rendered from this application), then by
+          // NetBox name — a virtual server may point at estate objects that
+          // were never part of this declaration.
+          const endpoint =
+            op.field === "policies" ? "policies" : "protocol-profiles";
+          const ids: number[] = [];
+          for (const key of op.targetKeys) {
+            const known = keyToId.get(key);
+            if (known !== undefined) {
+              ids.push(known);
+              continue;
+            }
+            const found = await netboxRest<{ results: { id: number }[] }>(
+              `${PLUGIN_BASE}/${endpoint}/?name=${encodeURIComponent(key)}`
+            );
+            if (found.results.length === 0)
+              throw new Error(
+                `"${key}" does not exist in NetBox — create it there first`
+              );
+            ids.push(found.results[0].id);
+          }
+          await netboxRest(`${base}/${entry.id}/`, {
+            method: "PATCH",
+            body: { [op.field]: ids },
+          });
+          break;
+        }
         case "vs-snat": {
           let id: number | null = null;
           if (op.poolName !== null) {

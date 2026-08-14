@@ -256,16 +256,16 @@ describe("write-back changeset (W1)", () => {
     expect(vsChange?.outOfScope).toBe(false);
   });
 
-  it("W5: retargeting a policy or profile is still reported, not pushed", () => {
+  it("W5: a bigip pointer has no NetBox row, so the link is left alone", () => {
     const { declaration, manifest } = freshRender();
     const appObj = declaration[appName] as Dict;
     (appObj.vs_ssl_app as Dict).profileTCP = { bigip: "/Common/tcp-lan" };
     const { updates, notes } = computeUpdates(declaration, manifest);
-    const vsChange = updates.find(
-      (u) => u.entry.endpoint === "virtual-servers"
-    );
-    expect(vsChange?.outOfScope).toBe(true);
-    expect(notes.some((n) => n.includes("retargeting"))).toBe(true);
+    const ops = updates.flatMap((u) => u.ops);
+    expect(ops.filter((o) => o.op === "vs-links")).toEqual([]);
+    expect(
+      notes.some((n) => n.includes("not a NetBox object of its own"))
+    ).toBe(true);
   });
 
   it("TLS profile creates require certificates", () => {
