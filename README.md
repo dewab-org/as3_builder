@@ -262,6 +262,16 @@ whether a dry run was done against that host/tenant this session and whether it
 passed), then a final confirmation naming the host and warning that AS3 removes
 applications missing from the declaration.
 
+## Contributing
+
+New features and major changes go on a branch and through a pull request —
+a new capability, a new dependency, a new deployment surface, or a change to
+how write-back or apply behaves. Small fixes, doc tweaks and follow-up
+corrections can land on `main` directly.
+
+The pre-commit hook runs on either path; see **Running** above for what it
+checks and how to bypass it when you must.
+
 ## Repository documents
 
 | File | Purpose |
