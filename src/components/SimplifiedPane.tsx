@@ -19,6 +19,11 @@ export interface InlineSpec {
   kind: "string" | "longtext" | "number" | "boolean" | "enum" | "xref";
   enumValues?: (string | number)[];
   xrefOptions?: { name: string; className: string }[];
+  /** Objects that exist on the BIG-IP rather than in this declaration. Picking
+   * one rewrites the whole pointer to {bigip: fullPath}, so it is committed at
+   * `externalTargetPath`, not at the row being edited. */
+  externalOptions?: { fullPath: string; label: string; summary: string }[];
+  externalTargetPath?: JsonPath;
   schema?: JsonSchema;
 }
 
@@ -91,16 +96,21 @@ function isScalarArray(v: unknown): v is unknown[] {
 
 // ---- inline editor ---------------------------------------------------------
 
+const EXTERNAL_PREFIX = "\u0000bigip:";
+
 function InlineEditor({
   spec,
   initial,
   onCommit,
+  onCommitExternal,
   onCancel,
 }: {
   spec: InlineSpec;
   initial: unknown;
   /** wasEnter distinguishes Enter-commit (may append the next list item). */
   onCommit: (value: unknown, wasEnter: boolean) => void;
+  /** An estate object was picked: replace the pointer with {bigip: …}. */
+  onCommitExternal: (fullPath: string) => void;
   onCancel: () => void;
 }) {
   const [draft, setDraft] = useState(
@@ -137,7 +147,13 @@ function InlineEditor({
     onCancel();
   };
 
-  if (spec.kind === "enum" || spec.kind === "xref" || spec.kind === "boolean") {
+  const externals = spec.externalOptions ?? [];
+  if (
+    spec.kind === "enum" ||
+    spec.kind === "xref" ||
+    spec.kind === "boolean" ||
+    externals.length > 0
+  ) {
     const options =
       spec.kind === "boolean"
         ? [
@@ -145,8 +161,11 @@ function InlineEditor({
             { value: "false", label: "false" },
           ]
         : spec.kind === "enum"
-          ? spec.enumValues!.map((v) => ({ value: String(v), label: String(v) }))
-          : spec.xrefOptions!.map((o) => ({
+          ? (spec.enumValues ?? []).map((v) => ({
+              value: String(v),
+              label: String(v),
+            }))
+          : (spec.xrefOptions ?? []).map((o) => ({
               value: o.name,
               label: `${o.name} (${o.className})`,
             }));
@@ -160,6 +179,10 @@ function InlineEditor({
           if (committedRef.current) return;
           committedRef.current = true;
           const raw = e.target.value;
+          if (raw.startsWith(EXTERNAL_PREFIX)) {
+            onCommitExternal(raw.slice(EXTERNAL_PREFIX.length));
+            return;
+          }
           if (spec.kind === "boolean") onCommit(raw === "true", false);
           else if (spec.kind === "enum")
             onCommit(
@@ -181,6 +204,19 @@ function InlineEditor({
             {o.label}
           </option>
         ))}
+        {externals.length > 0 && (
+          <optgroup label="On the BIG-IP (/Common) — external">
+            {externals.map((o) => (
+              <option
+                key={o.fullPath}
+                value={`${EXTERNAL_PREFIX}${o.fullPath}`}
+                title={o.summary}
+              >
+                {o.label}
+              </option>
+            ))}
+          </optgroup>
+        )}
       </select>
     );
   }
@@ -740,6 +776,12 @@ export default function SimplifiedPane({
         <InlineEditor
           spec={spec}
           initial={value}
+          onCommitExternal={(fullPath) => {
+            // The pointer object itself is replaced, not the row: a use-name
+            // and a bigip-path are different shapes.
+            onEditValue(spec.externalTargetPath ?? path, { bigip: fullPath });
+            setEditingPath(null);
+          }}
           onCommit={(v, wasEnter) => {
             const fresh = freshItems.current.delete(pathKey(path));
             if (isItem && v === "") {

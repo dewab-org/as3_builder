@@ -76,13 +76,40 @@ describe("bigip catalogue", () => {
 });
 
 describe("the shipped catalogue", () => {
-  it("is a valid, clearly-unpopulated placeholder until a device is read", async () => {
+  it("came from a real device and covers the AS3 pointer properties", async () => {
     const shipped = (await import("../../schemas/bigip-common-catalog.json"))
       .default as BigipCatalog;
     expect(shipped.format).toBe("bigip-common-catalog");
-    // If this starts failing, someone fetched a real catalogue — good; update
-    // the expectation to assert the entries instead.
-    expect(isCatalogPopulated(shipped)).toBe(false);
-    expect(shipped.generatedFrom.note).toMatch(/LICENSED BIG-IP/);
+    expect(isCatalogPopulated(shipped)).toBe(true);
+    // Provenance: a catalogue with no device behind it is a stale placeholder.
+    expect(shipped.generatedFrom.version).toMatch(/^\d+\.\d+/);
+    expect(shipped.generatedFrom.digest).toMatch(/^[a-f0-9]{64}$/);
+
+    // The properties a per-app declaration actually points at.
+    for (const property of [
+      "profileTCP",
+      "profileHTTP",
+      "profileL4",
+      "serverTLS",
+      "clientTLS",
+      "persistenceMethods",
+      "monitors",
+    ])
+      expect(bigipCandidates(shipped, property).length).toBeGreaterThan(0);
+
+    // Everything is in /Common and usable verbatim in {bigip: …}.
+    for (const entry of shipped.entries)
+      expect(entry.fullPath.startsWith("/Common/")).toBe(true);
+  });
+
+  it("records what a derived profile changes, not just its full settings", async () => {
+    const shipped = (await import("../../schemas/bigip-common-catalog.json"))
+      .default as BigipCatalog;
+    const lan = catalogEntry(shipped, "/Common/tcp-lan-optimized");
+    expect(lan?.defaultsFrom).toBe("/Common/tcp-legacy");
+    expect(Object.keys(lan?.differsFromParent ?? {}).length).toBeGreaterThan(0);
+    expect(Object.keys(lan?.settings ?? {}).length).toBeGreaterThan(
+      Object.keys(lan?.differsFromParent ?? {}).length
+    );
   });
 });

@@ -197,9 +197,12 @@ For each object it records the full path, the AS3 property that accepts it,
 every setting, and — for a derived profile — just the settings that differ from
 the profile it derives from, which is the part an operator actually chooses on.
 
-**The shipped file is an empty placeholder.** Both lab devices
-(`bigip01`/`bigip02`, 17.5.1.4) are currently unlicensed, so no catalogue could
-be generated yet.
+The shipped catalogue holds 108 objects read from `bigip01` (17.5.1.4 build
+0.0.20). In the simplified view, any `use`/`bigip` pointer row offers them
+under **"On the BIG-IP (/Common) — external"**; picking one rewrites the whole
+pointer to `{bigip: "/Common/…"}`, and the card immediately takes the external
+styling. NetBox write-back reports such a pointer as "not a NetBox object of
+its own" rather than trying to relink to something that has no row there.
 
 ## BIG-IP validation
 

@@ -24,6 +24,7 @@ import { netboxSession } from "./netboxSession";
 import { useValidation } from "./hooks/useValidation";
 import {
   applicationMemberClasses,
+  bigipCandidates,
   buildClassRegistry,
   effectiveSchema,
   extractXrefClasses,
@@ -32,10 +33,13 @@ import {
   indexClassInstances,
   getContext,
   isPlainObject,
+  loadBigipCatalog,
   resolveDrop,
   resolveSchemaForPath,
   stubValue,
+  summarizeEntry,
   xrefCandidatesAt,
+  type BigipCatalog,
   type DropPayload,
   type JsonPath,
   type JsonSchemaRoot,
@@ -223,6 +227,19 @@ export default function App() {
     () => getContext(root, registry, debouncedText, cursorOffset),
     [root, registry, debouncedText, cursorOffset]
   );
+
+  // Estate objects (/Common profiles, monitors, persistence) a pointer can
+  // name. Loaded once; absent until someone runs the fetch script.
+  const [bigipCatalog, setBigipCatalog] = useState<BigipCatalog>();
+  useEffect(() => {
+    let active = true;
+    void loadBigipCatalog().then((c) => {
+      if (active) setBigipCatalog(c);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // What the pointer is over, in either view. Drives the info pane's hover
   // preview; the cursor-driven context underneath is left alone.
@@ -443,6 +460,21 @@ export default function App() {
         };
       }
       if (eff.type === "boolean") return { kind: "boolean" as const, schema: eff };
+      // A `use`/`bigip` row sits inside a pointer object whose KEY is the AS3
+      // property (profileTCP, monitors, …) — that is what decides which
+      // estate objects may be offered.
+      const leaf = path[path.length - 1];
+      const ownerKey = path[path.length - 2];
+      const externalOptions =
+        (leaf === "use" || leaf === "bigip") && typeof ownerKey === "string"
+          ? bigipCandidates(bigipCatalog, ownerKey).map((e) => ({
+              fullPath: e.fullPath,
+              label: `${e.name} — ${e.fullPath}`,
+              summary: summarizeEntry(e),
+            }))
+          : [];
+      const externalTargetPath = path.slice(0, -1);
+
       const classes = extractXrefClasses(root, schema);
       if (classes) {
         const seen = new Set<string>();
@@ -453,17 +485,32 @@ export default function App() {
           seen.add(inst.name);
           xrefOptions.push({ name: inst.name, className: inst.className });
         }
-        if (xrefOptions.length > 0)
-          return { kind: "xref" as const, xrefOptions, schema: eff };
+        if (xrefOptions.length > 0 || externalOptions.length > 0)
+          return {
+            kind: "xref" as const,
+            xrefOptions,
+            externalOptions,
+            externalTargetPath,
+            schema: eff,
+          };
       }
       if (eff.type === "integer" || eff.type === "number")
         return { kind: "number" as const, schema: eff };
+      // A {bigip: …} row has no xref classes of its own, so offer the estate
+      // list here too — retargeting is the whole point of that field.
+      if (externalOptions.length > 0)
+        return {
+          kind: "string" as const,
+          externalOptions,
+          externalTargetPath,
+          schema: eff,
+        };
       const long =
         (typeof value === "string" && value.length > 40) ||
         (eff.maxLength ?? 0) > 100;
       return { kind: long ? ("longtext" as const) : ("string" as const), schema: eff };
     },
-    [root, registry, lastGoodDoc]
+    [root, registry, lastGoodDoc, bigipCatalog]
   );
 
   const xrefAt = useCallback(
