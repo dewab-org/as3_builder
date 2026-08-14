@@ -40,8 +40,10 @@ interface SimplifiedPaneProps {
   onEditMany: (edits: [JsonPath, unknown][]) => void;
   /** Append a schema-stubbed object item (e.g. a pool member) and focus it. */
   onAppendObjectItem: (arrayPath: JsonPath, index: number) => void;
-  /** Reports what the pointer is over, for the info pane's hover preview. */
-  onHoverPath: (path: JsonPath | null) => void;
+  /** Reports what the pointer is over, with its position, for the hover card. */
+  onHoverPath: (
+    anchor: { path: JsonPath; x: number; y: number } | null
+  ) => void;
   /** Path keys on the other end of the selected reference. */
   relatedKeys: Set<string>;
 }
@@ -287,7 +289,7 @@ interface RowCtx {
   cancelEdit: () => void;
   isCollapsed: (path: JsonPath) => boolean;
   toggleCollapse: (path: JsonPath) => void;
-  hover: (path: JsonPath | null) => void;
+  hover: (anchor: { path: JsonPath; x: number; y: number } | null) => void;
   /** True when this node is the other end of the selected reference. */
   isRelated: (path: JsonPath) => boolean;
 }
@@ -314,10 +316,12 @@ function immutabilityOf(
   return undefined;
 }
 
-/** Hover handlers for a row: report the path in, clear it on the way out. */
+/** Hover handlers for a row: report the path and where the pointer is, so the
+ * card can appear next to it; clear on the way out. */
 function hoverProps(path: JsonPath, ctx: RowCtx) {
   return {
-    onMouseEnter: () => ctx.hover(path),
+    onMouseEnter: (e: React.MouseEvent) =>
+      ctx.hover({ path, x: e.clientX, y: e.clientY }),
     onMouseLeave: () => ctx.hover(null),
   };
 }

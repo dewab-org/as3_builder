@@ -1,7 +1,5 @@
-import { useEffect, useState } from "react";
 import type {
   ClassInfo,
-  ClassRegistry,
   JsonPath,
   JsonSchemaRoot,
   NodeContext,
@@ -14,10 +12,8 @@ import {
   getAtPath,
   indexClassInstances,
   isPlainObject,
-  loadAs3Documentation,
   type DocumentationIndex,
 } from "../engine";
-import HoverDetail from "./HoverDetail";
 import PropertyWidget from "./PropertyWidget";
 import ConfirmButton from "./ConfirmButton";
 import AddableList, {
@@ -32,9 +28,8 @@ interface ContextPanelProps {
   isStale: boolean;
   memberClasses: ClassInfo[];
   schemaRoot: JsonSchemaRoot;
-  registry: ClassRegistry;
-  /** Document path the pointer is over, previewed above the panel. */
-  hoverPath: JsonPath | null;
+  /** Generated F5 documentation index, loaded once by the app. */
+  documentation: DocumentationIndex | undefined;
   onEdit: (path: JsonPath, value: unknown) => void;
   onNavigate: (path: JsonPath) => void;
   onAddChip: (payload: ChipPayload) => void;
@@ -48,25 +43,13 @@ export default function ContextPanel({
   isStale,
   memberClasses,
   schemaRoot,
-  registry,
-  hoverPath,
+  documentation,
   onEdit,
   onNavigate,
   onAddChip,
   onDeleteNode,
   onClassChange,
 }: ContextPanelProps) {
-  const [documentation, setDocumentation] = useState<DocumentationIndex>();
-  useEffect(() => {
-    let active = true;
-    void loadAs3Documentation().then((index) => {
-      if (active) setDocumentation(index);
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
-
   const docNode = getAtPath(doc, context.path);
 
   // Cross-reference options: document objects grouped once, filtered per
@@ -169,15 +152,6 @@ export default function ContextPanel({
   return (
     <div>
       {isStale && <div className="stale-banner">Stale — fix JSON to refresh</div>}
-      {hoverPath && (
-        <HoverDetail
-          path={hoverPath}
-          doc={doc}
-          schemaRoot={schemaRoot}
-          registry={registry}
-          documentation={documentation}
-        />
-      )}
       <div className="ctx-breadcrumb">
         <span className="ctx-crumb-text">
           {context.breadcrumb}

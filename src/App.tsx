@@ -22,6 +22,7 @@ import { getTemplate } from "./templates";
 import { useDocument } from "./hooks/useDocument";
 import { netboxSession } from "./netboxSession";
 import { loadAppConfig } from "./appConfig";
+import HoverCard, { type HoverAnchor } from "./components/HoverCard";
 import { applyBigipDefaults } from "./components/bigipSession";
 import { useValidation } from "./hooks/useValidation";
 import {
@@ -35,6 +36,7 @@ import {
   indexClassInstances,
   getContext,
   isPlainObject,
+  loadAs3Documentation,
   loadBigipCatalog,
   resolveDrop,
   resolveSchemaForPath,
@@ -43,6 +45,7 @@ import {
   summarizeEntry,
   xrefCandidatesAt,
   type BigipCatalog,
+  type DocumentationIndex,
   type DropPayload,
   type JsonPath,
   type JsonSchemaRoot,
@@ -268,15 +271,28 @@ export default function App() {
 
   // What the pointer is over, in either view. Drives the info pane's hover
   // preview; the cursor-driven context underneath is left alone.
-  const [hoverPath, setHoverPath] = useState<JsonPath | null>(null);
+  const [hoverAnchor, setHoverAnchor] = useState<HoverAnchor | null>(null);
+  // The generated F5 docs index: one load, shared by the info pane and the
+  // floating hover card.
+  const [documentation, setDocumentation] = useState<DocumentationIndex>();
+  useEffect(() => {
+    let active = true;
+    void loadAs3Documentation().then((index) => {
+      if (active) setDocumentation(index);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
   // Resolve against the live text, not debouncedText: the offset comes from
   // Monaco's current model, so during the parse debounce the two disagree and
   // the preview would describe the wrong node.
   const hoverOffsetToPath = useCallback(
-    (offset: number | null) => {
-      if (offset === null) return setHoverPath(null);
+    (offset: number | null, x?: number, y?: number) => {
+      if (offset === null || x === undefined || y === undefined)
+        return setHoverAnchor(null);
       const path = getLocation(text, offset).path as JsonPath;
-      setHoverPath(path.length > 0 ? path : null);
+      setHoverAnchor(path.length > 0 ? { path, x, y } : null);
     },
     [text]
   );
@@ -906,7 +922,7 @@ export default function App() {
               onEditValue={handleEdit}
               onEditMany={applyEditMany}
               onAppendObjectItem={handleAppendObjectItem}
-              onHoverPath={setHoverPath}
+              onHoverPath={setHoverAnchor}
               relatedKeys={relatedKeys}
             />
           )}
@@ -940,8 +956,7 @@ export default function App() {
             isStale={isStale}
             memberClasses={memberClasses}
             schemaRoot={root}
-            registry={registry}
-            hoverPath={hoverPath}
+            documentation={documentation}
             onEdit={handleEdit}
             onNavigate={(path) => navigateToPath(path)}
             onAddChip={handleAddChip}
@@ -950,6 +965,16 @@ export default function App() {
           />
         </div>
       </div>
+      {hoverAnchor && (
+        <HoverCard
+          anchor={hoverAnchor}
+          doc={lastGoodDoc}
+          schemaRoot={root}
+          registry={registry}
+          documentation={documentation}
+        />
+      )}
+
       <div className="errorbar-wrap">
         {showIssues && issues.length > 0 && (
           <div className="issue-list">

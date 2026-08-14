@@ -16,7 +16,11 @@ interface EditorPaneProps {
   choiceValueStartAt?: (text: string, offset: number) => number | null;
   /** Reports the document offset the pointer is over (null when it leaves the
    * editor), so the info pane can preview what's under the mouse. */
-  onHoverOffsetChange?: (offset: number | null) => void;
+  onHoverOffsetChange?: (
+    offset: number | null,
+    x?: number,
+    y?: number
+  ) => void;
   /** Path of the JSON property/array element that starts on this line, or
    * null when the line isn't deletable (structural brackets, root, …). */
   deletableRowPath?: (text: string, lineStartOffset: number) => unknown;
@@ -176,15 +180,17 @@ export default function EditorPane(props: EditorPaneProps) {
         // per pixel of movement, so only tell the parent when the offset
         // actually changes.
         let lastHoverOffset: number | null = null;
-        const reportHover = (offset: number | null) => {
+        const reportHover = (offset: number | null, x?: number, y?: number) => {
           if (offset === lastHoverOffset) return;
           lastHoverOffset = offset;
-          propsRef.current.onHoverOffsetChange?.(offset);
+          propsRef.current.onHoverOffsetChange?.(offset, x, y);
         };
         editorInstance.onMouseMove((e) => {
           const model = editorInstance.getModel();
           reportHover(
-            model && e.target.position ? model.getOffsetAt(e.target.position) : null
+            model && e.target.position ? model.getOffsetAt(e.target.position) : null,
+            e.event.posx,
+            e.event.posy
           );
         });
         editorInstance.onMouseLeave(() => reportHover(null));
