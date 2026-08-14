@@ -26,6 +26,10 @@ const MARGIN = 8; // keep this far from the viewport edge
  * That works because leaving a row schedules the close rather than doing it
  * immediately, and entering the card cancels that: the pointer can cross the
  * gap without the card vanishing underneath it.
+ *
+ * Clicking it pins it: the card stops following the pointer, so it can be read
+ * at length while you hover other things. Escape, the ✕, or a click anywhere
+ * else lets it go.
  */
 export default function HoverCard({
   anchor,
@@ -35,6 +39,9 @@ export default function HoverCard({
   documentation,
   onPointerEnter,
   onPointerLeave,
+  pinned,
+  onPin,
+  onUnpin,
 }: {
   anchor: HoverAnchor;
   doc: unknown;
@@ -43,6 +50,9 @@ export default function HoverCard({
   documentation: DocumentationIndex | undefined;
   onPointerEnter: () => void;
   onPointerLeave: () => void;
+  pinned: boolean;
+  onPin: () => void;
+  onUnpin: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [placement, setPlacement] = useState({
@@ -55,7 +65,8 @@ export default function HoverCard({
   // long declaration would otherwise land.
   useLayoutEffect(() => {
     const el = ref.current;
-    if (!el) return;
+    // A pinned card keeps where it was pinned, so it never hops mid-read.
+    if (!el || pinned) return;
     const { width, height } = el.getBoundingClientRect();
     // Some embedded/headless viewports report 0; flipping against that would
     // pin every card to the corner, so trust the measurement only when there
@@ -70,17 +81,37 @@ export default function HoverCard({
     if (viewHeight > 0 && top + height > viewHeight - MARGIN)
       top = Math.max(MARGIN, anchor.y - GAP - height);
     setPlacement({ left, top });
-  }, [anchor.x, anchor.y, anchor.path]);
+  }, [anchor.x, anchor.y, anchor.path, pinned]);
 
   return (
     <div
       ref={ref}
-      className="hover-card"
+      className={`hover-card${pinned ? " pinned" : ""}`}
       style={{ left: placement.left, top: placement.top }}
       role="tooltip"
       onMouseEnter={onPointerEnter}
       onMouseLeave={onPointerLeave}
+      onClick={() => {
+        if (!pinned) onPin();
+      }}
     >
+      <div className="hover-card-bar">
+        <span className="hover-card-hint">
+          {pinned ? "pinned — Esc to dismiss" : "click to pin"}
+        </span>
+        {pinned && (
+          <button
+            className="hover-card-close"
+            title="Dismiss (Esc)"
+            onClick={(e) => {
+              e.stopPropagation();
+              onUnpin();
+            }}
+          >
+            ✕
+          </button>
+        )}
+      </div>
       <HoverDetail
         path={anchor.path}
         doc={doc}

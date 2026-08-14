@@ -243,6 +243,47 @@ body {
   padding: 8px 10px;
 }
 
+/* Pinned reads as a deliberate surface rather than something passing by. */
+.hover-card.pinned {
+  border-width: 2px;
+  box-shadow: 0 10px 28px var(--shadow-strong);
+}
+
+.hover-card-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.hover-card-hint {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--faint);
+  flex: 1;
+}
+
+.hover-card.pinned .hover-card-hint {
+  color: var(--accent);
+}
+
+.hover-card-close {
+  border: none;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.hover-card-close:hover {
+  background: var(--select-hover);
+  color: var(--danger);
+}
+
 .hover-card .detail-card {
   border: none;
   background: none;

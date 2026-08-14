@@ -279,8 +279,12 @@ export default function App() {
   const cancelHoverClose = useCallback(() => {
     window.clearTimeout(hoverCloseTimer.current);
   }, []);
+  // Pinned: the card stops following the pointer so it can be read (and
+  // scrolled, and its links followed) without the next hover replacing it.
+  const [hoverPinned, setHoverPinned] = useState(false);
   const setHover = useCallback(
     (anchor: HoverAnchor | null) => {
+      if (hoverPinned) return;
       cancelHoverClose();
       if (anchor) setHoverAnchor(anchor);
       else
@@ -289,12 +293,37 @@ export default function App() {
           220
         );
     },
-    [cancelHoverClose]
+    [cancelHoverClose, hoverPinned]
   );
   const closeHoverNow = useCallback(() => {
+    if (hoverPinned) return;
+    cancelHoverClose();
+    setHoverAnchor(null);
+  }, [cancelHoverClose, hoverPinned]);
+  const unpinHover = useCallback(() => {
+    setHoverPinned(false);
     cancelHoverClose();
     setHoverAnchor(null);
   }, [cancelHoverClose]);
+
+  // A pinned card is dismissed by Escape or by clicking anywhere else — the
+  // same two exits every other transient surface in the app uses.
+  useEffect(() => {
+    if (!hoverPinned) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") unpinHover();
+    };
+    const onDown = (e: MouseEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (!el?.closest(".hover-card")) unpinHover();
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mousedown", onDown);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousedown", onDown);
+    };
+  }, [hoverPinned, unpinHover]);
   // The generated F5 docs index: one load, shared by the info pane and the
   // floating hover card.
   const [documentation, setDocumentation] = useState<DocumentationIndex>();
@@ -993,6 +1022,9 @@ export default function App() {
           anchor={hoverAnchor}
           onPointerEnter={cancelHoverClose}
           onPointerLeave={closeHoverNow}
+          pinned={hoverPinned}
+          onPin={() => setHoverPinned(true)}
+          onUnpin={unpinHover}
           doc={lastGoodDoc}
           schemaRoot={root}
           registry={registry}
