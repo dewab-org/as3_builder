@@ -24,6 +24,8 @@ export interface AppConfig {
   };
   /** False when the server withheld secrets (see credentialsAllowed). */
   includesCredentials: boolean;
+  /** Configuration problems worth showing before a connection is attempted. */
+  warnings: string[];
 }
 
 type Env = Record<string, string | undefined>;
@@ -48,7 +50,33 @@ export function credentialsAllowed(env: Env, isDev: boolean): boolean {
   return flag(env.AS3B_EXPOSE_CREDENTIALS, isDev);
 }
 
-export function readAppConfig(env: Env, isDev: boolean): AppConfig {
+/**
+ * A NetBox URL pointing at this server's own origin is always a mistake, and a
+ * silent one: the request lands on the SPA fallback and comes back as HTML
+ * with a 200 rather than an error. It happens whenever a .env written for the
+ * dev server is handed to the container, where "localhost" is the container.
+ */
+function selfReferenceWarning(url: string, selfPort: number | undefined): string | undefined {
+  if (!url.trim() || selfPort === undefined) return undefined;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return undefined;
+  }
+  const isLoopback = ["localhost", "127.0.0.1", "[::1]", "::1"].includes(
+    parsed.hostname
+  );
+  const port = Number(parsed.port || (parsed.protocol === "https:" ? 443 : 80));
+  if (!isLoopback || port !== selfPort) return undefined;
+  return `NETBOX_URL is ${url}, which is this server itself — inside a container "localhost" is the container, not your machine. Use the host's address (host.docker.internal on Docker Desktop) or NetBox's real hostname.`;
+}
+
+export function readAppConfig(
+  env: Env,
+  isDev: boolean,
+  selfPort?: number
+): AppConfig {
   const withSecrets = credentialsAllowed(env, isDev);
   const secret = (value: string | undefined) =>
     withSecrets ? (value ?? "") : "";
@@ -67,6 +95,9 @@ export function readAppConfig(env: Env, isDev: boolean): AppConfig {
       validateCert: flag(env.NETBOX_VALIDATE_CERTS, true),
     },
     includesCredentials: withSecrets,
+    warnings: [selfReferenceWarning(env.NETBOX_URL ?? "", selfPort)].filter(
+      (w): w is string => w !== undefined
+    ),
   };
 }
 
@@ -97,9 +128,10 @@ export function applyArgv(env: Env, argv: string[]): Env {
 export function serveAppConfig(
   res: ServerResponse,
   env: Env,
-  isDev: boolean
+  isDev: boolean,
+  selfPort?: number
 ): void {
-  const body = JSON.stringify(readAppConfig(env, isDev));
+  const body = JSON.stringify(readAppConfig(env, isDev, selfPort));
   res.statusCode = 200;
   res.setHeader("content-type", "application/json");
   // Credentials must never sit in a cache.

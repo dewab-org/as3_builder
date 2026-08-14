@@ -161,7 +161,7 @@ async function handle(
   if (isAppConfigRequest(req)) {
     // Not dev: a deployed server withholds secrets unless explicitly told to
     // expose them (AS3B_EXPOSE_CREDENTIALS=1).
-    serveAppConfig(res, SETTINGS, false);
+    serveAppConfig(res, SETTINGS, false, PORT);
     return;
   }
 

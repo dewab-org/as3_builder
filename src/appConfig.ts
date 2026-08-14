@@ -17,6 +17,7 @@ export interface AppConfig {
     validateCert: boolean;
   };
   includesCredentials: boolean;
+  warnings: string[];
 }
 
 export const EMPTY_APP_CONFIG: AppConfig = {
@@ -29,6 +30,7 @@ export const EMPTY_APP_CONFIG: AppConfig = {
     validateCert: true,
   },
   includesCredentials: false,
+  warnings: [],
 };
 
 let configPromise: Promise<AppConfig> | undefined;

@@ -3,9 +3,11 @@ services:
     build: .
     image: as3-builder:latest
     ports:
-      # Bind to loopback by default: the proxy routes will reach any BIG-IP or
-      # NetBox the container can route to, so don't expose it wider by accident.
-      - "127.0.0.1:8080:8080"
+      # Loopback only: the proxy routes reach any BIG-IP or NetBox the
+      # container can route to, and with AS3B_EXPOSE_CREDENTIALS set the page
+      # hands out whatever is in .env — don't publish this wider by accident.
+      # 8088 on the host because NetBox itself commonly sits on 8080.
+      - "127.0.0.1:8088:8080"
     read_only: true
     user: "65532:65532"
     cap_drop:
@@ -16,9 +18,19 @@ services:
     # path, and it is small, noexec and nosuid.
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=16m
+    # Connection defaults for the dialogs. Optional: without a .env the app
+    # still runs, the dialogs just start empty.
+    env_file:
+      - path: .env
+        required: false
     environment:
       NODE_ENV: production
       PORT: "8080"
+      # Hand the passwords/token from .env to the page, the way the dev server
+      # does. A deployed server withholds them by default — anyone who can
+      # reach this port gets whatever is exposed here, which is why the port
+      # binding above stays on loopback.
+      AS3B_EXPOSE_CREDENTIALS: "1"
     healthcheck:
       test:
         [

@@ -233,8 +233,10 @@ export default function App() {
 
   // Startup defaults from the server's environment (.env / env vars / flags).
   // They only prefill the dialogs; nothing is stored.
+  const [configWarnings, setConfigWarnings] = useState<string[]>([]);
   useEffect(() => {
     void loadAppConfig().then((config) => {
+      setConfigWarnings(config.warnings);
       if (config.netbox.url) netboxSession.url = config.netbox.url;
       netboxSession.username ||= config.netbox.username;
       netboxSession.password ||= config.netbox.password;
@@ -809,6 +811,7 @@ export default function App() {
       )}
       {showNetboxDialog && (
         <NetboxDialog
+          configWarnings={configWarnings}
           autoLoadAppId={deepLinkRef.current?.appId}
           onLoad={(newText) => {
             if (

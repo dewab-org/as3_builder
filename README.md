@@ -87,8 +87,16 @@ equivalent proxy in front.
 ## Docker
 
 ```bash
-docker compose up --build       # http://127.0.0.1:8080
+docker compose up --build       # http://127.0.0.1:8088
 ```
+
+Compose reads the same `.env` and sets `AS3B_EXPOSE_CREDENTIALS=1`, so the
+container prefills exactly like the dev server. Two things differ inside a
+container: it publishes on **8088**, because NetBox commonly holds 8080; and
+`localhost` means the container, not your machine — a `NETBOX_URL` of
+`http://localhost:8080` there resolves to the app itself and quietly returns
+the SPA's HTML. The server detects that case and says so in the Load dialog;
+use `host.docker.internal` (Docker Desktop) or NetBox's real hostname.
 
 Prebuilt multi-arch images (linux/amd64 + linux/arm64) are published to GHCR by
 `.github/workflows/docker-publish.yml` on every push to `main`, tagged `:main`,

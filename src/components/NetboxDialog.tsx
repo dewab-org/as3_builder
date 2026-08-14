@@ -14,6 +14,8 @@ import {
 } from "../netboxSession";
 
 interface NetboxDialogProps {
+  /** Problems the server spotted in its own configuration (see appConfig). */
+  configWarnings?: string[];
   onLoad: (text: string) => void;
   onClose: () => void;
   /** Deep link: load this application automatically once connected. */
@@ -22,6 +24,7 @@ interface NetboxDialogProps {
 
 
 export default function NetboxDialog({
+  configWarnings = [],
   onLoad,
   onClose,
   autoLoadAppId,
@@ -235,6 +238,17 @@ export default function NetboxDialog({
         )}
         {apps && apps.length === 0 && (
           <p className="ctx-hint">No applications found in this NetBox.</p>
+        )}
+
+        {configWarnings.length > 0 && (
+          <div className="modal-warnings">
+            <strong>Check the server configuration:</strong>
+            <ul>
+              {configWarnings.map((w) => (
+                <li key={w}>{w}</li>
+              ))}
+            </ul>
+          </div>
         )}
 
         {error && <div className="modal-error">{error}</div>}

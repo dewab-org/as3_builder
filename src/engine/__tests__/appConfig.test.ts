@@ -61,6 +61,18 @@ describe("startup configuration", () => {
     expect(readAppConfig({ BIGIP_VALIDATE_CERTS: "" }, true).bigip.validateCert).toBe(true);
   });
 
+  it("warns when NETBOX_URL points back at this server", () => {
+    // The exact case that bites when a dev .env is handed to the container.
+    const warned = readAppConfig({ NETBOX_URL: "http://localhost:8080/" }, false, 8080);
+    expect(warned.warnings.join(" ")).toMatch(/this server itself/);
+
+    // A different port, a real hostname, or an unknown self port: no warning.
+    expect(readAppConfig({ NETBOX_URL: "http://localhost:9000" }, false, 8080).warnings).toEqual([]);
+    expect(readAppConfig({ NETBOX_URL: "http://netbox.example.com:8080" }, false, 8080).warnings).toEqual([]);
+    expect(readAppConfig({ NETBOX_URL: "http://localhost:8080" }, true).warnings).toEqual([]);
+    expect(readAppConfig({ NETBOX_URL: "not a url" }, false, 8080).warnings).toEqual([]);
+  });
+
   it("lets command-line flags override the environment", () => {
     const merged = applyArgv(env, [
       "node",
