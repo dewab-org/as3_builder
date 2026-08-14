@@ -165,6 +165,24 @@ body {
   cursor: default;
 }
 
+/* Counts on the Push button: what a push would write, and — in warn colour —
+   how many edits it cannot. Knowing before the dialog opens is the point. */
+.toolbar-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #ffffff;
+  color: var(--hd-orange-dark);
+}
+
+.toolbar-badge.warn {
+  background: var(--warn-bg);
+  color: var(--warn-text);
+}
+
 .toolbar .spacer {
   flex: 1;
 }
@@ -1750,6 +1768,31 @@ body {
   background: var(--warn-bg);
   border-radius: 4px;
   padding: 2px 6px;
+}
+
+/* A row the run never reached. Distinct from a failure (which has a reason)
+   and from pending (which implies it might still happen). */
+.push-skipped {
+  font-size: 11px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 6px;
+}
+
+.push-summary {
+  margin-top: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.push-summary-failed {
+  background: var(--danger-bg-soft);
+  border-color: var(--danger);
+  color: var(--danger-dark);
 }
 
 .push-fail {

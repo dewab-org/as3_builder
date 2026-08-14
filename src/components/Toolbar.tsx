@@ -14,6 +14,9 @@ interface ToolbarProps {
   onValidateOnBigip: () => void;
   onLoadFromNetbox: () => void;
   onPushToNetbox: () => void;
+  /** What a push would write, and how much it cannot — absent until an
+   * application has been loaded from NetBox. */
+  pushPreview?: { writes: number; notes: number };
   theme: "light" | "dark";
   onToggleTheme: () => void;
   onUndo: () => void;
@@ -33,6 +36,7 @@ export default function Toolbar({
   onValidateOnBigip,
   onLoadFromNetbox,
   onPushToNetbox,
+  pushPreview,
   theme,
   onToggleTheme,
   onUndo,
@@ -128,8 +132,29 @@ export default function Toolbar({
       <button onClick={onLoadFromNetbox} title="Read a load-balancer application from NetBox as AS3">
         Load from NetBox…
       </button>
-      <button onClick={onPushToNetbox} title="Write edited fields back to the NetBox objects this declaration came from">
+      <button
+        onClick={onPushToNetbox}
+        title={
+          pushPreview
+            ? `${pushPreview.writes} change${pushPreview.writes === 1 ? "" : "s"} to write` +
+              (pushPreview.notes > 0
+                ? `, ${pushPreview.notes} edit${pushPreview.notes === 1 ? "" : "s"} that cannot be pushed`
+                : "")
+            : "Write edited fields back to the NetBox objects this declaration came from"
+        }
+      >
         Push to NetBox…
+        {pushPreview && pushPreview.writes > 0 && (
+          <span className="toolbar-badge">{pushPreview.writes}</span>
+        )}
+        {pushPreview && pushPreview.notes > 0 && (
+          <span
+            className="toolbar-badge warn"
+            aria-label={`${pushPreview.notes} edits cannot be pushed`}
+          >
+            !{pushPreview.notes}
+          </span>
+        )}
       </button>
       <button onClick={onValidateOnBigip} title="Dry-run this declaration against a BIG-IP">
         Validate on BIG-IP…
