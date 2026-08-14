@@ -272,6 +272,29 @@ export default function App() {
   // What the pointer is over, in either view. Drives the info pane's hover
   // preview; the cursor-driven context underneath is left alone.
   const [hoverAnchor, setHoverAnchor] = useState<HoverAnchor | null>(null);
+  // Leaving a row does not close the card immediately: there is a gap between
+  // the pointer and the card, and closing mid-crossing would make the links
+  // unreachable. Entering the card cancels the close; leaving it closes now.
+  const hoverCloseTimer = useRef<number | undefined>(undefined);
+  const cancelHoverClose = useCallback(() => {
+    window.clearTimeout(hoverCloseTimer.current);
+  }, []);
+  const setHover = useCallback(
+    (anchor: HoverAnchor | null) => {
+      cancelHoverClose();
+      if (anchor) setHoverAnchor(anchor);
+      else
+        hoverCloseTimer.current = window.setTimeout(
+          () => setHoverAnchor(null),
+          220
+        );
+    },
+    [cancelHoverClose]
+  );
+  const closeHoverNow = useCallback(() => {
+    cancelHoverClose();
+    setHoverAnchor(null);
+  }, [cancelHoverClose]);
   // The generated F5 docs index: one load, shared by the info pane and the
   // floating hover card.
   const [documentation, setDocumentation] = useState<DocumentationIndex>();
@@ -290,11 +313,11 @@ export default function App() {
   const hoverOffsetToPath = useCallback(
     (offset: number | null, x?: number, y?: number) => {
       if (offset === null || x === undefined || y === undefined)
-        return setHoverAnchor(null);
+        return setHover(null);
       const path = getLocation(text, offset).path as JsonPath;
-      setHoverAnchor(path.length > 0 ? { path, x, y } : null);
+      setHover(path.length > 0 ? { path, x, y } : null);
     },
-    [text]
+    [text, setHover]
   );
 
   // Baseline = the document as loaded/saved; anything differing from it is
@@ -922,7 +945,7 @@ export default function App() {
               onEditValue={handleEdit}
               onEditMany={applyEditMany}
               onAppendObjectItem={handleAppendObjectItem}
-              onHoverPath={setHoverAnchor}
+              onHoverPath={setHover}
               relatedKeys={relatedKeys}
             />
           )}
@@ -968,6 +991,8 @@ export default function App() {
       {hoverAnchor && (
         <HoverCard
           anchor={hoverAnchor}
+          onPointerEnter={cancelHoverClose}
+          onPointerLeave={closeHoverNow}
           doc={lastGoodDoc}
           schemaRoot={root}
           registry={registry}

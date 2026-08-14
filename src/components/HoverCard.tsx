@@ -22,9 +22,10 @@ const MARGIN = 8; // keep this far from the viewport edge
  * pane — hovering is a question about *this* thing, so the answer belongs
  * where you are looking.
  *
- * It never takes the pointer: a card that could be hovered would change what
- * is hovered, and chasing the cursor while it moves would flicker. The same
- * card is available, clickable, from the ⓘ button in the property picker.
+ * The card can be moved into and clicked — the doc links are the point of it.
+ * That works because leaving a row schedules the close rather than doing it
+ * immediately, and entering the card cancels that: the pointer can cross the
+ * gap without the card vanishing underneath it.
  */
 export default function HoverCard({
   anchor,
@@ -32,12 +33,16 @@ export default function HoverCard({
   schemaRoot,
   registry,
   documentation,
+  onPointerEnter,
+  onPointerLeave,
 }: {
   anchor: HoverAnchor;
   doc: unknown;
   schemaRoot: JsonSchemaRoot;
   registry: ClassRegistry;
   documentation: DocumentationIndex | undefined;
+  onPointerEnter: () => void;
+  onPointerLeave: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [placement, setPlacement] = useState({
@@ -73,6 +78,8 @@ export default function HoverCard({
       className="hover-card"
       style={{ left: placement.left, top: placement.top }}
       role="tooltip"
+      onMouseEnter={onPointerEnter}
+      onMouseLeave={onPointerLeave}
     >
       <HoverDetail
         path={anchor.path}
