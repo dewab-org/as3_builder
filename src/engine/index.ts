@@ -12,4 +12,5 @@ export * from "./inserter";
 export * from "./describe";
 export * from "./documentation";
 export * from "./base64";
+export * from "./readOnly";
 export * from "./dryRunSubstitution";

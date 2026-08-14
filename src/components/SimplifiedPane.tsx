@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import type { JsonPath, JsonSchema } from "../engine";
-import { decodeBase64Safely, isBase64Wrapper, isPlainObject, validateValue } from "../engine";
+import {
+  decodeBase64Safely,
+  isBase64Wrapper,
+  isPlainObject,
+  readOnlyReason,
+  validateValue,
+} from "../engine";
 import Base64Editor from "./Base64Editor";
 
 // Indented key-value rendering of the document, without JSON syntax.
@@ -245,6 +251,28 @@ interface RowCtx {
   hover: (path: JsonPath | null) => void;
 }
 
+/** A `{bigip: "/path"}` value names an object that lives on the device or in
+ * the estate. The pointer can be retargeted; the thing it points at is not
+ * ours to edit. */
+function isBigipPointer(value: Record<string, unknown>): boolean {
+  const keys = Object.keys(value);
+  return keys.length === 1 && typeof value.bigip === "string";
+}
+
+function immutabilityOf(
+  value: Record<string, unknown>
+): { badge: string; reason: string } | undefined {
+  const classReason = readOnlyReason(value.class);
+  if (classReason) return { badge: "read-only", reason: classReason };
+  if (isBigipPointer(value))
+    return {
+      badge: "external",
+      reason:
+        "Points at an object on the BIG-IP or in the estate — you can retarget the pointer, but the target is not editable here",
+    };
+  return undefined;
+}
+
 /** Hover handlers for a row: report the path in, clear it on the way out. */
 function hoverProps(path: JsonPath, ctx: RowCtx) {
   return {
@@ -439,6 +467,7 @@ function ObjectCard({
   ctx,
   variant,
   badge,
+  insideImmutable,
 }: {
   label: string;
   value: Record<string, unknown>;
@@ -446,13 +475,20 @@ function ObjectCard({
   ctx: RowCtx;
   variant: "object" | "nested" | "item";
   badge?: string;
+  /** An enclosing card is already marked; stay muted but don't repeat the
+   * badge on every nested pointer. */
+  insideImmutable?: boolean;
 }) {
   const selected = pathsEqual(path, ctx.cursorPath);
   const collapsed = ctx.isCollapsed(path);
   const entries = Object.entries(value).filter(([k]) => k !== "class");
+  // Objects NetBox cannot own read differently, so an edit that can never be
+  // pushed is obvious before it is made.
+  const immutability = immutabilityOf(value);
+  const immutable = Boolean(immutability) || insideImmutable;
   return (
     <div
-      className={`obj-card ${variant}${selected ? " selected" : ""}${ctx.isModified(path) ? " modified" : ""}${collapsed ? " collapsed" : ""}`}
+      className={`obj-card ${variant}${selected ? " selected" : ""}${ctx.isModified(path) ? " modified" : ""}${collapsed ? " collapsed" : ""}${immutable ? " immutable" : ""}`}
     >
       <div
         className="obj-card-head"
@@ -466,6 +502,11 @@ function ObjectCard({
         <Chevron path={path} ctx={ctx} />
         <span className="obj-name">{label}</span>
         {badge && <span className="obj-class">{badge}</span>}
+        {immutability && !insideImmutable && (
+          <span className="obj-readonly" title={immutability.reason}>
+            {immutability.badge}
+          </span>
+        )}
         {collapsed && entries.length > 0 && (
           <span className="fold-summary">
             {entries.length} propert{entries.length === 1 ? "y" : "ies"}
@@ -480,7 +521,14 @@ function ObjectCard({
             <div className="simple-empty">no properties yet</div>
           )}
           {entries.map(([k, v]) => (
-            <Node key={k} nodeKey={k} value={v} path={[...path, k]} ctx={ctx} />
+            <Node
+              key={k}
+              nodeKey={k}
+              value={v}
+              path={[...path, k]}
+              ctx={ctx}
+              insideImmutable={immutable}
+            />
           ))}
         </div>
       )}
@@ -561,11 +609,13 @@ function Node({
   value,
   path,
   ctx,
+  insideImmutable,
 }: {
   nodeKey: string;
   value: unknown;
   path: JsonPath;
   ctx: RowCtx;
+  insideImmutable?: boolean;
 }) {
   if (isBase64Wrapper(value) || !isPlainObject(value)) {
     if (Array.isArray(value)) {
@@ -585,6 +635,7 @@ function Node({
       path={path}
       ctx={ctx}
       variant={typeof value.class === "string" ? "object" : "nested"}
+      insideImmutable={insideImmutable}
     />
   );
 }

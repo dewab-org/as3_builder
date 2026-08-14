@@ -45,6 +45,9 @@
   --toolbar-btn: #d85602;
   --toolbar-btn-border: #ffb27a;
   --toolbar-btn-hover: #b34702;
+  --immutable-bg: #eef1f4;
+  --immutable-border: #b6c0ca;
+  --immutable-text: #5b6773;
 }
 
 [data-theme="dark"] {
@@ -85,6 +88,9 @@
   --toolbar-btn: #4a2503;
   --toolbar-btn-border: #8a4a12;
   --toolbar-btn-hover: #66330a;
+  --immutable-bg: #1b2026;
+  --immutable-border: #3c4854;
+  --immutable-text: #8d9aa8;
 }
 
 html,
@@ -388,6 +394,31 @@ body {
   border-color: var(--border-light);
   background: transparent;
   box-shadow: none;
+}
+
+/* Read-only by design (certificates, SNAT pools): NetBox is not where these
+   live, so nothing inside them can be pushed. Muted, cooler, and clearly not
+   one of the editable cards — while staying legible in both themes. */
+.obj-card.immutable {
+  border-color: var(--immutable-border);
+  background: var(--immutable-bg);
+  border-style: dashed;
+  box-shadow: none;
+}
+
+.obj-card.immutable > .obj-card-head {
+  color: var(--immutable-text);
+}
+
+.obj-readonly {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--immutable-text);
+  border: 1px solid var(--immutable-border);
+  border-radius: 8px;
+  padding: 0 6px;
+  cursor: help;
 }
 
 .obj-card.selected {
