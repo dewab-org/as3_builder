@@ -300,6 +300,12 @@ checks and how to bypass it when you must.
   src/schemas/as3-implementation-mappings-3.56.0-10.json`; normal generation
   uses the snapshot and therefore never degrades to schema-only mappings.
 - Monaco is bundled locally (no CDN) for restricted environments.
+- Tests come in two flavours: `src/engine/__tests__/` is pure and runs in
+  node; `src/components/__tests__/` renders real components in jsdom
+  (`vitest.config.ts` picks the environment per path). Component tests drive
+  the DOM the way a person does — clicking a value, not calling the handler —
+  because the bug that motivated them was a click that never reached the
+  cursor.
 - The engine test suite (`src/engine/__tests__/`) runs against the real
   1.2MB per-app schema and f5_toolbox's golden render fixture; the
   render→invert round trip producing an empty ChangeSet is a test invariant.
