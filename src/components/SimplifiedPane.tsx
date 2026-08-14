@@ -753,7 +753,13 @@ export default function SimplifiedPane({
     isModified,
     onSelect,
     editingPath,
-    startEdit: (path) => setEditingPath(path),
+    startEdit: (path) => {
+      // Editing a value also selects it: the breadcrumb, the info pane and the
+      // reference highlighting all follow the cursor, and clicking a value is
+      // the obvious way to ask "what is this, and what does it point at?".
+      onSelect(path);
+      setEditingPath(path);
+    },
     deleteAt: (path) => onEditValue(path, undefined),
     appendItem: (arrayPath, length) => {
       const itemPath = [...arrayPath, length];
