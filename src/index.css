@@ -48,6 +48,8 @@
   --immutable-bg: #eef1f4;
   --immutable-border: #b6c0ca;
   --immutable-text: #5b6773;
+  --link-accent: #8250df;
+  --link-bg: #f3eefc;
 }
 
 [data-theme="dark"] {
@@ -91,6 +93,8 @@
   --immutable-bg: #1b2026;
   --immutable-border: #3c4854;
   --immutable-text: #8d9aa8;
+  --link-accent: #d2a8ff;
+  --link-bg: #2a1f3d;
 }
 
 html,
@@ -370,6 +374,33 @@ body {
 /* A collapsed card is a single line: drop the body's rounded seam. */
 .obj-card.collapsed > .obj-card-head {
   border-bottom: none;
+}
+
+/* The other end of the selected reference: a service's pool, the TLS_Server a
+   serverTLS.use names, or — with the object selected — every pointer aimed at
+   it. Distinct from selection (which is one place) and from modified (which is
+   about NetBox), so all three can be true at once. */
+.simple-row.related,
+.obj-card.related {
+  box-shadow: inset 3px 0 0 var(--link-accent);
+  background: var(--link-bg);
+}
+
+.obj-card.related {
+  border-color: var(--link-accent);
+  border-style: solid;
+}
+
+.obj-card.related > .obj-card-head::after {
+  content: "linked";
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--link-accent);
+  border: 1px solid var(--link-accent);
+  border-radius: 8px;
+  padding: 0 6px;
+  margin-left: 6px;
 }
 
 /* --- simplified view: object cards --- */

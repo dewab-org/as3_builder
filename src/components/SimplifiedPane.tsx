@@ -5,6 +5,7 @@ import {
   isBase64Wrapper,
   isPlainObject,
   readOnlyReason,
+  relatedPaths,
   validateValue,
 } from "../engine";
 import Base64Editor from "./Base64Editor";
@@ -285,6 +286,8 @@ interface RowCtx {
   isCollapsed: (path: JsonPath) => boolean;
   toggleCollapse: (path: JsonPath) => void;
   hover: (path: JsonPath | null) => void;
+  /** True when this node is the other end of the selected reference. */
+  isRelated: (path: JsonPath) => boolean;
 }
 
 /** A `{bigip: "/path"}` value names an object that lives on the device or in
@@ -367,7 +370,7 @@ function ValueRow({
   return (
     <div>
       <div
-        className={`simple-row${selected ? " selected" : ""}${ctx.isModified(path) ? " modified" : ""}`}
+        className={`simple-row${selected ? " selected" : ""}${ctx.isModified(path) ? " modified" : ""}${ctx.isRelated(path) ? " related" : ""}`}
         title={path.map(String).join(" › ")}
         {...hoverProps(path, ctx)}
       >
@@ -524,7 +527,7 @@ function ObjectCard({
   const immutable = Boolean(immutability) || insideImmutable;
   return (
     <div
-      className={`obj-card ${variant}${selected ? " selected" : ""}${ctx.isModified(path) ? " modified" : ""}${collapsed ? " collapsed" : ""}${immutable ? " immutable" : ""}`}
+      className={`obj-card ${variant}${selected ? " selected" : ""}${ctx.isModified(path) ? " modified" : ""}${collapsed ? " collapsed" : ""}${immutable ? " immutable" : ""}${ctx.isRelated(path) ? " related" : ""}`}
     >
       <div
         className="obj-card-head"
@@ -676,6 +679,7 @@ function Node({
   );
 }
 
+
 // ---- pane ------------------------------------------------------------------
 
 export default function SimplifiedPane({
@@ -739,8 +743,10 @@ export default function SimplifiedPane({
     setFoldTick((n) => n + 1);
   };
 
+  const related = relatedPaths(doc, cursorPath);
   const ctx: RowCtx = {
     hover: onHoverPath,
+    isRelated: (path) => related.has(pathKey(path)),
     cursorPath,
     isCollapsed,
     toggleCollapse,

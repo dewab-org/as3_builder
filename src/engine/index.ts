@@ -13,5 +13,6 @@ export * from "./describe";
 export * from "./documentation";
 export * from "./base64";
 export * from "./readOnly";
+export * from "./relationships";
 export * from "./bigipCatalog";
 export * from "./dryRunSubstitution";
