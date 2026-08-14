@@ -13,6 +13,10 @@ interface TreePaneProps {
   isModified: (path: JsonPath) => boolean;
   /** Path keys on the other end of the selected reference. */
   relatedKeys: Set<string>;
+  /** Reports what the pointer is over, with its position, for the hover card. */
+  onHoverPath: (
+    anchor: { path: JsonPath; x: number; y: number } | null
+  ) => void;
 }
 
 // Deep enough to reach policy rules and their conditions/actions
@@ -50,6 +54,7 @@ function TreeNode({
   onDelete,
   isModified,
   relatedKeys,
+  onHoverPath,
 }: {
   nodeKey: string | number;
   value: unknown;
@@ -60,6 +65,9 @@ function TreeNode({
   onDelete: (path: JsonPath) => void;
   isModified: (path: JsonPath) => boolean;
   relatedKeys: Set<string>;
+  onHoverPath: (
+    anchor: { path: JsonPath; x: number; y: number } | null
+  ) => void;
 }) {
   const isBranch =
     (isPlainObject(value) || Array.isArray(value)) && depth < MAX_DEPTH;
@@ -75,6 +83,10 @@ function TreeNode({
       <div
         className={`tree-label${selected ? " selected" : ""}${isModified(path) ? " modified" : ""}${relatedKeys.has(pathKey(path)) ? " related" : ""}`}
         onClick={() => onSelect(path)}
+        onMouseEnter={(e) =>
+          onHoverPath({ path, x: e.clientX, y: e.clientY })
+        }
+        onMouseLeave={() => onHoverPath(null)}
         title={path.map(String).join(" › ") || "(root)"}
       >
         <span className="tree-text">{nodeLabel(nodeKey, value)}</span>
@@ -103,6 +115,7 @@ function TreeNode({
                 onDelete={onDelete}
                 isModified={isModified}
                 relatedKeys={relatedKeys}
+                onHoverPath={onHoverPath}
               />
             ))}
         </div>
@@ -119,6 +132,7 @@ export default function TreePane({
   onDelete,
   isModified,
   relatedKeys,
+  onHoverPath,
 }: TreePaneProps) {
   // Reveal the linked node in this pane too — the tree scrolls independently,
   // so the highlight can otherwise land out of sight.
@@ -154,6 +168,7 @@ export default function TreePane({
               onDelete={onDelete}
               isModified={isModified}
               relatedKeys={relatedKeys}
+              onHoverPath={onHoverPath}
             />
           ))}
       </div>

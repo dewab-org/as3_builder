@@ -946,6 +946,7 @@ export default function App() {
             onDelete={handleDeleteNode}
             isModified={isModifiedPath}
             relatedKeys={relatedKeys}
+            onHoverPath={setHover}
           />
         </div>
         <div className="pane-editor">

@@ -5,7 +5,8 @@ import type {
   JsonPath,
   JsonSchemaRoot,
 } from "../engine";
-import HoverDetail from "./HoverDetail";
+import { DetailCard } from "./AddableList";
+import { hoverDetail } from "./hoverDetail";
 
 export interface HoverAnchor {
   path: JsonPath;
@@ -54,6 +55,13 @@ export default function HoverCard({
   onPin: () => void;
   onUnpin: () => void;
 }) {
+  const detail = hoverDetail(
+    anchor.path,
+    doc,
+    schemaRoot,
+    registry,
+    documentation
+  );
   const ref = useRef<HTMLDivElement>(null);
   const [placement, setPlacement] = useState({
     left: anchor.x + GAP,
@@ -82,6 +90,9 @@ export default function HoverCard({
       top = Math.max(MARGIN, anchor.y - GAP - height);
     setPlacement({ left, top });
   }, [anchor.x, anchor.y, anchor.path, pinned]);
+
+  // Nothing to say about this node: no empty card.
+  if (!detail) return null;
 
   return (
     <div
@@ -112,13 +123,7 @@ export default function HoverCard({
           </button>
         )}
       </div>
-      <HoverDetail
-        path={anchor.path}
-        doc={doc}
-        schemaRoot={schemaRoot}
-        registry={registry}
-        documentation={documentation}
-      />
+      <DetailCard label={detail.label} detail={detail.detail} />
     </div>
   );
 }

@@ -12,15 +12,7 @@ import {
   isPlainObject,
   resolveSchemaForPath,
 } from "../engine";
-import { DetailCard, type AddableDetail } from "./AddableList";
-
-interface HoverDetailProps {
-  path: JsonPath;
-  doc: unknown;
-  schemaRoot: JsonSchemaRoot;
-  registry: ClassRegistry;
-  documentation: DocumentationIndex | undefined;
-}
+import type { AddableDetail } from "./AddableList";
 
 /** Nearest enclosing object that names a class — how the docs index is keyed. */
 function owningClass(doc: unknown, path: JsonPath): string | undefined {
@@ -32,20 +24,22 @@ function owningClass(doc: unknown, path: JsonPath): string | undefined {
 }
 
 /**
- * The same detail card the property picker shows, for whatever the pointer is
- * over in the document. Hovering a value answers "what is this and what may it
- * be?" without having to click into it and lose the current selection.
+ * What to say about the node at `path`: the same detail the property picker
+ * shows, assembled from the schema and the generated F5 documentation.
+ *
+ * Returns undefined when there is nothing to say — an unresolvable path, or
+ * the document root — so callers can skip rendering an empty card.
  */
-export default function HoverDetail({
-  path,
-  doc,
-  schemaRoot,
-  registry,
-  documentation,
-}: HoverDetailProps) {
-  if (path.length === 0) return null;
+export function hoverDetail(
+  path: JsonPath,
+  doc: unknown,
+  schemaRoot: JsonSchemaRoot,
+  registry: ClassRegistry,
+  documentation: DocumentationIndex | undefined
+): { label: string; detail: AddableDetail } | undefined {
+  if (path.length === 0) return undefined;
   const schema = resolveSchemaForPath(schemaRoot, registry, doc, path);
-  if (!schema) return null;
+  if (!schema) return undefined;
 
   const value = getAtPath(doc, path);
   const name = String(path[path.length - 1]);
@@ -81,11 +75,5 @@ export default function HoverDetail({
       definitionDocumentation(documentation, parentClass)?.documentation
         .schemaReference,
   };
-
-  return (
-    <div className="hover-preview">
-      <div className="hover-preview-label">Hovering</div>
-      <DetailCard label={ownClass ?? name} detail={detail} />
-    </div>
-  );
+  return { label: ownClass ?? name, detail };
 }
