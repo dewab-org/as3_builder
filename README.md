@@ -174,6 +174,33 @@ manifest is in-memory only). See `NETBOX-WRITEBACK-PLAN.md` for the design
 and current limits (snat pools, policies, cipher groups, protocol profiles,
 GSLB are read-only for now).
 
+## BIG-IP object catalogue
+
+Profiles, persistence methods and monitors that ship in `/Common` are estate
+objects: a declaration points at one with `{bigip: "/Common/tcp-lan-optimized"}`
+and can never create or change it. `src/schemas/bigip-common-catalog.json` is
+the list of them, generated from a real device:
+
+```bash
+BIGIP_PASSWORD=… npm run fetch:profiles -- --host bigip01
+```
+
+Re-run it after a BIG-IP upgrade — the file records the device, version and
+build it came from, so a stale catalogue is visible rather than silently wrong.
+The password comes from the environment because a command-line argument would
+be visible in the process list. The script refuses to write anything if the
+device reports `configReady`/`licenseReady`/`provisionReady` as no: an
+unlicensed BIG-IP has no built-in profiles to read, and an empty catalogue
+would look like "there are none" rather than "nothing was read".
+
+For each object it records the full path, the AS3 property that accepts it,
+every setting, and — for a derived profile — just the settings that differ from
+the profile it derives from, which is the part an operator actually chooses on.
+
+**The shipped file is an empty placeholder.** Both lab devices
+(`bigip01`/`bigip02`, 17.5.1.4) are currently unlicensed, so no catalogue could
+be generated yet.
+
 ## BIG-IP validation
 
 **Validate on BIG-IP…** asks for host, credentials, tenant (default

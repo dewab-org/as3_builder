@@ -1,0 +1,11 @@
+{
+  "format": "bigip-common-catalog",
+  "formatVersion": 1,
+  "generatedFrom": {
+    "host": null,
+    "version": null,
+    "build": null,
+    "note": "Not fetched yet. Run `BIGIP_PASSWORD=… npm run fetch:profiles -- --host <device>` against a LICENSED BIG-IP; an unlicensed device has no built-in profiles to read."
+  },
+  "entries": []
+}
