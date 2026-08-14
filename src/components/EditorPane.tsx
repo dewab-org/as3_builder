@@ -1,6 +1,7 @@
 import Editor, { useMonaco } from "@monaco-editor/react";
 import type { editor } from "monaco-editor";
 import { useEffect, useRef } from "react";
+import { isDocumentHoverTarget } from "./editorHover";
 
 interface EditorPaneProps {
   text: string;
@@ -187,8 +188,16 @@ export default function EditorPane(props: EditorPaneProps) {
         };
         editorInstance.onMouseMove((e) => {
           const model = editorInstance.getModel();
+          // The content area only: the gutter and margin sit beside a line
+          // without being it, and describing that line would be noise.
+          const onText = isDocumentHoverTarget(
+            e.target.type,
+            monacoApi.editor.MouseTargetType
+          );
           reportHover(
-            model && e.target.position ? model.getOffsetAt(e.target.position) : null,
+            model && onText && e.target.position
+              ? model.getOffsetAt(e.target.position)
+              : null,
             e.event.posx,
             e.event.posy
           );
@@ -241,6 +250,10 @@ export default function EditorPane(props: EditorPaneProps) {
         minimap: { enabled: false },
         glyphMargin: true,
         automaticLayout: true,
+        // The app's own hover card replaces Monaco's: it carries the F5
+        // documentation, pins, and matches the other two panes. Two hover
+        // widgets fighting over the same pointer is worse than either.
+        hover: { enabled: "off" },
         tabSize: 2,
         scrollBeyondLastLine: false,
         wordWrap: "off",
