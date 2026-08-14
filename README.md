@@ -24,7 +24,7 @@ backend service.
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173
+npm run dev        # http://localhost:5173 (opens in the simplified view)
 npm test           # engine test suite (vitest)
 npm run lint       # eslint
 npm run build      # production build in dist/
@@ -48,6 +48,34 @@ fast scans by hand.
 The ephemeral NetBox container's `admin`/`admin` is allowlisted in the secret
 scan, as are documentation placeholders; test fixtures and generated schema
 artifacts under `src/schemas/` are skipped.
+
+### Connection defaults
+
+Copy `.env.example` to `.env` and fill in whatever you use often:
+
+```
+BIGIP_HOSTNAME=      BIGIP_USERNAME=      BIGIP_PASSWORD=      BIGIP_VALIDATE_CERTS=
+NETBOX_URL=          NETBOX_TOKEN=                             NETBOX_VALIDATE_CERTS=
+                     NETBOX_USERNAME=     NETBOX_PASSWORD=
+```
+
+The dialogs prefill from these. NetBox takes **either** an API token (v2
+`nbt_key.secret`, a classic 40-character key, or a full `Bearer …`/`Token …`
+header pasted verbatim) **or** a username and password, which provisions a
+token on connect — pick one in the dialog's "Authenticate with" selector.
+
+Precedence is `.env` → real environment → command-line flags, so a single run
+can target something else without editing anything:
+
+```bash
+npm run dev -- --bigip-host bigip02 --netbox-url https://netbox.example.com
+```
+
+Values are served at runtime from `/app-config`, never compiled into the
+bundle — which is why the published image carries none of them. A deployed
+server withholds passwords and tokens from the page (hostnames and usernames
+still prefill) unless you set `AS3B_EXPOSE_CREDENTIALS=1`; the dev server
+exposes them, since a local `.env` is the whole point. `.env` is gitignored.
 
 The **dev/preview server is required** for the NetBox and BIG-IP features:
 browsers cannot call iControl REST or the NetBox API directly (no CORS

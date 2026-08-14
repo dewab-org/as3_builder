@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { substituteDryRunCertificates } from "../engine";
+import { remembered } from "./bigipSession";
 
 interface BigipDialogProps {
   /** Current editor text (the declaration to dry-run). */
@@ -12,16 +13,6 @@ interface StepState {
   state: "pending" | "running" | "ok" | "fail";
   detail?: string;
 }
-
-// Connection details survive closing/reopening the dialog (in memory only —
-// cleared on page refresh, never written to storage).
-const remembered = {
-  host: "",
-  username: "",
-  password: "",
-  tenant: "Applications",
-  validateCert: true,
-};
 
 function authHeaders(
   host: string,

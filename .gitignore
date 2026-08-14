@@ -3,3 +3,8 @@ dist
 dist-server
 *.tsbuildinfo
 .DS_Store
+
+# Local connection settings and credentials — never commit these.
+.env
+.env.*
+!.env.example

@@ -29,6 +29,11 @@ export default function NetboxDialog({
   const [url, setUrl] = useState(netboxSession.url);
   const [username, setUsername] = useState(netboxSession.username);
   const [password, setPassword] = useState(netboxSession.password);
+  const [token, setToken] = useState(netboxSession.token);
+  // A token skips provisioning and works for accounts that cannot mint one.
+  const [authMode, setAuthMode] = useState<"token" | "password">(
+    netboxSession.token ? "token" : "password"
+  );
   const [validateCert, setValidateCert] = useState(netboxSession.validateCert);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | undefined>();
@@ -40,8 +45,9 @@ export default function NetboxDialog({
   const [warnings, setWarnings] = useState<string[]>([]);
 
   netboxSession.url = url;
-  netboxSession.username = username;
-  netboxSession.password = password;
+  netboxSession.username = authMode === "password" ? username : "";
+  netboxSession.password = authMode === "password" ? password : "";
+  netboxSession.token = authMode === "token" ? token : "";
   netboxSession.validateCert = validateCert;
 
   // Cached connection: if we already hold a token but no app list yet,
@@ -51,7 +57,10 @@ export default function NetboxDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const canConnect = !busy && url.trim() !== "" && username !== "";
+  const canConnect =
+    !busy &&
+    url.trim() !== "" &&
+    (authMode === "token" ? token.trim() !== "" : username !== "");
 
   async function connect() {
     setBusy("Connecting…");
@@ -123,29 +132,60 @@ export default function NetboxDialog({
           />
         </label>
         <label className="modal-field">
-          <span>Username</span>
-          <input
-            type="text"
-            autoComplete="username"
-            value={username}
+          <span>Authenticate with</span>
+          <select
+            value={authMode}
             onChange={(e) => {
-              setUsername(e.target.value);
+              setAuthMode(e.target.value as "token" | "password");
               netboxSession.authHeader = "";
             }}
-          />
+          >
+            <option value="token">API token</option>
+            <option value="password">Username &amp; password</option>
+          </select>
         </label>
-        <label className="modal-field">
-          <span>Password</span>
-          <input
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => {
-              setPassword(e.target.value);
-              netboxSession.authHeader = "";
-            }}
-          />
-        </label>
+        {authMode === "token" ? (
+          <label className="modal-field">
+            <span>API token</span>
+            <input
+              type="password"
+              autoComplete="off"
+              placeholder="nbt_… or a 40-character key"
+              value={token}
+              onChange={(e) => {
+                setToken(e.target.value);
+                netboxSession.authHeader = "";
+              }}
+            />
+          </label>
+        ) : (
+          <>
+            <label className="modal-field">
+              <span>Username</span>
+              <input
+                type="text"
+                autoComplete="username"
+                value={username}
+                onChange={(e) => {
+                  setUsername(e.target.value);
+                  netboxSession.authHeader = "";
+                }}
+              />
+            </label>
+            <label className="modal-field">
+              <span>Password</span>
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  netboxSession.authHeader = "";
+                }}
+              />
+            </label>
+          </>
+        )}
         <label className="modal-check">
           <input
             type="checkbox"

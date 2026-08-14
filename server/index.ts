@@ -12,6 +12,10 @@ import {
   netboxProxyHandler,
   urlProxyHandler,
 } from "./proxy";
+import { applyArgv, isAppConfigRequest, serveAppConfig } from "./appConfig";
+
+// Environment first, then --flags for a one-off target.
+const SETTINGS = applyArgv(process.env, process.argv);
 
 const PORT = Number(process.env.PORT ?? 8080);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -153,6 +157,13 @@ async function handle(
 ): Promise<void> {
   securityHeaders(res);
   const url = req.url ?? "/";
+
+  if (isAppConfigRequest(req)) {
+    // Not dev: a deployed server withholds secrets unless explicitly told to
+    // expose them (AS3B_EXPOSE_CREDENTIALS=1).
+    serveAppConfig(res, SETTINGS, false);
+    return;
+  }
 
   if (url === "/healthz") {
     res.statusCode = 200;

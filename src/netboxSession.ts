@@ -14,6 +14,8 @@ export const netboxSession = {
   url: "http://localhost:8080",
   username: "",
   password: "",
+  /** An API token, used as-is when present — no provisioning round trip. */
+  token: "",
   validateCert: true,
   authHeader: "",
   apps: undefined as AppEntry[] | undefined,
@@ -30,11 +32,29 @@ export function proxyHeaders(auth: string): Record<string, string> {
   };
 }
 
+/**
+ * The Authorization header for a token the user supplied. NetBox 4.3+ issues
+ * v2 tokens (`nbt_<key>.<secret>`, sent as Bearer); anything else is a classic
+ * 40-character key sent as `Token`. Accepting a full header verbatim means a
+ * value pasted from elsewhere still works.
+ */
+export function tokenAuthHeader(token: string): string {
+  const value = token.trim();
+  if (/^(Bearer|Token)\s/i.test(value)) return value;
+  return value.startsWith("nbt_") ? `Bearer ${value}` : `Token ${value}`;
+}
+
 // Provision an API token from username/password. NetBox ≥4.3 returns a v2
 // token (Bearer nbt_<key>.<token>); older versions return a 40-char key used
 // as `Token <key>`.
 export async function provisionAuth(): Promise<string> {
   if (netboxSession.authHeader) return netboxSession.authHeader;
+  // A supplied token skips provisioning entirely — and is the only option
+  // when the account cannot provision tokens for itself.
+  if (netboxSession.token.trim()) {
+    netboxSession.authHeader = tokenAuthHeader(netboxSession.token);
+    return netboxSession.authHeader;
+  }
   const res = await fetch("/netbox-proxy/api/users/tokens/provision/", {
     method: "POST",
     headers: proxyHeaders(""),

@@ -21,6 +21,8 @@ import {
 import { getTemplate } from "./templates";
 import { useDocument } from "./hooks/useDocument";
 import { netboxSession } from "./netboxSession";
+import { loadAppConfig } from "./appConfig";
+import { applyBigipDefaults } from "./components/bigipSession";
 import { useValidation } from "./hooks/useValidation";
 import {
   applicationMemberClasses,
@@ -123,7 +125,7 @@ export default function App() {
   }, []);
   const [showPushDialog, setShowPushDialog] = useState(false);
   const [theme, setTheme] = useState<Theme>(initialTheme);
-  const [viewMode, setViewMode] = useState<"json" | "simple">("json");
+  const [viewMode, setViewMode] = useState<"json" | "simple">("simple");
   // URL-sourced schemas ({id, label}); URLs persist across sessions.
   const [urlSchemas, setUrlSchemas] = useState<{ id: string; label: string }[]>(
     () => {
@@ -228,6 +230,19 @@ export default function App() {
     () => getContext(root, registry, debouncedText, cursorOffset),
     [root, registry, debouncedText, cursorOffset]
   );
+
+  // Startup defaults from the server's environment (.env / env vars / flags).
+  // They only prefill the dialogs; nothing is stored.
+  useEffect(() => {
+    void loadAppConfig().then((config) => {
+      if (config.netbox.url) netboxSession.url = config.netbox.url;
+      netboxSession.username ||= config.netbox.username;
+      netboxSession.password ||= config.netbox.password;
+      netboxSession.token ||= config.netbox.token;
+      netboxSession.validateCert = config.netbox.validateCert;
+      applyBigipDefaults(config.bigip);
+    });
+  }, []);
 
   // Both ends of the reference under the cursor: what it points at, and what
   // points at it. The tree and the simplified view highlight the same set.

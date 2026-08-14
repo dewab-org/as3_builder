@@ -25,6 +25,12 @@ const SKIP_PATH = [
 const ALLOW_VALUE =
   /^(admin|password|passwd|secret|token|bearer|none|null|undefined|changeme|example|placeholder|your[-_]?\w*|<[^>]+>|\$\{[^}]+\}|\*+|x+|1234\d*)$/i;
 
+// SCREAMING_SNAKE values are environment variable names, not their values —
+// a mapping table like {"--netbox-password": "NETBOX_PASSWORD"} is config, not
+// a leak. A real secret in that shape would have to be all-caps with no
+// lowercase at all, which no generated credential is.
+const ENV_VAR_NAME = /^[A-Z][A-Z0-9_]{2,}$/;
+
 const RULES = [
   {
     name: "private key",
@@ -81,7 +87,9 @@ for (const file of staged()) {
       const m = rule.re.exec(line);
       if (!m) continue;
       const value = rule.valueGroup ? m[rule.valueGroup] : undefined;
-      if (value !== undefined && ALLOW_VALUE.test(value.trim())) continue;
+      const trimmed = value?.trim();
+      if (trimmed !== undefined && (ALLOW_VALUE.test(trimmed) || ENV_VAR_NAME.test(trimmed)))
+        continue;
       findings.push({ file, line: i + 1, rule: rule.name, text: m[0] });
     }
   }
