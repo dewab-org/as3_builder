@@ -40,6 +40,7 @@ import {
   applicationMemberClasses,
   bigipCandidates,
   buildClassRegistry,
+  computeUpdates,
   effectiveSchema,
   extractXrefClasses,
   extrasFromAs3,
@@ -265,6 +266,25 @@ export default function App() {
       applyBigipDefaults(config.bigip);
     });
   }, []);
+
+  // What a push would do, computed from the live document so the count is
+  // visible before the dialog is opened. Pure and cheap; the same function the
+  // dialog runs. Absent until an application has been loaded from NetBox.
+  const pushPreview = useMemo(() => {
+    const manifest = netboxSession.manifests.get(
+      String((lastGoodDoc as Record<string, unknown> | undefined)?.id ?? "")
+    );
+    if (!manifest || !isPlainObject(lastGoodDoc)) return undefined;
+    const changeSet = computeUpdates(lastGoodDoc as Record<string, unknown>, manifest);
+    const writes =
+      changeSet.updates.reduce(
+        (n, u) => n + u.changes.length + u.ops.length,
+        0
+      ) +
+      changeSet.creates.length +
+      changeSet.deletes.length;
+    return { writes, notes: changeSet.notes.length };
+  }, [lastGoodDoc]);
 
   // Both ends of the reference under the cursor: what it points at, and what
   // points at it. The tree and the simplified view highlight the same set.
@@ -834,6 +854,7 @@ export default function App() {
         onValidateOnBigip={() => setShowBigipDialog(true)}
         onLoadFromNetbox={() => setShowNetboxDialog(true)}
         onPushToNetbox={() => setShowPushDialog(true)}
+        pushPreview={pushPreview}
         theme={theme}
         onToggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
         onUndo={undo}

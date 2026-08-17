@@ -210,6 +210,18 @@ manifest is in-memory only). See `NETBOX-WRITEBACK-PLAN.md` for the design
 and current limits (snat pools, policies, cipher groups, protocol profiles,
 GSLB are read-only for now).
 
+### Knowing what a push will do
+
+The **Push to NetBox…** button carries two counts, computed from the live
+document: how many writes a push would make, and — in warn colour — how many
+edits it cannot push (a certificate, a merged policy, a pointer with no NetBox
+row of its own). Both are visible before the dialog is opened.
+
+When a run finishes it says what happened: `2 applied · 1 failed · 3 skipped
+after the failure`. A failure stops the sequence, because later writes can
+depend on earlier ones, so the rows it never reached are marked **skipped**
+rather than left looking like they might still happen.
+
 ## BIG-IP object catalogue
 
 Profiles, persistence methods and monitors that ship in `/Common` are estate
