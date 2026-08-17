@@ -114,6 +114,7 @@ export default function HoverCard({
           <button
             className="hover-card-close"
             title="Dismiss (Esc)"
+            aria-label="Dismiss"
             onClick={(e) => {
               e.stopPropagation();
               onUnpin();
