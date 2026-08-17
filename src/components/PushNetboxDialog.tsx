@@ -24,7 +24,13 @@ interface PushNetboxDialogProps {
   onClose: () => void;
 }
 
-type RowStatus = "pending" | "applying" | "ok" | "fail";
+import {
+  describePush,
+  summarizePush,
+  type PushRowStatus,
+} from "./pushSummary";
+
+type RowStatus = PushRowStatus;
 
 type Row =
   | { kind: "update"; change: ObjectChange; checked: boolean; drifted: boolean; status: RowStatus; detail?: string }
@@ -63,11 +69,15 @@ export default function PushNetboxDialog({
   const [busy, setBusy] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [done, setDone] = useState(false);
+  // Set when a run finishes, so the outcome is stated rather than inferred
+  // from a column of ticks.
+  const [summary, setSummary] = useState<ReturnType<typeof summarizePush>>();
 
   // Compute the change set + drift on open.
   useEffect(() => {
     void (async () => {
       setBusy("Computing changes…");
+      setSummary(undefined);
       try {
         const declaration = parse(declarationText, [], {
           allowTrailingComma: true,
@@ -410,8 +420,25 @@ export default function PushNetboxDialog({
           "fail",
           String(err instanceof Error ? err.message : err)
         );
+        // Everything after a failure is skipped, not merely un-run: later
+        // writes can depend on earlier ones, so the sequence stops. Saying so
+        // beats leaving those rows looking like they are still pending.
+        setRows((prev) =>
+          prev.map((r, i) =>
+            i > index && r.checked && rowOpCount(r) > 0 && r.status === "pending"
+              ? { ...r, status: "skipped" }
+              : r
+          )
+        );
       }
     }
+
+    // Read the outcome from the rows themselves — they are the record of what
+    // actually happened, including the skips.
+    setRows((prev) => {
+      setSummary(summarizePush(prev));
+      return prev;
+    });
 
     if (!failed) {
       // Re-fetch, re-render, refresh manifest — the editor then shows the
@@ -488,6 +515,11 @@ export default function PushNetboxDialog({
           {row.status === "ok" && <span className="push-ok">✓</span>}
           {row.status === "applying" && <span>◐</span>}
           {row.status === "fail" && <span className="push-fail">✗</span>}
+          {row.status === "skipped" && (
+            <span className="push-skipped" title="Not attempted — an earlier change failed">
+              skipped
+            </span>
+          )}
         </label>
         {row.kind === "update" && (
           <>
@@ -596,6 +628,17 @@ export default function PushNetboxDialog({
                 Yes, push
               </button>
             </div>
+          </div>
+        )}
+
+        {summary && (
+          <div
+            className={`push-summary${summary.failed > 0 ? " push-summary-failed" : ""}`}
+            role="status"
+          >
+            {describePush(summary)}
+            {summary.failed > 0 &&
+              " — nothing after the failure was attempted, because later writes can depend on earlier ones."}
           </div>
         )}
 

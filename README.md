@@ -210,6 +210,18 @@ manifest is in-memory only). See `NETBOX-WRITEBACK-PLAN.md` for the design
 and current limits (snat pools, policies, cipher groups, protocol profiles,
 GSLB are read-only for now).
 
+### Knowing what a push will do
+
+The **Push to NetBox…** button carries two counts, computed from the live
+document: how many writes a push would make, and — in warn colour — how many
+edits it cannot push (a certificate, a merged policy, a pointer with no NetBox
+row of its own). Both are visible before the dialog is opened.
+
+When a run finishes it says what happened: `2 applied · 1 failed · 3 skipped
+after the failure`. A failure stops the sequence, because later writes can
+depend on earlier ones, so the rows it never reached are marked **skipped**
+rather than left looking like they might still happen.
+
 ## Loading from a BIG-IP
 
 **Load from BIG-IP…** reads the running configuration back through AS3's
@@ -225,6 +237,7 @@ Two caveats. NetBox write-back does not apply to a document loaded this way
 must have AS3 installed with something deployed through it; a device where
 AS3 has never run has nothing to list. Credentials are shared with the
 Validate/Apply dialog and prefill from `.env` like everything else.
+
 
 ## BIG-IP object catalogue
 
@@ -315,7 +328,17 @@ checks and how to bypass it when you must.
   AS3 source checkout with `--as3-source <path> --mappings-output
   src/schemas/as3-implementation-mappings-3.56.0-10.json`; normal generation
   uses the snapshot and therefore never degrades to schema-only mappings.
-- Monaco is bundled locally (no CDN) for restricted environments.
+- Monaco is bundled locally (no CDN) for restricted environments, and loaded
+  on demand: the simplified view is the default, so the editor and its workers
+  are only fetched when the JSON view is first opened. That keeps the entry
+  chunk at ~1.2MB (254kB gzipped) instead of ~5.2MB (1.29MB). Once opened it
+  stays mounted so its undo stack and scroll position survive toggling.
+- Tests come in two flavours: `src/engine/__tests__/` is pure and runs in
+  node; `src/components/__tests__/` renders real components in jsdom
+  (`vitest.config.ts` picks the environment per path). Component tests drive
+  the DOM the way a person does — clicking a value, not calling the handler —
+  because the bug that motivated them was a click that never reached the
+  cursor.
 - The engine test suite (`src/engine/__tests__/`) runs against the real
   1.2MB per-app schema and f5_toolbox's golden render fixture; the
   render→invert round trip producing an empty ChangeSet is a test invariant.

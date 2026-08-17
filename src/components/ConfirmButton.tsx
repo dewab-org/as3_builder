@@ -27,6 +27,9 @@ export default function ConfirmButton({
     <button
       className={`${className ?? ""}${armed ? " armed" : ""}`}
       title={armed ? "Click again to confirm" : title}
+      // Children are usually a glyph (✕, 🗑), which would otherwise be the
+      // whole accessible name.
+      aria-label={armed ? `${title} — click again to confirm` : title}
       onClick={(e) => {
         e.stopPropagation();
         if (armed) {

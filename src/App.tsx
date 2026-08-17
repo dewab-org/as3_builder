@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { editor } from "monaco-editor";
 import { findNodeAtLocation, getLocation, parse, parseTree } from "jsonc-parser";
 import Toolbar from "./components/Toolbar";
@@ -6,7 +14,10 @@ import BigipDialog from "./components/BigipDialog";
 import BigipLoadDialog from "./components/BigipLoadDialog";
 import NetboxDialog from "./components/NetboxDialog";
 import PushNetboxDialog from "./components/PushNetboxDialog";
-import EditorPane from "./components/EditorPane";
+// Monaco is ~4MB of the bundle and the simplified view is the default, so the
+// editor is fetched the first time someone opens the JSON view. Once opened it
+// stays mounted (hidden), keeping its own undo stack and scroll position.
+const EditorPane = lazy(() => import("./components/EditorPane"));
 import TreePane from "./components/TreePane";
 import ContextPanel from "./components/ContextPanel";
 import SimplifiedPane from "./components/SimplifiedPane";
@@ -30,6 +41,7 @@ import {
   applicationMemberClasses,
   bigipCandidates,
   buildClassRegistry,
+  computeUpdates,
   effectiveSchema,
   extractXrefClasses,
   extrasFromAs3,
@@ -131,6 +143,12 @@ export default function App() {
   const [showPushDialog, setShowPushDialog] = useState(false);
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [viewMode, setViewMode] = useState<"json" | "simple">("simple");
+  // Sticky: once the editor has been loaded, keep it mounted so toggling back
+  // does not throw away its undo stack, folds and scroll position.
+  const [jsonEverOpened, setJsonEverOpened] = useState(viewMode === "json");
+  useEffect(() => {
+    if (viewMode === "json") setJsonEverOpened(true);
+  }, [viewMode]);
   // URL-sourced schemas ({id, label}); URLs persist across sessions.
   const [urlSchemas, setUrlSchemas] = useState<{ id: string; label: string }[]>(
     () => {
@@ -250,6 +268,25 @@ export default function App() {
       applyBigipDefaults(config.bigip);
     });
   }, []);
+
+  // What a push would do, computed from the live document so the count is
+  // visible before the dialog is opened. Pure and cheap; the same function the
+  // dialog runs. Absent until an application has been loaded from NetBox.
+  const pushPreview = useMemo(() => {
+    const manifest = netboxSession.manifests.get(
+      String((lastGoodDoc as Record<string, unknown> | undefined)?.id ?? "")
+    );
+    if (!manifest || !isPlainObject(lastGoodDoc)) return undefined;
+    const changeSet = computeUpdates(lastGoodDoc as Record<string, unknown>, manifest);
+    const writes =
+      changeSet.updates.reduce(
+        (n, u) => n + u.changes.length + u.ops.length,
+        0
+      ) +
+      changeSet.creates.length +
+      changeSet.deletes.length;
+    return { writes, notes: changeSet.notes.length };
+  }, [lastGoodDoc]);
 
   // Both ends of the reference under the cursor: what it points at, and what
   // points at it. The tree and the simplified view highlight the same set.
@@ -820,6 +857,7 @@ export default function App() {
         onLoadFromNetbox={() => setShowNetboxDialog(true)}
         onLoadFromBigip={() => setShowBigipLoadDialog(true)}
         onPushToNetbox={() => setShowPushDialog(true)}
+        pushPreview={pushPreview}
         theme={theme}
         onToggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
         onUndo={undo}
@@ -996,9 +1034,15 @@ export default function App() {
               relatedKeys={relatedKeys}
             />
           )}
+          {/* Mounted only once the JSON view has been opened, so a session
+              that stays in the simplified view never downloads Monaco. */}
+          {jsonEverOpened && (
           <div
             className="editor-host"
             style={viewMode === "simple" ? { display: "none" } : undefined}
+          >
+          <Suspense
+            fallback={<div className="pane-placeholder">Loading editor…</div>}
           >
           <EditorPane
             text={text}
@@ -1017,7 +1061,9 @@ export default function App() {
             deletableRowPath={deletableRowPath}
             onDeleteRow={handleDeleteRow}
           />
+          </Suspense>
           </div>
+          )}
         </div>
         <div className="pane-context">
           <ContextPanel
