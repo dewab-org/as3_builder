@@ -11,6 +11,7 @@ import type { editor } from "monaco-editor";
 import { findNodeAtLocation, getLocation, parse, parseTree } from "jsonc-parser";
 import Toolbar from "./components/Toolbar";
 import BigipDialog from "./components/BigipDialog";
+import BigipLoadDialog from "./components/BigipLoadDialog";
 import NetboxDialog from "./components/NetboxDialog";
 import PushNetboxDialog from "./components/PushNetboxDialog";
 // Monaco is ~4MB of the bundle and the simplified view is the default, so the
@@ -128,6 +129,7 @@ export default function App() {
   const [baselineText, setBaselineText] = useState(INITIAL_TEXT);
   const [showBigipDialog, setShowBigipDialog] = useState(false);
   const [showNetboxDialog, setShowNetboxDialog] = useState(false);
+  const [showBigipLoadDialog, setShowBigipLoadDialog] = useState(false);
   const deepLinkRef = useRef<DeepLink | null>(null);
 
   // Deep link: prefill the NetBox connection and open the Load dialog.
@@ -853,6 +855,7 @@ export default function App() {
         isDirty={text !== baselineText}
         onValidateOnBigip={() => setShowBigipDialog(true)}
         onLoadFromNetbox={() => setShowNetboxDialog(true)}
+        onLoadFromBigip={() => setShowBigipLoadDialog(true)}
         onPushToNetbox={() => setShowPushDialog(true)}
         pushPreview={pushPreview}
         theme={theme}
@@ -913,6 +916,20 @@ export default function App() {
           declarationText={text}
           onReloaded={loadText}
           onClose={() => setShowPushDialog(false)}
+        />
+      )}
+      {showBigipLoadDialog && (
+        <BigipLoadDialog
+          onLoad={(newText) => {
+            if (
+              text === baselineText ||
+              window.confirm(
+                "Replace the current document with the BIG-IP configuration?"
+              )
+            )
+              loadText(newText);
+          }}
+          onClose={() => setShowBigipLoadDialog(false)}
         />
       )}
       {showNetboxDialog && (

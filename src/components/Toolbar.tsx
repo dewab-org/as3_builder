@@ -13,6 +13,7 @@ interface ToolbarProps {
   isDirty: boolean;
   onValidateOnBigip: () => void;
   onLoadFromNetbox: () => void;
+  onLoadFromBigip: () => void;
   onPushToNetbox: () => void;
   /** What a push would write, and how much it cannot — absent until an
    * application has been loaded from NetBox. */
@@ -35,6 +36,7 @@ export default function Toolbar({
   isDirty,
   onValidateOnBigip,
   onLoadFromNetbox,
+  onLoadFromBigip,
   onPushToNetbox,
   pushPreview,
   theme,
@@ -131,6 +133,12 @@ export default function Toolbar({
       <div className="spacer" />
       <button onClick={onLoadFromNetbox} title="Read a load-balancer application from NetBox as AS3">
         Load from NetBox…
+      </button>
+      <button
+        onClick={onLoadFromBigip}
+        title="Read an application from a device's running configuration, via AS3's per-application API"
+      >
+        Load from BIG-IP…
       </button>
       <button
         onClick={onPushToNetbox}
