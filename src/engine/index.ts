@@ -14,5 +14,6 @@ export * from "./documentation";
 export * from "./base64";
 export * from "./readOnly";
 export * from "./relationships";
+export * from "./search";
 export * from "./bigipCatalog";
 export * from "./dryRunSubstitution";

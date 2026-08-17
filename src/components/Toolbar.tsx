@@ -8,9 +8,10 @@ interface ToolbarProps {
   /** URL-sourced schemas added this session ({id, label}). */
   urlSchemas: { id: string; label: string }[];
   onAddSchemaUrl: () => void;
-  onLoadText: (text: string) => void;
+  /** `source` names what is replacing the document ("the template", a file
+   * name) for the replace-confirmation dialog. The guard lives in App. */
+  onLoadText: (text: string, source: string) => void;
   currentText: string;
-  isDirty: boolean;
   onValidateOnBigip: () => void;
   onLoadFromNetbox: () => void;
   onPushToNetbox: () => void;
@@ -29,7 +30,6 @@ export default function Toolbar({
   onAddSchemaUrl,
   onLoadText,
   currentText,
-  isDirty,
   onValidateOnBigip,
   onLoadFromNetbox,
   onPushToNetbox,
@@ -44,19 +44,14 @@ export default function Toolbar({
 
   function handleTemplateSelect(id: string) {
     if (!id) return;
-    if (isDirty && !window.confirm("Replace the current document with the template?")) {
-      return;
-    }
-    onLoadText(getTemplate(id).content);
+    const template = getTemplate(id);
+    onLoadText(template.content, `the "${template.label}" template`);
   }
 
   function handleOpenFile(file: File | undefined) {
     if (!file) return;
-    if (isDirty && !window.confirm(`Replace the current document with ${file.name}?`)) {
-      return;
-    }
     const reader = new FileReader();
-    reader.onload = () => onLoadText(String(reader.result ?? ""));
+    reader.onload = () => onLoadText(String(reader.result ?? ""), file.name);
     reader.readAsText(file);
   }
 

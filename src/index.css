@@ -407,6 +407,59 @@ body {
   font-style: italic;
 }
 
+/* --- find in document --- */
+
+.tree-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.tree-search input {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.tree-search-count {
+  font-size: 10px;
+  color: var(--faint);
+  white-space: nowrap;
+}
+
+/* Not on the route to any match. Dimmed, not hidden: structure stays
+   readable, and a hit deep in a pool keeps its surroundings. */
+.tree-label.unmatched,
+.simple-row.unmatched,
+.obj-card.unmatched {
+  opacity: 0.35;
+}
+
+/* Ancestors of a dimmed card should not compound the fade on its children. */
+.obj-card.unmatched .obj-card,
+.obj-card.unmatched .simple-row {
+  opacity: 1;
+}
+
+/* Modified state in words, matching read-only/external/linked — colour
+   stays, but stops being the only signal. */
+.obj-edited {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--warn-text);
+  border: 1px solid var(--warn-border);
+  border-radius: 8px;
+  padding: 0 6px;
+  cursor: help;
+}
+
 /* --- simplified view: folding --- */
 
 .simple-tools {
@@ -1570,6 +1623,11 @@ body {
 
 .modal-confirm-actions button.danger:hover {
   background: var(--danger-dark);
+}
+
+/* The replace-confirmation dialog: a question, not a workspace. */
+.modal-narrow {
+  max-width: 440px;
 }
 
 .modal-actions {

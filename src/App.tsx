@@ -41,6 +41,7 @@ import {
   resolveDrop,
   resolveSchemaForPath,
   relatedPaths,
+  searchMatches,
   stubValue,
   summarizeEntry,
   xrefCandidatesAt,
@@ -249,6 +250,14 @@ export default function App() {
     });
   }, []);
 
+  // Find-in-document: one query, both panes. Matches include their ancestors
+  // so the route to a hit stays visible while everything else dims.
+  const [searchQuery, setSearchQuery] = useState("");
+  const searchKeys = useMemo(
+    () => searchMatches(lastGoodDoc, searchQuery),
+    [lastGoodDoc, searchQuery]
+  );
+
   // Both ends of the reference under the cursor: what it points at, and what
   // points at it. The tree and the simplified view highlight the same set.
   const relatedKeys = useMemo(
@@ -401,6 +410,38 @@ export default function App() {
     setBaselineText(newText);
     setCursorOffset(0);
   }
+
+  // Replacing a document with unsaved edits asks first — through a real
+  // dialog, not window.confirm, which some embedded browsers swallow
+  // silently (the load then just... does not happen, with no clue why).
+  const [pendingLoad, setPendingLoad] = useState<{
+    text: string;
+    source: string;
+    andThen?: () => void;
+  } | null>(null);
+
+  function guardedLoad(newText: string, source: string, andThen?: () => void) {
+    if (text === baselineText) {
+      loadText(newText);
+      andThen?.();
+    } else {
+      setPendingLoad({ text: newText, source, andThen });
+    }
+  }
+
+  // What the replace would discard, named concretely: edited application
+  // members count for more than "unsaved changes".
+  const modifiedMemberCount = useMemo(() => {
+    if (!isPlainObject(lastGoodDoc)) return 0;
+    let count = 0;
+    for (const [appKey, appVal] of Object.entries(lastGoodDoc)) {
+      if (!isPlainObject(appVal)) continue;
+      for (const memberKey of Object.keys(appVal)) {
+        if (isModifiedPath([appKey, memberKey])) count++;
+      }
+    }
+    return count;
+  }, [lastGoodDoc, isModifiedPath]);
 
   // Move the Monaco cursor to the value at `path`. Strings land BETWEEN the
   // quotes so typing replaces/fills the value; objects/arrays land just
@@ -811,9 +852,8 @@ export default function App() {
         onSchemaChange={setSchemaId}
         urlSchemas={urlSchemas}
         onAddSchemaUrl={() => setSchemaUrlDialog({ url: "", busy: false })}
-        onLoadText={loadText}
+        onLoadText={guardedLoad}
         currentText={text}
-        isDirty={text !== baselineText}
         onValidateOnBigip={() => setShowBigipDialog(true)}
         onLoadFromNetbox={() => setShowNetboxDialog(true)}
         onPushToNetbox={() => setShowPushDialog(true)}
@@ -882,11 +922,7 @@ export default function App() {
           configWarnings={configWarnings}
           autoLoadAppId={deepLinkRef.current?.appId}
           onLoad={(newText) => {
-            if (
-              text === baselineText ||
-              window.confirm("Replace the current document with the NetBox render?")
-            ) {
-              loadText(newText);
+            guardedLoad(newText, "the NetBox render", () => {
               // Deep link: jump to the object the callout referenced, using
               // the provenance manifest to map endpoint:id → AS3 key.
               const link = deepLinkRef.current;
@@ -931,7 +967,7 @@ export default function App() {
                   });
                 }
               }
-            }
+            });
           }}
           onClose={() => setShowNetboxDialog(false)}
         />
@@ -947,6 +983,9 @@ export default function App() {
             isModified={isModifiedPath}
             relatedKeys={relatedKeys}
             onHoverPath={setHover}
+            searchQuery={searchQuery}
+            onSearchQuery={setSearchQuery}
+            searchKeys={searchKeys}
           />
         </div>
         <div className="pane-editor">
@@ -977,6 +1016,7 @@ export default function App() {
               onAppendObjectItem={handleAppendObjectItem}
               onHoverPath={setHover}
               relatedKeys={relatedKeys}
+              searchKeys={searchKeys}
             />
           )}
           <div
@@ -1018,6 +1058,40 @@ export default function App() {
           />
         </div>
       </div>
+      {pendingLoad && (
+        <div className="modal-backdrop" onClick={() => setPendingLoad(null)}>
+          <div
+            className="modal modal-narrow"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2>Replace the current document?</h2>
+            <p className="ctx-hint">
+              Loading {pendingLoad.source} discards{" "}
+              {modifiedMemberCount > 0
+                ? `your unsaved edits to ${modifiedMemberCount} object${modifiedMemberCount === 1 ? "" : "s"}`
+                : "your unsaved edits"}
+              . Save first if you want to keep them.
+            </p>
+            <div className="modal-actions">
+              <button autoFocus onClick={() => setPendingLoad(null)}>
+                Keep my edits
+              </button>
+              <button
+                className="danger"
+                onClick={() => {
+                  const load = pendingLoad;
+                  setPendingLoad(null);
+                  loadText(load.text);
+                  load.andThen?.();
+                }}
+              >
+                Replace
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {hoverAnchor && (
         <HoverCard
           anchor={hoverAnchor}
