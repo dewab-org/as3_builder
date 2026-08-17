@@ -1,3 +1,7 @@
+// Side-effecting: configures the local Monaco build and its workers. It sits
+// here rather than in main.tsx so it travels in this lazily-loaded chunk —
+// the editor is not needed until someone opens the JSON view.
+import "../monacoSetup";
 import Editor, { useMonaco } from "@monaco-editor/react";
 import type { editor } from "monaco-editor";
 import { useEffect, useRef } from "react";

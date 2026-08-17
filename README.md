@@ -299,7 +299,11 @@ checks and how to bypass it when you must.
   AS3 source checkout with `--as3-source <path> --mappings-output
   src/schemas/as3-implementation-mappings-3.56.0-10.json`; normal generation
   uses the snapshot and therefore never degrades to schema-only mappings.
-- Monaco is bundled locally (no CDN) for restricted environments.
+- Monaco is bundled locally (no CDN) for restricted environments, and loaded
+  on demand: the simplified view is the default, so the editor and its workers
+  are only fetched when the JSON view is first opened. That keeps the entry
+  chunk at ~1.2MB (254kB gzipped) instead of ~5.2MB (1.29MB). Once opened it
+  stays mounted so its undo stack and scroll position survive toggling.
 - Tests come in two flavours: `src/engine/__tests__/` is pure and runs in
   node; `src/components/__tests__/` renders real components in jsdom
   (`vitest.config.ts` picks the environment per path). Component tests drive
