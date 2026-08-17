@@ -336,6 +336,9 @@ function DeleteBtn({ path, ctx, title }: { path: JsonPath; ctx: RowCtx; title: s
     <button
       className="simple-delete"
       title={title}
+      // The label is a glyph, so the title alone leaves screen readers
+      // announcing "✕" with no idea what it removes.
+      aria-label={title}
       onClick={(e) => {
         e.stopPropagation();
         ctx.deleteAt(path);
@@ -352,6 +355,7 @@ function Chevron({ path, ctx }: { path: JsonPath; ctx: RowCtx }) {
     <button
       className="fold-btn"
       title={collapsed ? "Expand" : "Collapse"}
+      aria-label={collapsed ? "Expand" : "Collapse"}
       aria-expanded={!collapsed}
       onClick={(e) => {
         e.stopPropagation();
