@@ -210,6 +210,22 @@ manifest is in-memory only). See `NETBOX-WRITEBACK-PLAN.md` for the design
 and current limits (snat pools, policies, cipher groups, protocol profiles,
 GSLB are read-only for now).
 
+## Loading from a BIG-IP
+
+**Load from BIG-IP…** reads the running configuration back through AS3's
+per-application API: `GET /declare` names the tenants, and
+`GET /declare/<tenant>/applications` returns each tenant's applications
+already in the per-app shape this editor works on — no conversion, this is
+what the device is actually serving. The picker groups applications by tenant
+with a fuzzy filter; the loaded document's `id` records the device, tenant and
+application it came from.
+
+Two caveats. NetBox write-back does not apply to a document loaded this way
+(it has no NetBox provenance — the Push dialog will say so), and the device
+must have AS3 installed with something deployed through it; a device where
+AS3 has never run has nothing to list. Credentials are shared with the
+Validate/Apply dialog and prefill from `.env` like everything else.
+
 ## BIG-IP object catalogue
 
 Profiles, persistence methods and monitors that ship in `/Common` are estate
