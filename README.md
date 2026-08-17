@@ -304,6 +304,12 @@ checks and how to bypass it when you must.
   are only fetched when the JSON view is first opened. That keeps the entry
   chunk at ~1.2MB (254kB gzipped) instead of ~5.2MB (1.29MB). Once opened it
   stays mounted so its undo stack and scroll position survive toggling.
+- Tests come in two flavours: `src/engine/__tests__/` is pure and runs in
+  node; `src/components/__tests__/` renders real components in jsdom
+  (`vitest.config.ts` picks the environment per path). Component tests drive
+  the DOM the way a person does — clicking a value, not calling the handler —
+  because the bug that motivated them was a click that never reached the
+  cursor.
 - The engine test suite (`src/engine/__tests__/`) runs against the real
   1.2MB per-app schema and f5_toolbox's golden render fixture; the
   render→invert round trip producing an empty ChangeSet is a test invariant.
