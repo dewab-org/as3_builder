@@ -46,6 +46,8 @@ interface SimplifiedPaneProps {
   ) => void;
   /** Path keys on the other end of the selected reference. */
   relatedKeys: Set<string>;
+  /** Find-in-document match paths (with ancestors); null when not searching. */
+  searchKeys?: Set<string> | null;
 }
 
 // Fold state lives outside the component so it survives switching to the
@@ -292,6 +294,9 @@ interface RowCtx {
   hover: (anchor: { path: JsonPath; x: number; y: number } | null) => void;
   /** True when this node is the other end of the selected reference. */
   isRelated: (path: JsonPath) => boolean;
+  /** False only while a search is active and this node is not on the route
+   * to any match. */
+  matchesSearch: (path: JsonPath) => boolean;
 }
 
 /** A `{bigip: "/path"}` value names an object that lives on the device or in
@@ -380,7 +385,7 @@ function ValueRow({
   return (
     <div>
       <div
-        className={`simple-row${selected ? " selected" : ""}${ctx.isModified(path) ? " modified" : ""}${ctx.isRelated(path) ? " related" : ""}`}
+        className={`simple-row${selected ? " selected" : ""}${ctx.isModified(path) ? " modified" : ""}${ctx.isRelated(path) ? " related" : ""}${ctx.matchesSearch(path) ? "" : " unmatched"}`}
         title={path.map(String).join(" › ")}
         {...hoverProps(path, ctx)}
       >
@@ -537,7 +542,7 @@ function ObjectCard({
   const immutable = Boolean(immutability) || insideImmutable;
   return (
     <div
-      className={`obj-card ${variant}${selected ? " selected" : ""}${ctx.isModified(path) ? " modified" : ""}${collapsed ? " collapsed" : ""}${immutable ? " immutable" : ""}${ctx.isRelated(path) ? " related" : ""}`}
+      className={`obj-card ${variant}${selected ? " selected" : ""}${ctx.isModified(path) ? " modified" : ""}${collapsed ? " collapsed" : ""}${immutable ? " immutable" : ""}${ctx.isRelated(path) ? " related" : ""}${ctx.matchesSearch(path) ? "" : " unmatched"}`}
     >
       <div
         className="obj-card-head"
@@ -554,6 +559,14 @@ function ObjectCard({
         {immutability && !insideImmutable && (
           <span className="obj-readonly" title={immutability.reason}>
             {immutability.badge}
+          </span>
+        )}
+        {ctx.isModified(path) && (
+          <span
+            className="obj-edited"
+            title="Differs from the loaded baseline — a push would write this"
+          >
+            edited
           </span>
         )}
         {collapsed && entries.length > 0 && (
@@ -703,6 +716,7 @@ export default function SimplifiedPane({
   onAppendObjectItem,
   onHoverPath,
   relatedKeys,
+  searchKeys = null,
 }: SimplifiedPaneProps) {
   const [editingPath, setEditingPath] = useState<JsonPath | null>(null);
   const [foldTick, setFoldTick] = useState(0);
@@ -763,6 +777,8 @@ export default function SimplifiedPane({
   const ctx: RowCtx = {
     hover: onHoverPath,
     isRelated: (path) => relatedKeys.has(pathKey(path)),
+    matchesSearch: (path) =>
+      searchKeys === null || searchKeys.has(pathKey(path)),
     cursorPath,
     isCollapsed,
     toggleCollapse,

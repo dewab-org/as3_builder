@@ -17,6 +17,11 @@ interface TreePaneProps {
   onHoverPath: (
     anchor: { path: JsonPath; x: number; y: number } | null
   ) => void;
+  /** Find-in-document, shared with the simplified view. */
+  searchQuery: string;
+  onSearchQuery: (query: string) => void;
+  /** Match paths (with ancestors); null when not searching. */
+  searchKeys: Set<string> | null;
 }
 
 // Deep enough to reach policy rules and their conditions/actions
@@ -55,6 +60,7 @@ function TreeNode({
   isModified,
   relatedKeys,
   onHoverPath,
+  searchKeys,
 }: {
   nodeKey: string | number;
   value: unknown;
@@ -68,6 +74,7 @@ function TreeNode({
   onHoverPath: (
     anchor: { path: JsonPath; x: number; y: number } | null
   ) => void;
+  searchKeys: Set<string> | null;
 }) {
   const isBranch =
     (isPlainObject(value) || Array.isArray(value)) && depth < MAX_DEPTH;
@@ -81,7 +88,7 @@ function TreeNode({
   return (
     <div className="tree-node">
       <div
-        className={`tree-label${selected ? " selected" : ""}${isModified(path) ? " modified" : ""}${relatedKeys.has(pathKey(path)) ? " related" : ""}`}
+        className={`tree-label${selected ? " selected" : ""}${isModified(path) ? " modified" : ""}${relatedKeys.has(pathKey(path)) ? " related" : ""}${searchKeys !== null && !searchKeys.has(pathKey(path)) ? " unmatched" : ""}`}
         onClick={() => onSelect(path)}
         onMouseEnter={(e) =>
           onHoverPath({ path, x: e.clientX, y: e.clientY })
@@ -116,6 +123,7 @@ function TreeNode({
                 isModified={isModified}
                 relatedKeys={relatedKeys}
                 onHoverPath={onHoverPath}
+                searchKeys={searchKeys}
               />
             ))}
         </div>
@@ -133,6 +141,9 @@ export default function TreePane({
   isModified,
   relatedKeys,
   onHoverPath,
+  searchQuery,
+  onSearchQuery,
+  searchKeys,
 }: TreePaneProps) {
   // Reveal the linked node in this pane too — the tree scrolls independently,
   // so the highlight can otherwise land out of sight.
@@ -147,6 +158,23 @@ export default function TreePane({
   return (
     <div>
       {isStale && <div className="stale-banner">Stale — fix JSON to refresh</div>}
+      <div className="tree-search">
+        <input
+          type="search"
+          placeholder="Find in document…"
+          aria-label="Find in document"
+          value={searchQuery}
+          onChange={(e) => onSearchQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") onSearchQuery("");
+          }}
+        />
+        {searchKeys !== null && (
+          <span className="tree-search-count" role="status">
+            {searchKeys.size === 0 ? "no matches" : `${searchKeys.size} hits`}
+          </span>
+        )}
+      </div>
       <div
         className={`tree-label root${cursorPath.length === 0 ? " selected" : ""}`}
         onClick={() => onSelect([])}
@@ -169,6 +197,7 @@ export default function TreePane({
               isModified={isModified}
               relatedKeys={relatedKeys}
               onHoverPath={onHoverPath}
+              searchKeys={searchKeys}
             />
           ))}
       </div>
