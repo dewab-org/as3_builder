@@ -19,6 +19,7 @@ function renderToolbar(overrides: Partial<ToolbarProps> = {}) {
     onPushToNetbox: vi.fn(),
     theme: "light",
     onToggleTheme: vi.fn(),
+    onAbout: vi.fn(),
     onUndo: vi.fn(),
     onRedo: vi.fn(),
     canUndo: false,
