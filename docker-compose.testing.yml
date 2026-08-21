@@ -1,0 +1,67 @@
+# Testing stack: build the image from this checkout and run it with the SAME
+# .env and policy file the dev server uses, so what you test is what a
+# deployment gets — hardening flags included.
+#
+#   cp as3b-config.example.json as3b-config.json   # once; edit as needed
+#   docker compose -f docker-compose.testing.yml up --build
+#   open http://127.0.0.1:8089
+#
+# Differences from docker-compose.yml (the deployment file):
+# - Port 8089, so it can run beside the deployment stack (8088) and NetBox
+#   (8080).
+# - The policy file mount is ACTIVE, not commented. If as3b-config.json does
+#   not exist, Docker creates a directory in its place and the server fails
+#   closed (gates off, warning in the Load dialog) — delete the junk
+#   directory and copy the example.
+# - NETBOX_URL is rewritten for container reality: a .env written for the dev
+#   server says "localhost", which inside a container is the container.
+#   Override with NETBOX_URL_CONTAINER if host.docker.internal is not right.
+
+services:
+  as3-builder-test:
+    build: .
+    image: as3-builder:test
+    ports:
+      # Loopback only: with AS3B_EXPOSE_CREDENTIALS set, the page hands out
+      # whatever is in .env — do not publish this wider.
+      - "127.0.0.1:8089:8080"
+    read_only: true
+    user: "65532:65532"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    extra_hosts:
+      # host.docker.internal exists on Docker Desktop; this makes it work on
+      # plain Linux engines too.
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NODE_ENV: production
+      PORT: "8080"
+      # Prefill the dialogs from .env, dev-server style. This is why the port
+      # binding above stays on loopback.
+      AS3B_EXPOSE_CREDENTIALS: "1"
+      # Deployment policy under test (mounted below).
+      AS3B_CONFIG: /app/as3b-config.json
+      # "localhost" in .env means the host, not this container. Rewrite it;
+      # NETBOX_URL_CONTAINER overrides when the default is wrong.
+      NETBOX_URL: ${NETBOX_URL_CONTAINER:-http://host.docker.internal:8080}
+    volumes:
+      - ./as3b-config.json:/app/as3b-config.json:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "/nodejs/bin/node",
+          "-e",
+          "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
