@@ -100,13 +100,15 @@ export function unsupportedOf(
   value: Record<string, unknown>
 ): UnsupportedRule | undefined;
 
-/** For pickers, where there is no value yet — class-only match. A rule WITH
- *  a `when` clause does not match here (adding a Monitor is fine; setting
- *  monitorType to "sip" later is what gets flagged). */
+/** For pickers, where there is no value yet. A class-only rule matches
+ *  outright. Rules WITH a `when` clause cannot block adding the bare class
+ *  (the discriminator property does not exist yet) but ARE surfaced: the
+ *  result carries them as `variants`, so the picker can note "some variants
+ *  unsupported (sip)" on the item and in its detail card. */
 export function unsupportedClassOf(
   policy: SupportPolicy,
   className: string
-): UnsupportedRule | undefined;
+): { rule?: UnsupportedRule; variants: UnsupportedRule[] };
 
 /** Audit a whole document: every path whose object matches a rule. Feeds
  *  the issues bar and the apply-time summary. */
@@ -170,6 +172,9 @@ equivalents exist). Tooltip = rule `reason`.
 
 - **Pickers** (`ContextPanel` classItems, class dropdown, `AddableList`):
   item stays listed, tagged `unsupported`, detail card shows the reason.
+  Classes with only `when`-scoped rules carry a lighter note — "some
+  variants unsupported (sip)" — on the picker item and detail card, per
+  decision #4.
 - **Adding** (the `+` button, drag-drop via `handleChipDrop`, class change
   via `handleClassChange`): one are-you-sure. Reuse the `modal-confirm`
   pattern from `BigipDialog` (single gate, not three):
@@ -220,6 +225,7 @@ ever silently stripped from a payload.
 - `src/engine/__tests__/appConfig.test.ts`: extend — file merge, malformed
   file → warning + gates closed, `--config` flag.
 - Component tests (`src/components/__tests__/`): soft item tagged in picker;
+  variant-scoped note shown on a class whose rules are all `when`-scoped;
   add-anyway dialog appears and cancel adds nothing; hard class absent from
   picker; existing hard item badged, edit-locked, deletable; toolbar without
   NetBox buttons when gated.
@@ -236,23 +242,19 @@ ever silently stripped from a payload.
 - **PR B — blacklist UI.** §5–§6 UI parts: badges, picker filtering/tagging,
   add-anyway guard, hard lock, audit surface. Depends on A.
 
-## 8. Decision points (answer before or during PR A)
+## 8. Decision points — RESOLVED (user, 2026-08-18)
 
-1. **Hard mode vs. already-present items.** Plan says badge+lock+deletable,
-   not hidden (§5.2), deviating from "hide completely" to avoid silent data
-   loss on round-trip. Confirm or override.
-2. **Apply gate scope.** The 403 blocks non-dry-run POSTs through this app's
-   proxy only — it is a deployment-policy control, not a device ACL. Anyone
-   with device credentials can still use AS3 directly. Acceptable? (Plan
-   assumes yes; the alternative — no server enforcement at all — makes the
-   gate decorative.)
-3. **Hard items in a payload sent to Validate.** Plan: send as-is and list
-   them in the dialog (dry-run is exactly the place to learn what the device
-   thinks). Alternative: refuse to submit while hard items exist.
-4. **Class-only rules in pickers vs `when` rules.** Plan: a `when` rule never
-   blocks adding the bare class (the discriminator property doesn't exist
-   yet). Means a soft-SIP-monitor rule flags on property-set, not on add.
-   Confirm.
+1. **Hard mode vs. already-present items:** badge + lock + deletable, never
+   hidden. Confirmed as recommended.
+2. **Apply gate scope:** proxy-level 403 enforcement is right — deployment
+   policy for this tool, not a device ACL. Confirmed as recommended.
+3. **Hard items vs. Validate:** allowed; the dialog lists them before
+   submitting. Confirmed as recommended.
+4. **`when` rules in pickers:** warn at the picker too — items whose class
+   has variant-scoped rules carry a "some variants unsupported (…)" note in
+   the picker and detail card, in addition to flagging when the property is
+   actually set. (User chose the stronger option over the recommendation;
+   `unsupportedClassOf` returns the variant rules to make this cheap.)
 
 ## 9. Out of scope (named so nobody wanders in)
 
