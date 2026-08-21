@@ -8,8 +8,9 @@ describe("version bookkeeping", () => {
     expect(displayFromSemver(packageVersion)).toBe(APP_VERSION);
   });
 
-  it("the mapping survives two-digit minors", () => {
+  it("the mapping survives two-digit minors and patch releases", () => {
     expect(displayFromSemver("0.5.0")).toBe("0.05");
     expect(displayFromSemver("0.10.0")).toBe("0.10");
+    expect(displayFromSemver("0.5.1")).toBe("0.05.1");
   });
 });
