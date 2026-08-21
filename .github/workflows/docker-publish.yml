@@ -36,7 +36,28 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run lint
+      # The same per-file-type linters the local hook runs, so CI and a
+      # developer's machine cannot disagree about what "clean" means. This
+      # subsumes the old bare `npm run lint` step — eslint is one of the
+      # hooks. hadolint and actionlint are single static binaries the
+      # runner lacks; compose validation uses the runner's own docker.
+      - name: Install file linters
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/hadolint" \
+            https://github.com/hadolint/hadolint/releases/download/v2.15.1/hadolint-Linux-x86_64
+          chmod +x "$RUNNER_TEMP/hadolint"
+          curl -sSfL https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz \
+            | tar -xz -C "$RUNNER_TEMP" actionlint
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Cache pre-commit environments
+        uses: actions/cache@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+      - name: Run file linters
+        run: |
+          pipx install pre-commit
+          pre-commit run --all-files --show-diff-on-failure
       - run: npx tsc -b
       - run: npm test
 
