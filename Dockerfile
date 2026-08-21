@@ -41,7 +41,10 @@ ENV NODE_ENV=production \
 COPY --from=build --chown=nonroot:nonroot /build/dist ./dist
 COPY --from=build --chown=nonroot:nonroot /build/dist-server ./dist-server
 
-USER nonroot
+# 65532 is the distroless "nonroot" user; numeric so runtimes that resolve
+# uids without the image's /etc/passwd (Kubernetes runAsNonRoot checks,
+# hadolint DL3066) can verify it.
+USER 65532:65532
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \

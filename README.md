@@ -7,7 +7,7 @@ and **BIG-IP dry-run/apply** support.
 Everything runs in the browser plus a small dev-server proxy — there is no
 backend service.
 
-```
+```text
 ┌────────────────────────────────────────────────────────────────────┐
 │ Schema ▾  Template ▾   Load from NetBox…  Push to NetBox…          │
 │                        Validate on BIG-IP…  Open  Save  ☾          │
@@ -33,11 +33,15 @@ npm run build      # production build in dist/
 `npm install` points git at `.githooks/`, which installs a **pre-commit hook**
 that scans staged content for credentials (`scripts/check-secrets.mjs`, plus
 `gitleaks protect --staged` when gitleaks is installed), runs `trivy fs` for
-dependency CVEs, runs `trivy config` when the Dockerfile changed, and — when
-TypeScript or JavaScript is staged — runs eslint, `tsc -b`, and the test suite.
-Lint warnings print but don't block; errors do. Enable it by hand with
-`git config core.hooksPath .githooks`, bypass one commit with
-`git commit --no-verify`.
+dependency CVEs, runs `trivy config` when the Dockerfile changed, delegates
+per-file-type linting to the **pre-commit framework**
+(`.pre-commit-config.yaml`: eslint, hadolint for Dockerfiles, yamllint,
+markdownlint, shellcheck, `docker compose config` validation, actionlint — run
+everything by hand with `pre-commit run --all-files`), and — when TypeScript
+or JavaScript is staged — runs `tsc -b` and the test suite. Enable it by hand
+with `git config core.hooksPath .githooks`, bypass one commit with
+`git commit --no-verify`. `brew install pre-commit` if the linter step reports
+itself missing.
 
 The trivy steps gate on CRITICAL/HIGH with a fix available, and are skipped
 (with a note) when trivy isn't installed. Image scanning needs a full `docker
@@ -53,7 +57,7 @@ artifacts under `src/schemas/` are skipped.
 
 Copy `.env.example` to `.env` and fill in whatever you use often:
 
-```
+```bash
 BIGIP_HOSTNAME=      BIGIP_USERNAME=      BIGIP_PASSWORD=      BIGIP_VALIDATE_CERTS=
 NETBOX_URL=          NETBOX_TOKEN=                             NETBOX_VALIDATE_CERTS=
                      NETBOX_USERNAME=     NETBOX_PASSWORD=
@@ -254,7 +258,6 @@ must have AS3 installed with something deployed through it; a device where
 AS3 has never run has nothing to list. Credentials are shared with the
 Validate/Apply dialog and prefill from `.env` like everything else.
 
-
 ## BIG-IP object catalogue
 
 Profiles, persistence methods and monitors that ship in `/Common` are estate
@@ -320,7 +323,7 @@ checks and how to bypass it when you must.
 ## Repository documents
 
 | File | Purpose |
-|---|---|
+| --- | --- |
 | `PLAN.md` | Original build specification (phases 1–5, engine contracts) |
 | `NETBOX-WRITEBACK-PLAN.md` | Write-back design (manifest, ChangeSet, phases W1–W4 — all implemented) |
 | `NETBOX-DEEPLINK-PLAN.md` | NetBox→builder deep-link contract + future plugin callout |

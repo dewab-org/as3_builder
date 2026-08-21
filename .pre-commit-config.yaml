@@ -1,0 +1,72 @@
+# Per-file-type linting, run from .githooks/pre-commit (which keeps the
+# project-level steps: secret scan, trivy, tsc, tests). Run by hand with:
+#
+#   pre-commit run --all-files
+#
+# Remote hooks are pinned to release revs; `pre-commit autoupdate` bumps them.
+# Local hooks reuse tools the repo already depends on (eslint, docker,
+# actionlint) rather than duplicating them in another environment.
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-merge-conflict
+      - id: check-json
+        # Generated artifacts are megabytes and machine-written.
+        exclude: ^(src/schemas/|package-lock\.json)
+      - id: check-yaml
+      - id: end-of-file-fixer
+        exclude: ^src/schemas/
+      - id: trailing-whitespace
+        exclude: ^src/schemas/
+        args: [--markdown-linebreak-ext=md]
+
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.14.0
+    hooks:
+      - id: hadolint
+        # The system binary: the -docker variant pulls an image per run.
+
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.37.1
+    hooks:
+      - id: yamllint
+        args: [--strict]
+
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.45.0
+    hooks:
+      - id: markdownlint
+
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      - id: shellcheck
+        # The hook scripts are plain sh with no extension.
+        types: [shell]
+
+  - repo: local
+    hooks:
+      - id: eslint
+        name: eslint
+        # The repo's own eslint + flat config; lives here (not in the shell
+        # hook) so every linter is declared in one place.
+        entry: npx eslint --no-warn-ignored
+        language: system
+        types_or: [ts, tsx, javascript]
+
+      - id: compose-validate
+        name: docker compose config
+        # Trivy's config scanner covers Dockerfiles but not compose files —
+        # this closes the gap noted when the scanning hook first landed.
+        entry: bash -c 'for f in "$@"; do docker compose -f "$f" config -q || exit 1; done' --
+        language: system
+        files: ^docker-compose.*\.ya?ml$
+        pass_filenames: true
+
+      - id: actionlint
+        name: actionlint
+        entry: actionlint
+        language: system
+        files: ^\.github/workflows/.*\.ya?ml$

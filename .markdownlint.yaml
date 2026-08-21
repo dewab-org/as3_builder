@@ -1,0 +1,6 @@
+# Prose rules that fight readable docs are off; structural ones stay.
+MD013: false   # line length — docs wrap where it reads best
+MD033: false   # inline HTML — used sparingly, deliberately
+MD041: false   # first line need not be a top-level heading (plan docs)
+MD024:
+  siblings_only: true   # repeated headings ok across sections (changelogs)
