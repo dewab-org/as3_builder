@@ -308,6 +308,7 @@ checks and how to bypass it when you must.
 | `PLAN.md` | Original build specification (phases 1–5, engine contracts) |
 | `NETBOX-WRITEBACK-PLAN.md` | Write-back design (manifest, ChangeSet, phases W1–W4 — all implemented) |
 | `NETBOX-DEEPLINK-PLAN.md` | NetBox→builder deep-link contract + future plugin callout |
+| `SUPPORT-POLICY-PLAN.md` | Planned: deployment config file (feature gates) + unsupported-item blacklist with hard/soft modes |
 
 ## Notes
 
