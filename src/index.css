@@ -135,21 +135,23 @@ body {
   letter-spacing: 0.01em;
 }
 
-/* The title is a real button (it opens About) but must read as the title:
-   no chrome, the toolbar's own colours, just a hover hint. */
-.toolbar-title {
+/* The title is a real button (it opens About) but must read as plain text.
+   Selector matches ".toolbar button"'s specificity-plus-one, or that rule's
+   border/background/padding win and the title renders as a pill. */
+.toolbar button.toolbar-title {
   all: unset;
   cursor: pointer;
   color: inherit;
   font: inherit;
 }
 
-.toolbar-title:hover {
+.toolbar button.toolbar-title:hover {
+  background: none;
   text-decoration: underline;
   text-underline-offset: 3px;
 }
 
-.toolbar-title:focus-visible {
+.toolbar button.toolbar-title:focus-visible {
   outline: 2px solid #ffffff;
   outline-offset: 2px;
   border-radius: 3px;
