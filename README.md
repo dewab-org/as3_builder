@@ -329,6 +329,10 @@ checks and how to bypass it when you must.
   AS3 source checkout with `--as3-source <path> --mappings-output
   src/schemas/as3-implementation-mappings-3.56.0-10.json`; normal generation
   uses the snapshot and therefore never degrades to schema-only mappings.
+- Versioning uses a two-part scheme (0.05, 0.06, …) shown in the About
+  dialog (the `?` toolbar button). `src/version.ts` is the source of truth;
+  `package.json` carries the semver mirror (0.05 → 0.5.0, semver forbids
+  leading zeros) and a test keeps the two in lockstep — bump both.
 - Monaco is bundled locally (no CDN) for restricted environments, and loaded
   on demand: the simplified view is the default, so the editor and its workers
   are only fetched when the JSON view is first opened. That keeps the entry

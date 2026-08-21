@@ -12,6 +12,7 @@ import { findNodeAtLocation, getLocation, parse, parseTree } from "jsonc-parser"
 import Toolbar from "./components/Toolbar";
 import BigipDialog from "./components/BigipDialog";
 import BigipLoadDialog from "./components/BigipLoadDialog";
+import AboutDialog from "./components/AboutDialog";
 import NetboxDialog from "./components/NetboxDialog";
 import PushNetboxDialog from "./components/PushNetboxDialog";
 // Monaco is ~4MB of the bundle and the simplified view is the default, so the
@@ -131,6 +132,7 @@ export default function App() {
   const [showBigipDialog, setShowBigipDialog] = useState(false);
   const [showNetboxDialog, setShowNetboxDialog] = useState(false);
   const [showBigipLoadDialog, setShowBigipLoadDialog] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
   const deepLinkRef = useRef<DeepLink | null>(null);
 
   // Deep link: prefill the NetBox connection and open the Load dialog.
@@ -899,6 +901,7 @@ export default function App() {
         onPushToNetbox={() => setShowPushDialog(true)}
         pushPreview={pushPreview}
         theme={theme}
+        onAbout={() => setShowAbout(true)}
         onToggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
         onUndo={undo}
         onRedo={redo}
@@ -1115,6 +1118,7 @@ export default function App() {
           />
         </div>
       </div>
+      {showAbout && <AboutDialog onClose={() => setShowAbout(false)} />}
       {pendingLoad && (
         <div className="modal-backdrop" onClick={() => setPendingLoad(null)}>
           <div

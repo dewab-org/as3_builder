@@ -21,6 +21,7 @@ interface ToolbarProps {
   pushPreview?: { writes: number; notes: number };
   theme: "light" | "dark";
   onToggleTheme: () => void;
+  onAbout: () => void;
   onUndo: () => void;
   onRedo: () => void;
   canUndo: boolean;
@@ -41,6 +42,7 @@ export default function Toolbar({
   pushPreview,
   theme,
   onToggleTheme,
+  onAbout,
   onUndo,
   onRedo,
   canUndo,
@@ -174,6 +176,9 @@ export default function Toolbar({
         }}
       />
       <button onClick={handleSave}>Save</button>
+      <button onClick={onAbout} title="About AS3 Builder" aria-label="About">
+        ?
+      </button>
       <button
         onClick={onToggleTheme}
         title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}

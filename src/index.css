@@ -1643,6 +1643,23 @@ body {
   background: var(--danger-dark);
 }
 
+/* About: label/value pairs, nothing clever. */
+.about-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 14px;
+  margin: 8px 0;
+  font-size: 13px;
+}
+
+.about-grid > span:nth-child(odd) {
+  color: var(--muted);
+}
+
+.about-grid a {
+  color: var(--accent);
+}
+
 /* The replace-confirmation dialog: a question, not a workspace. */
 .modal-narrow {
   max-width: 440px;
