@@ -504,12 +504,11 @@ export default function App() {
   // user sees where input is expected.
   const navigateToPath = useCallback(
     (path: JsonPath, opts?: { flash?: boolean; flashChildren?: string[] }) => {
-      const ed = editorRef.current;
-      const model = ed?.getModel();
-      if (!ed || !model) return;
-      const tree = parseTree(model.getValue(), [], {
-        allowTrailingComma: true,
-      });
+      // The offset comes from the TEXT, not from Monaco: since the editor
+      // loads lazily it may not exist at all, and selection drives the whole
+      // context panel — bailing here left Add Property stuck on the root's
+      // two properties whenever the JSON view had never been opened.
+      const tree = parseTree(text, [], { allowTrailingComma: true });
       if (!tree) return;
       const node = path.length === 0 ? tree : findNodeAtLocation(tree, path);
       if (!node) return;
@@ -517,11 +516,16 @@ export default function App() {
         node.type === "object" || node.type === "array" || node.type === "string"
           ? node.offset + 1
           : node.offset;
+      setCursorOffset(inside);
+
+      // Monaco, when it is mounted and current: cursor, reveal, flash.
+      const ed = editorRef.current;
+      const model = ed?.getModel();
+      if (!ed || !model || model.getValue() !== text) return;
       const pos = model.getPositionAt(inside);
       ed.setPosition(pos);
       ed.revealPositionInCenterIfOutsideViewport(pos);
       ed.focus();
-      setCursorOffset(inside);
       // Highlight where input is expected: specific child property values
       // (flashChildren) or the whole navigated value (flash).
       const flashNodes =
@@ -542,7 +546,7 @@ export default function App() {
         setTimeout(() => deco.clear(), 2500);
       }
     },
-    []
+    [text]
   );
 
   // When the offset sits inside a VALUE whose schema offers a closed set of
