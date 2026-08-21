@@ -12,10 +12,18 @@ import {
   netboxProxyHandler,
   urlProxyHandler,
 } from "./proxy";
-import { applyArgv, isAppConfigRequest, serveAppConfig } from "./appConfig";
+import {
+  applyArgv,
+  isAppConfigRequest,
+  readPolicy,
+  serveAppConfig,
+} from "./appConfig";
 
 // Environment first, then --flags for a one-off target.
 const SETTINGS = applyArgv(process.env, process.argv);
+// Deployment policy, read once at boot; a restart picks up edits.
+const POLICY_LOAD = readPolicy(SETTINGS);
+const GATES = POLICY_LOAD.policy;
 
 const PORT = Number(process.env.PORT ?? 8080);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -161,7 +169,7 @@ async function handle(
   if (isAppConfigRequest(req)) {
     // Not dev: a deployed server withholds secrets unless explicitly told to
     // expose them (AS3B_EXPOSE_CREDENTIALS=1).
-    serveAppConfig(res, SETTINGS, false, PORT);
+    serveAppConfig(res, SETTINGS, false, PORT, POLICY_LOAD);
     return;
   }
 
@@ -180,7 +188,7 @@ async function handle(
     ["/url-proxy", urlProxyHandler],
   ] as const) {
     if (url === prefix || url.startsWith(prefix + "/") || url.startsWith(prefix + "?")) {
-      handler(req, res);
+      handler(req, res, GATES);
       return;
     }
   }

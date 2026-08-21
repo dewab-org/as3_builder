@@ -23,6 +23,10 @@ services:
     env_file:
       - path: .env
         required: false
+    # Deployment support policy (feature gates, unsupported classes).
+    # Uncomment to mount one; see as3b-config.example.json.
+    # volumes:
+    #   - ./as3b-config.json:/app/as3b-config.json:ro
     environment:
       NODE_ENV: production
       PORT: "8080"

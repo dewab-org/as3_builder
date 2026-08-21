@@ -13,6 +13,9 @@ interface ToolbarProps {
   onLoadText: (text: string, source: string) => void;
   currentText: string;
   onValidateOnBigip: () => void;
+  /** False hides the NetBox buttons entirely: the deployment has switched
+   * the capability off, so nothing should advertise it. */
+  netboxEnabled: boolean;
   onLoadFromNetbox: () => void;
   onLoadFromBigip: () => void;
   onPushToNetbox: () => void;
@@ -35,6 +38,7 @@ export default function Toolbar({
   onLoadText,
   currentText,
   onValidateOnBigip,
+  netboxEnabled,
   onLoadFromNetbox,
   onLoadFromBigip,
   onPushToNetbox,
@@ -126,15 +130,18 @@ export default function Toolbar({
         ↷
       </button>
       <div className="spacer" />
-      <button onClick={onLoadFromNetbox} title="Read a load-balancer application from NetBox as AS3">
-        Load from NetBox…
-      </button>
+      {netboxEnabled && (
+        <button onClick={onLoadFromNetbox} title="Read a load-balancer application from NetBox as AS3">
+          Load from NetBox…
+        </button>
+      )}
       <button
         onClick={onLoadFromBigip}
         title="Read an application from a device's running configuration, via AS3's per-application API"
       >
         Load from BIG-IP…
       </button>
+      {netboxEnabled && (
       <button
         onClick={onPushToNetbox}
         title={
@@ -159,6 +166,7 @@ export default function Toolbar({
           </span>
         )}
       </button>
+      )}
       <button onClick={onValidateOnBigip} title="Dry-run this declaration against a BIG-IP">
         Validate on BIG-IP…
       </button>
