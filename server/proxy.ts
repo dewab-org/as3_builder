@@ -5,6 +5,60 @@ import https from "node:https";
 import http from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
+/** The gates the proxies enforce (SUPPORT-POLICY-PLAN.md §4). Hidden buttons
+ * are UX; these 403s are the control — anyone can reach a proxy with curl. */
+export interface ProxyGates {
+  netbox: boolean;
+  bigipApply: boolean;
+}
+
+export const OPEN_GATES: ProxyGates = { netbox: true, bigipApply: true };
+
+function forbid(res: ServerResponse, error: string): void {
+  res.statusCode = 403;
+  res.setHeader("content-type", "application/json");
+  res.end(JSON.stringify({ error }));
+}
+
+/**
+ * Whether a BIG-IP request may pass when applying is disabled. Pure so the
+ * tests can exercise it without sockets.
+ *
+ * Reads (GET/HEAD) always pass — Load-from-BIG-IP and /info are reads. A
+ * write to the AS3 declare endpoints passes only when its body is JSON with
+ * controls.dryRun === true; anything else — a real apply, a DELETE, an
+ * unparseable body — is refused. Fail closed.
+ */
+export function bigipWriteAllowed(
+  gates: ProxyGates,
+  method: string | undefined,
+  path: string,
+  body: Buffer
+): { allowed: boolean; error?: string } {
+  if (gates.bigipApply) return { allowed: true };
+  if (method === "GET" || method === "HEAD") return { allowed: true };
+  if (!/^\/mgmt\/shared\/appsvcs\/declare/.test(path))
+    return { allowed: true };
+  try {
+    const parsed: unknown = JSON.parse(body.toString("utf8"));
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      typeof (parsed as { controls?: { dryRun?: unknown } }).controls ===
+        "object" &&
+      (parsed as { controls: { dryRun?: unknown } }).controls?.dryRun === true
+    )
+      return { allowed: true };
+  } catch {
+    // Unparseable body: refuse below.
+  }
+  return {
+    allowed: false,
+    error:
+      "Applying to a BIG-IP is disabled by this deployment's configuration (dry-run is allowed).",
+  };
+}
+
 // Browsers cannot call BIG-IP iControl REST directly (no CORS headers,
 // usually self-signed certs), so the dev/preview server forwards requests:
 //   <method> /bigip-proxy/<path>  →  https://<x-bigip-target>/<path>
@@ -46,7 +100,11 @@ function authHeader(req: IncomingMessage): Record<string, string> {
     : {};
 }
 
-export function bigipProxyHandler(req: IncomingMessage, res: ServerResponse): void {
+export function bigipProxyHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  gates: ProxyGates = OPEN_GATES
+): void {
   const target = String(req.headers["x-bigip-target"] ?? "");
   const validateCert = req.headers["x-bigip-validate-cert"] === "1";
   if (!target || !/^[A-Za-z0-9_.:\-[\]]+$/.test(target)) {
@@ -61,6 +119,11 @@ export function bigipProxyHandler(req: IncomingMessage, res: ServerResponse): vo
   const path = (req.url ?? "").replace(/^\/bigip-proxy/, "") || "/";
 
   withBody(req, res, (body) => {
+    const verdict = bigipWriteAllowed(gates, req.method, path, body);
+    if (!verdict.allowed) {
+      forbid(res, verdict.error ?? "Forbidden");
+      return;
+    }
     const upstream = https.request(
       {
         host,
@@ -95,7 +158,18 @@ export function bigipProxyHandler(req: IncomingMessage, res: ServerResponse): vo
 // NetBox proxy: same CORS problem as BIG-IP. Target is a full origin
 // (http://host:8080 or https://host) in x-netbox-target; the Authorization
 // header is passed through (Bearer nbt_… v2 tokens or Token … v1 tokens).
-export function netboxProxyHandler(req: IncomingMessage, res: ServerResponse): void {
+export function netboxProxyHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  gates: ProxyGates = OPEN_GATES
+): void {
+  if (!gates.netbox) {
+    forbid(
+      res,
+      "NetBox support is disabled by this deployment's configuration."
+    );
+    return;
+  }
   const target = String(req.headers["x-netbox-target"] ?? "");
   let base: URL;
   try {

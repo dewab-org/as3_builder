@@ -1,3 +1,5 @@
+import { DEFAULT_POLICY, type SupportPolicy } from "./engine/supportPolicy";
+
 // Startup defaults served by the dev/production server from its environment
 // (.env, real env vars, or --flags). Fetched once at boot; the values only
 // prefill the dialogs, and nothing is persisted.
@@ -18,6 +20,8 @@ export interface AppConfig {
   };
   includesCredentials: boolean;
   warnings: string[];
+  /** Deployment support policy (SUPPORT-POLICY-PLAN.md). */
+  policy: SupportPolicy;
 }
 
 export const EMPTY_APP_CONFIG: AppConfig = {
@@ -31,6 +35,7 @@ export const EMPTY_APP_CONFIG: AppConfig = {
   },
   includesCredentials: false,
   warnings: [],
+  policy: DEFAULT_POLICY,
 };
 
 let configPromise: Promise<AppConfig> | undefined;

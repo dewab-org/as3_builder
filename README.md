@@ -77,6 +77,22 @@ server withholds passwords and tokens from the page (hostnames and usernames
 still prefill) unless you set `AS3B_EXPOSE_CREDENTIALS=1`; the dev server
 exposes them, since a local `.env` is the whole point. `.env` is gitignored.
 
+### Deployment policy
+
+`as3b-config.json` (path via `AS3B_CONFIG` or `--config`; see
+`as3b-config.example.json`) sets per-deployment policy: `features.netbox`
+and `features.bigipApply` gates, plus an `unsupported` class blacklist with
+hard/soft modes (UI enforcement of the blacklist ships separately — see
+`SUPPORT-POLICY-PLAN.md`).
+
+Gating is enforced in the server, not just the UI: with NetBox off the
+NetBox proxy answers 403, and with apply off the BIG-IP proxy refuses any
+write to the AS3 declare endpoints unless its body carries
+`controls.dryRun: true` — validate keeps working, applying does not, and an
+unparseable body is refused rather than trusted. A missing file means
+everything enabled; a **malformed or missing-but-named file closes both
+gates** and says so in the Load dialog — a policy file must never fail open.
+
 The **dev/preview server is required** for the NetBox and BIG-IP features:
 browsers cannot call iControl REST or the NetBox API directly (no CORS
 headers, self-signed certs), so `vite.config.ts` ships two proxy middlewares

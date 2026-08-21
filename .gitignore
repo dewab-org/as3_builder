@@ -5,6 +5,7 @@ dist-server
 .DS_Store
 
 # Local connection settings and credentials — never commit these.
+as3b-config.json
 .env
 .env.*
 !.env.example

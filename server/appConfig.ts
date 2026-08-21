@@ -6,7 +6,15 @@
 // ship with it. The server reads its own environment instead, so the same
 // image is safe to publish and still prefills for whoever runs it.
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import {
+  CLOSED_POLICY,
+  DEFAULT_POLICY,
+  parsePolicy,
+  type SupportPolicy,
+} from "../src/engine/supportPolicy";
 
 export interface AppConfig {
   bigip: {
@@ -26,6 +34,51 @@ export interface AppConfig {
   includesCredentials: boolean;
   /** Configuration problems worth showing before a connection is attempted. */
   warnings: string[];
+  /** Deployment support policy (SUPPORT-POLICY-PLAN.md). */
+  policy: SupportPolicy;
+}
+
+export interface PolicyLoad {
+  policy: SupportPolicy;
+  /** Set when the file existed but could not be used — the gates are then
+   * CLOSED, not defaulted: a malformed policy file must fail loudly, never
+   * open. */
+  warning?: string;
+}
+
+/**
+ * Read the policy file named by AS3B_CONFIG (default ./as3b-config.json).
+ * Called once at server startup; a page refresh picks up edits after a
+ * restart, and that is the intended cadence.
+ */
+export function readPolicy(env: Env): PolicyLoad {
+  const path = resolve(env.AS3B_CONFIG ?? "as3b-config.json");
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" && env.AS3B_CONFIG === undefined)
+      // No file, none named: the unconfigured default.
+      return { policy: DEFAULT_POLICY };
+    if (code === "ENOENT")
+      return {
+        policy: CLOSED_POLICY,
+        warning: `AS3B_CONFIG names ${path}, which does not exist — NetBox and BIG-IP apply are disabled until it is fixed.`,
+      };
+    return {
+      policy: CLOSED_POLICY,
+      warning: `Could not read ${path}: ${(err as Error).message} — NetBox and BIG-IP apply are disabled until it is fixed.`,
+    };
+  }
+  try {
+    return { policy: parsePolicy(JSON.parse(text)) };
+  } catch (err) {
+    return {
+      policy: CLOSED_POLICY,
+      warning: `${path} is not a valid policy file (${(err as Error).message}) — NetBox and BIG-IP apply are disabled until it is fixed.`,
+    };
+  }
 }
 
 type Env = Record<string, string | undefined>;
@@ -75,7 +128,8 @@ function selfReferenceWarning(url: string, selfPort: number | undefined): string
 export function readAppConfig(
   env: Env,
   isDev: boolean,
-  selfPort?: number
+  selfPort?: number,
+  policyLoad: PolicyLoad = { policy: DEFAULT_POLICY }
 ): AppConfig {
   const withSecrets = credentialsAllowed(env, isDev);
   const secret = (value: string | undefined) =>
@@ -95,9 +149,11 @@ export function readAppConfig(
       validateCert: flag(env.NETBOX_VALIDATE_CERTS, true),
     },
     includesCredentials: withSecrets,
-    warnings: [selfReferenceWarning(env.NETBOX_URL ?? "", selfPort)].filter(
-      (w): w is string => w !== undefined
-    ),
+    warnings: [
+      selfReferenceWarning(env.NETBOX_URL ?? "", selfPort),
+      policyLoad.warning,
+    ].filter((w): w is string => w !== undefined),
+    policy: policyLoad.policy,
   };
 }
 
@@ -113,6 +169,7 @@ export function applyArgv(env: Env, argv: string[]): Env {
     "--netbox-username": "NETBOX_USERNAME",
     "--netbox-password": "NETBOX_PASSWORD",
     "--netbox-validate-certs": "NETBOX_VALIDATE_CERTS",
+    "--config": "AS3B_CONFIG",
   };
   const out: Env = { ...env };
   for (let i = 0; i < argv.length; i++) {
@@ -129,9 +186,10 @@ export function serveAppConfig(
   res: ServerResponse,
   env: Env,
   isDev: boolean,
-  selfPort?: number
+  selfPort?: number,
+  policyLoad?: PolicyLoad
 ): void {
-  const body = JSON.stringify(readAppConfig(env, isDev, selfPort));
+  const body = JSON.stringify(readAppConfig(env, isDev, selfPort, policyLoad));
   res.statusCode = 200;
   res.setHeader("content-type", "application/json");
   // Credentials must never sit in a cache.

@@ -5,6 +5,9 @@ import { remembered } from "./bigipSession";
 interface BigipDialogProps {
   /** Current editor text (the declaration to dry-run). */
   declarationText: string;
+  /** False removes the Apply path entirely; validate/dry-run is untouched.
+   * The proxy enforces the same gate server-side. */
+  applyEnabled?: boolean;
   onClose: () => void;
 }
 
@@ -30,6 +33,7 @@ function authHeaders(
 
 export default function BigipDialog({
   declarationText,
+  applyEnabled = true,
   onClose,
 }: BigipDialogProps) {
   const [host, setHost] = useState(remembered.host);
@@ -362,6 +366,7 @@ export default function BigipDialog({
 
         <div className="modal-actions">
           <button onClick={onClose}>Close</button>
+          {applyEnabled && (
           <button
             className="danger-outline"
             disabled={!canRun}
@@ -369,6 +374,7 @@ export default function BigipDialog({
           >
             Apply…
           </button>
+          )}
           <button className="primary" disabled={!canRun} onClick={() => run(true)}>
             {running ? "Running…" : "Run dry-run"}
           </button>

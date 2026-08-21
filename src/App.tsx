@@ -34,6 +34,7 @@ import { getTemplate } from "./templates";
 import { useDocument } from "./hooks/useDocument";
 import { netboxSession } from "./netboxSession";
 import { loadAppConfig } from "./appConfig";
+import { DEFAULT_POLICY, type SupportPolicy } from "./engine/supportPolicy";
 import HoverCard, { type HoverAnchor } from "./components/HoverCard";
 import { applyBigipDefaults } from "./components/bigipSession";
 import { useValidation } from "./hooks/useValidation";
@@ -258,9 +259,21 @@ export default function App() {
   // Startup defaults from the server's environment (.env / env vars / flags).
   // They only prefill the dialogs; nothing is stored.
   const [configWarnings, setConfigWarnings] = useState<string[]>([]);
+  // Deployment policy: which features exist here. Defaults to everything
+  // until /app-config answers, so a slow fetch never hides working buttons
+  // from an unrestricted deployment.
+  const [policy, setPolicy] = useState<SupportPolicy>(DEFAULT_POLICY);
   useEffect(() => {
     void loadAppConfig().then((config) => {
       setConfigWarnings(config.warnings);
+      setPolicy(config.policy);
+      if (!config.policy.netbox && deepLinkRef.current) {
+        console.warn(
+          "NetBox deep link ignored: NetBox support is disabled by this deployment's configuration."
+        );
+        deepLinkRef.current = null;
+        setShowNetboxDialog(false);
+      }
       if (config.netbox.url) netboxSession.url = config.netbox.url;
       netboxSession.username ||= config.netbox.username;
       netboxSession.password ||= config.netbox.password;
@@ -282,6 +295,7 @@ export default function App() {
   // visible before the dialog is opened. Pure and cheap; the same function the
   // dialog runs. Absent until an application has been loaded from NetBox.
   const pushPreview = useMemo(() => {
+    if (!policy.netbox) return undefined;
     const manifest = netboxSession.manifests.get(
       String((lastGoodDoc as Record<string, unknown> | undefined)?.id ?? "")
     );
@@ -295,7 +309,7 @@ export default function App() {
       changeSet.creates.length +
       changeSet.deletes.length;
     return { writes, notes: changeSet.notes.length };
-  }, [lastGoodDoc]);
+  }, [lastGoodDoc, policy.netbox]);
 
   // Both ends of the reference under the cursor: what it points at, and what
   // points at it. The tree and the simplified view highlight the same set.
@@ -894,6 +908,7 @@ export default function App() {
         onLoadText={guardedLoad}
         currentText={text}
         onValidateOnBigip={() => setShowBigipDialog(true)}
+        netboxEnabled={policy.netbox}
         onLoadFromNetbox={() => setShowNetboxDialog(true)}
         onLoadFromBigip={() => setShowBigipLoadDialog(true)}
         onPushToNetbox={() => setShowPushDialog(true)}
@@ -908,6 +923,7 @@ export default function App() {
       {showBigipDialog && (
         <BigipDialog
           declarationText={text}
+          applyEnabled={policy.bigipApply}
           onClose={() => setShowBigipDialog(false)}
         />
       )}
@@ -951,7 +967,7 @@ export default function App() {
           </div>
         </div>
       )}
-      {showPushDialog && (
+      {policy.netbox && showPushDialog && (
         <PushNetboxDialog
           declarationText={text}
           onReloaded={loadText}
@@ -966,7 +982,7 @@ export default function App() {
           onClose={() => setShowBigipLoadDialog(false)}
         />
       )}
-      {showNetboxDialog && (
+      {policy.netbox && showNetboxDialog && (
         <NetboxDialog
           configWarnings={configWarnings}
           autoLoadAppId={deepLinkRef.current?.appId}
