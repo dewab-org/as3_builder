@@ -15,7 +15,7 @@ The structure of a valid declaration is defined by a **JSON Schema** (draft-07).
 
 The UI has three columns:
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────┐
 │ Toolbar: [schema version ▾] [template ▾] [Open] [Save]       │
 ├────────────┬──────────────────────────┬──────────────────────┤
@@ -49,7 +49,7 @@ editor content.
 ## 2. Fixed decisions (do not revisit)
 
 | Decision | Value |
-|---|---|
+| --- | --- |
 | Framework | React 18 + TypeScript, scaffolded with Vite |
 | Location | Root of this repository (`/Users/daniel/work/customers/homedepot/as3_builder`) |
 | Editor component | Monaco via npm package `@monaco-editor/react` |
@@ -129,7 +129,7 @@ understanding them.
 
 ## 4. Repository layout (target state)
 
-```
+```text
 as3_builder/
 ├── PLAN.md                  ← this file
 ├── index.html
@@ -336,6 +336,7 @@ Derived per render (memoized on `[text-debounced, cursorOffset, schemaId]`):
 ## 7. Component specifications
 
 ### Toolbar
+
 - **Schema dropdown**: options from `src/schemas/index.ts`; switching re-runs
   registry build + revalidates + updates Monaco schema association.
 - **Template dropdown**: options from `src/templates/index.ts`; selecting one
@@ -345,25 +346,30 @@ Derived per render (memoized on `[text-debounced, cursorOffset, schemaId]`):
 - **Save**: create a `Blob` from editor text → temporary `<a download="declaration.json">` → click it.
 
 ### EditorPane (Monaco)
+
 - Language `json`. Register the ACTIVE schema:
+
   ```ts
   monaco.languages.json.jsonDefaults.setDiagnosticsOptions({
     validate: true, enableSchemaRequest: false,
     schemas: [{ uri: "inmemory://schema/active", fileMatch: ["*"], schema: activeSchema }]
   })
   ```
+
   This alone provides squiggles + autocomplete while typing.
 - Report cursor offset changes upward (`model.getOffsetAt(position)`).
 - Handle `onDrop` (see §8). Set `dragover` handler with `preventDefault` so
   drops are allowed.
 
 ### TreePane
+
 - Render `lastGoodDoc` recursively: application keys, then member objects
   labeled `name (className)`, one level of children for objects/arrays.
 - Click → compute the node's text offset from the jsonc `tree` (`findNodeAtLocation(tree, path).offset`) → move Monaco cursor there.
 - Highlight the node containing the current cursor path.
 
 ### ContextPanel
+
 - Shows `context.breadcrumb`.
 - **Present properties** → `PropertyWidget` each (see below).
 - **Addable properties** → `AddableChip` each: shows name + type badge;
@@ -374,10 +380,11 @@ Derived per render (memoized on `[text-debounced, cursorOffset, schemaId]`):
   `isClassObject: true`).
 
 ### PropertyWidget (content-aware value editing)
+
 Choose the widget by `PropertyInfo`:
 
 | Schema shape | Widget |
-|---|---|
+| --- | --- |
 | `enumValues` present | `<select>` |
 | type boolean | checkbox/toggle |
 | type integer/number | `<input type="number">` with min/max from schema |
@@ -390,6 +397,7 @@ Each widget row has a small ✕ button → `applyEdit(path, undefined)` (delete)
 disabled when `required` is true.
 
 ### ErrorBar
+
 - Runs ajv (compiled once per schema selection; `allErrors: true`,
   `strict: false`) on `lastGoodDoc` (debounced with the parse).
 - If text is currently unparseable, show the jsonc-parser syntax errors instead.
@@ -458,6 +466,7 @@ Each phase ends with the app running (`npm run dev`) and all tests passing
 (`npm test`). Commit at the end of each phase with the message given.
 
 ### Phase 1 — Scaffold + editor shell
+
 1. `npm create vite@latest . -- --template react-ts`, then
    `npm i @monaco-editor/react jsonc-parser ajv` and `npm i -D vitest`.
 2. Copy the three schema files into `src/schemas/`; write `schemas/index.ts`.
@@ -471,6 +480,7 @@ Each phase ends with the app running (`npm run dev`) and all tests passing
    Commit: `phase 1: scaffold, monaco editor, schemas, templates, open/save`.
 
 ### Phase 2 — Schema engine (pure logic + tests)
+
 1. Implement `refResolver`, `classRegistry`, `pathResolver`, `context`,
    `stubber`, `docIndex` exactly per §5.
 2. Write vitest tests importing the REAL `per-app-schema.json`. Minimum cases:
@@ -488,6 +498,7 @@ Each phase ends with the app running (`npm run dev`) and all tests passing
 3. **Verify:** `npm test` green. Commit: `phase 2: schema engine + tests`.
 
 ### Phase 3 — Context panel + tree + sync
+
 1. `useDocument` per §6; wire cursor → `getContext` → ContextPanel with
    PropertyWidget + AddableChip per §7.
 2. TreePane with click-to-jump and cursor-follow highlight.
@@ -497,6 +508,7 @@ Each phase ends with the app running (`npm run dev`) and all tests passing
    works; tree click jumps. Commit: `phase 3: context panel, tree, sync`.
 
 ### Phase 4 — Drag & drop + class creation
+
 1. Implement §8 in full, including ancestor-walk parent finding, unique-name
    generation, invalid-drop toast, post-insert cursor move, chip double-click.
 2. **Verify manually:** dragging `virtualAddresses` from a Service context
@@ -505,10 +517,11 @@ Each phase ends with the app running (`npm run dev`) and all tests passing
    `newPool1`. Commit: `phase 4: drag-drop insertion`.
 
 ### Phase 5 — Cross-refs, error bar, polish
+
 1. §9 cross-ref pickers. 2. ErrorBar per §7 with click-to-jump.
-3. Polish: keyboard focus into first stub value after insert, required-missing
+2. Polish: keyboard focus into first stub value after insert, required-missing
    chips styled, panel scroll containment.
-4. **Verify:** setting a Service's `pool` via dropdown lists existing Pools;
+3. **Verify:** setting a Service's `pool` via dropdown lists existing Pools;
    ajv errors appear and click-jump. Commit: `phase 5: xref pickers, error bar, polish`.
 
 ### Phase 6 — Relationship graph pane (read-only "map", not a node editor)

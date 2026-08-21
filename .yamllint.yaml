@@ -1,0 +1,11 @@
+# Relaxed base: correctness over style policing. Long lines and unquoted
+# truthy keys ("on:" in workflows) are fine; real duplication, bad indents
+# and syntax errors are not.
+extends: relaxed
+rules:
+  line-length: disable
+  truthy: disable
+ignore: |
+  node_modules/
+  dist/
+  dist-server/

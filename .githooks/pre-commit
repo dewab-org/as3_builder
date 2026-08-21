@@ -36,12 +36,22 @@ else
   echo "pre-commit: scan skipped (trivy not installed)"
 fi
 
-if [ -n "$staged_ts" ]; then
-  echo "pre-commit: lint"
-  # Errors block the commit; warnings are printed and let through.
-  # shellcheck disable=SC2086
-  npx eslint $staged_ts
+# Per-file-type linting lives in .pre-commit-config.yaml (eslint, hadolint,
+# yamllint, markdownlint, shell linting, compose validation, actionlint) so
+# it is declared once and runnable by hand: pre-commit run --all-files.
+if command -v pre-commit >/dev/null 2>&1; then
+  echo "pre-commit: file linters"
+  pre-commit run
+else
+  echo "pre-commit: file linters skipped (pre-commit not installed — brew install pre-commit)"
+  if [ -n "$staged_ts" ]; then
+    # Fallback so JS/TS is never committed unlinted.
+    # shellcheck disable=SC2086
+    npx eslint $staged_ts
+  fi
+fi
 
+if [ -n "$staged_ts" ]; then
   echo "pre-commit: types"
   npx tsc -b
 

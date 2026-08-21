@@ -118,4 +118,3 @@ function getAt(doc: unknown, path: JsonPath): unknown {
   }
   return cur;
 }
-

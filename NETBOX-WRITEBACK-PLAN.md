@@ -39,7 +39,7 @@ truth. BIG-IP deployment stays f5_toolbox's job; we only write NetBox.
 
 ## 3. Architecture
 
-```
+```text
 load time                                  push time
 ─────────                                  ─────────
 GraphQL graph ──► renderNetboxApp ──►      edited AS3 text
@@ -87,7 +87,7 @@ declaration and produces per-object NetBox field values. Mapping tables are
 the exact inverse of `netboxAs3.ts`:
 
 | AS3 | NetBox write |
-|---|---|
+| --- | --- |
 | `Service_*` class | `virtual_servers.protocol` (inverse of protocol map) |
 | `virtualPort` | `service_port` |
 | `remark` | `description` |

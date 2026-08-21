@@ -13,7 +13,7 @@ object — edit with schema help, then Push back.
 
 ## URL contract (implemented in the builder)
 
-```
+```text
 <builder-origin>/?netbox=<netbox-origin>
                 &app=<application-id>
                 &object=<endpoint>:<object-id>
@@ -21,7 +21,7 @@ object — edit with schema help, then Push back.
 ```
 
 | Param | Example | Effect in the builder |
-|---|---|---|
+| --- | --- | --- |
 | `netbox` | `http://localhost:8080` | Prefills the NetBox URL and auto-opens the Load dialog. Required for any deep link. |
 | `app` | `773` | After the user connects (credentials are typed or come from the in-session cache — never from the URL), this application loads automatically. |
 | `object` | `backend-pools:957` | After loading, the provenance manifest maps endpoint:id → the AS3 key, and the cursor jumps there; the context panel, breadcrumb, and status bar all show that object. Supported endpoints: `applications`, `virtual-servers`, `backend-pools`, `monitors`, `ssl-profiles`. |
@@ -29,7 +29,7 @@ object — edit with schema help, then Push back.
 
 Example — "edit the extras of pool 957 in app 773":
 
-```
+```text
 http://localhost:5173/?netbox=http://localhost:8080&app=773&object=backend-pools:957&focus=extra_parameters
 ```
 
@@ -68,6 +68,7 @@ scrolls to it. The rest of the declaration stays visible, which keeps
 cross-references (xref dropdowns, drag targets) working.
 
 A future **solo mode** (`&solo=1`) could additionally:
+
 - collapse the tree to the focused object,
 - fold all other objects in Monaco (`editor.createFoldingRangeProvider` or
   `setHiddenAreas`) so only the focused object's lines show,

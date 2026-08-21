@@ -124,7 +124,7 @@ Wire through `src/engine/index.ts` like every other module.
 
 - `server/appConfig.ts`: read `AS3B_CONFIG`, parse with `parsePolicy`, attach
   as `policy` on the `/app-config` response. Parse failure → `warnings` entry
-  + gates closed (see §1). Add to `applyArgv`: `--config`.
+  - gates closed (see §1). Add to `applyArgv`: `--config`.
 - `src/appConfig.ts`: extend `AppConfig` with `policy: SupportPolicy`;
   `EMPTY_APP_CONFIG.policy = DEFAULT_POLICY`.
 - `src/App.tsx`: hold `policy` in state from `loadAppConfig()` (exactly like
