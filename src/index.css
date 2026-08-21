@@ -135,6 +135,26 @@ body {
   letter-spacing: 0.01em;
 }
 
+/* The title is a real button (it opens About) but must read as the title:
+   no chrome, the toolbar's own colours, just a hover hint. */
+.toolbar-title {
+  all: unset;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+
+.toolbar-title:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.toolbar-title:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
 .toolbar label {
   display: flex;
   align-items: center;

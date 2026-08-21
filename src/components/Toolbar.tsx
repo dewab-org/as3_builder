@@ -75,7 +75,18 @@ export default function Toolbar({
 
   return (
     <div className="toolbar">
-      <h1>AS3 Builder</h1>
+      {/* The title doubles as the About control: version and author live
+          behind the name, where convention puts them. */}
+      <h1>
+        <button
+          className="toolbar-title"
+          onClick={onAbout}
+          title="About AS3 Builder (version, author)"
+          aria-label="About AS3 Builder"
+        >
+          AS3 Builder
+        </button>
+      </h1>
       <label>
         Schema
         <select
@@ -176,9 +187,6 @@ export default function Toolbar({
         }}
       />
       <button onClick={handleSave}>Save</button>
-      <button onClick={onAbout} title="About AS3 Builder" aria-label="About">
-        ?
-      </button>
       <button
         onClick={onToggleTheme}
         title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
