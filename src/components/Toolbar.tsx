@@ -24,6 +24,7 @@ interface ToolbarProps {
   pushPreview?: { writes: number; notes: number };
   theme: "light" | "dark";
   onToggleTheme: () => void;
+  onAbout: () => void;
   onUndo: () => void;
   onRedo: () => void;
   canUndo: boolean;
@@ -45,6 +46,7 @@ export default function Toolbar({
   pushPreview,
   theme,
   onToggleTheme,
+  onAbout,
   onUndo,
   onRedo,
   canUndo,
@@ -77,7 +79,18 @@ export default function Toolbar({
 
   return (
     <div className="toolbar">
-      <h1>AS3 Builder</h1>
+      {/* The title doubles as the About control: version and author live
+          behind the name, where convention puts them. */}
+      <h1>
+        <button
+          className="toolbar-title"
+          onClick={onAbout}
+          title="About AS3 Builder (version, author)"
+          aria-label="About AS3 Builder"
+        >
+          AS3 Builder
+        </button>
+      </h1>
       <label>
         Schema
         <select
