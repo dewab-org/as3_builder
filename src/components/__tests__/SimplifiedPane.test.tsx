@@ -102,6 +102,42 @@ describe("simplified view: editing", () => {
   });
 });
 
+describe("iRule editing (Tcl, base64-encoded)", () => {
+  const TCL = 'when HTTP_REQUEST {\n  HTTP::redirect "https://example"\n}';
+  const iruleDoc = {
+    app: {
+      class: "Application",
+      redirect: { class: "iRule", iRule: TCL },
+    },
+  };
+
+  it("shows a plain-string iRule decoded, with the base64 badge", () => {
+    renderPane({ doc: iruleDoc });
+    const r = row("iRule");
+    expect(within(r).getByText("base64")).toBeInTheDocument();
+    expect(within(r).getByText(/HTTP_REQUEST/)).toBeInTheDocument();
+  });
+
+  it("edits in a multi-line editor and commits as {base64}", async () => {
+    const props = renderPane({ doc: iruleDoc });
+    await userEvent.click(within(row("iRule")).getByText(/HTTP_REQUEST/));
+    // jsdom cannot run Monaco, so the fallback surface is the textarea —
+    // which is exactly what this environment should get.
+    const editor = screen.getByRole("textbox");
+    expect(editor.tagName).toBe("TEXTAREA");
+    expect(editor).toHaveValue(TCL);
+
+    await userEvent.clear(editor);
+    await userEvent.click(editor);
+    await userEvent.paste("when LB_SELECTED {{ pool p1 }");
+    await userEvent.click(screen.getByText(/Save/));
+    expect(props.onEditValue).toHaveBeenCalledWith(
+      ["app", "redirect", "iRule"],
+      { base64: btoa("when LB_SELECTED {{ pool p1 }") }
+    );
+  });
+});
+
 describe("simplified view: what the eye is told", () => {
   it("marks read-only classes and bigip pointers, but not use pointers", () => {
     renderPane({

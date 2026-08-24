@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { JsonPath, JsonSchema } from "../engine";
 import {
   decodeBase64Safely,
+  encodeBase64,
   isBase64Wrapper,
   isPlainObject,
   readOnlyReason,
@@ -393,7 +394,17 @@ function ValueRow({
 }) {
   const editing = ctx.editingPath && pathsEqual(path, ctx.editingPath);
   const selected = pathsEqual(path, ctx.cursorPath);
-  const b64 = isBase64Wrapper(value);
+  // iRules are Tcl stored base64-encoded. A plain-string iRule (a fresh stub,
+  // or a hand-typed value) gets the same decoded editing surface — and its
+  // commit produces the {base64: …} wrapper, so the document always carries
+  // the encoded form for NetBox and the BIG-IP alike.
+  const isIrule = path[path.length - 1] === "iRule";
+  const b64 = isBase64Wrapper(value) || (isIrule && typeof value === "string");
+  const b64Wrapper: { base64: string } | null = isBase64Wrapper(value)
+    ? value
+    : b64
+      ? { base64: encodeBase64(String(value)) }
+      : null;
   return (
     <div>
       <div
@@ -424,9 +435,9 @@ function ValueRow({
               ctx.startEdit(path, value);
             }}
           >
-            {b64 ? (
+            {b64 && b64Wrapper ? (
               <span className="sv sv-string">
-                {ctx.previewBase64(value as { base64: string })}
+                {ctx.previewBase64(b64Wrapper)}
               </span>
             ) : (
               <ScalarValue value={value} />
@@ -435,12 +446,13 @@ function ValueRow({
         )}
         {!editing && <DeleteBtn path={path} ctx={ctx} title={`Remove ${label}`} />}
       </div>
-      {editing && b64 && (
+      {editing && b64 && b64Wrapper && (
         <Base64Editor
-          wrapper={value as { base64: string }}
+          wrapper={b64Wrapper}
           onCommit={(v) => ctx.commitValue(path, v)}
           onClose={() => ctx.cancelEdit()}
           compact
+          language={isIrule ? "tcl" : undefined}
         />
       )}
     </div>

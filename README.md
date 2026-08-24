@@ -203,6 +203,11 @@ pinned base digest has aged and wants refreshing.
   to edit in place (schema-appropriate widget, popover for long text),
   Enter in a list commits and starts the next item, `+ add member`-style
   rows append schema-stubbed objects.
+- **iRules edit as Tcl**: the `iRule` value opens a multi-line editor with
+  Tcl syntax highlighting (Monaco, loaded on demand); the document keeps the
+  `{"base64": …}` form at all times — encoding happens automatically on save,
+  so NetBox pushes and BIG-IP submissions always carry base64. A plain-string
+  iRule gets the same surface and becomes the wrapper on first save.
 - **Class changes** populate missing required properties and list
   now-invalid leftovers with one-click removal. **Modified objects** (vs the
   loaded baseline) highlight amber in the tree and editor margin.
