@@ -2034,6 +2034,19 @@ body {
   color: var(--faint);
 }
 
+.b64-badge.lang {
+  background: var(--accent);
+  color: #ffffff;
+  border-color: var(--accent);
+}
+
+/* Monaco variant of the decoded window: bordered like the textarea. */
+.b64-monaco {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
 .b64-text {
   width: 100%;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
