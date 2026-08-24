@@ -120,7 +120,21 @@ docker compose up --build       # http://127.0.0.1:8088
 ```
 
 Compose reads the same `.env` and sets `AS3B_EXPOSE_CREDENTIALS=1`, so the
-container prefills exactly like the dev server. Two things differ inside a
+container prefills exactly like the dev server.
+
+For testing a build with everything wired — `.env` prefill AND the policy
+file — use the testing stack:
+
+```bash
+cp as3b-config.example.json as3b-config.json   # once; edit as needed
+docker compose -f docker-compose.testing.yml up --build   # http://127.0.0.1:8089
+```
+
+It runs on 8089 beside the deployment stack, mounts `as3b-config.json`
+actively, and rewrites `NETBOX_URL` to `host.docker.internal` (a dev `.env`
+says "localhost", which inside a container is the container; override with
+`NETBOX_URL_CONTAINER` if that guess is wrong). Same hardening flags as the
+deployment file, so what you test is what a deployment gets. Two things differ inside a
 container: it publishes on **8088**, because NetBox commonly holds 8080; and
 `localhost` means the container, not your machine — a `NETBOX_URL` of
 `http://localhost:8080` there resolves to the app itself and quietly returns
