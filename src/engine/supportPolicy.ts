@@ -9,14 +9,17 @@ import { isPlainObject } from "./types";
  * it, the UI asks it questions, and the tests exercise it without either.
  */
 
+export type PolicyMode = "hard" | "soft" | "review";
+
 export interface UnsupportedRule {
   class: string;
   /** Optional equality matcher on the object's own properties — "Monitor
    * with monitorType sip". Multiple keys AND together. */
   when?: Record<string, unknown>;
-  /** hard: cannot be added here at all. soft: usable, but flagged and
-   * confirmed. */
-  mode: "hard" | "soft";
+  /** hard: cannot be added here at all. soft: usable, but flagged as
+   * unsupported and confirmed. review: supported, but each use needs a
+   * human review — flagged in the warning palette and confirmed. */
+  mode: PolicyMode;
   /** Shown in tooltips and the are-you-sure dialog. */
   reason?: string;
 }
@@ -69,8 +72,8 @@ export function parsePolicy(raw: unknown): SupportPolicy {
     if (typeof entry.class !== "string" || entry.class.trim() === "")
       throw new Error(`${at}.class must be a non-empty string`);
     const mode = entry.mode ?? "soft";
-    if (mode !== "hard" && mode !== "soft")
-      throw new Error(`${at}.mode must be "hard" or "soft"`);
+    if (mode !== "hard" && mode !== "soft" && mode !== "review")
+      throw new Error(`${at}.mode must be "hard", "soft" or "review"`);
     if (entry.when !== undefined && !isPlainObject(entry.when))
       throw new Error(`${at}.when must be an object of property equalities`);
     if (entry.reason !== undefined && typeof entry.reason !== "string")
@@ -88,7 +91,16 @@ export function parsePolicy(raw: unknown): SupportPolicy {
 
 /** The reason shown when a rule carries none. */
 export function ruleReason(rule: UnsupportedRule): string {
-  return rule.reason ?? "marked unsupported by this deployment's configuration";
+  if (rule.reason) return rule.reason;
+  return rule.mode === "review"
+    ? "marked as requiring review by this deployment's configuration"
+    : "marked unsupported by this deployment's configuration";
+}
+
+/** The badge/label vocabulary for a mode: review items are supported but
+ * flagged, so they never read as "unsupported". */
+export function modeLabel(mode: PolicyMode): string {
+  return mode === "review" ? "requires review" : "unsupported";
 }
 
 /**
@@ -137,7 +149,10 @@ export function variantNote(variants: UnsupportedRule[]): string | undefined {
       .map(([k, v]) => `${k} ${String(v)}`)
       .join(", ")
   );
-  return `some variants unsupported: ${parts.join("; ")}`;
+  const label = variants.every((r) => r.mode === "review")
+    ? "some variants require review"
+    : "some variants unsupported";
+  return `${label}: ${parts.join("; ")}`;
 }
 
 /** Every path in the document whose object matches a rule. Feeds the issues

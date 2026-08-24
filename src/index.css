@@ -537,6 +537,29 @@ body {
   margin: 4px 0;
 }
 
+/* Requires-review (policy mode "review"): warn palette, not danger — the
+   item is supported, it just needs a human to look at it. */
+.obj-unsupported.review,
+.addable-unsupported.review {
+  color: var(--warn-text);
+  border-color: var(--warn-border);
+}
+
+.obj-card.review-item {
+  border-color: var(--warn-border);
+  background: var(--warn-bg);
+}
+
+.tree-label.unsupported.review {
+  box-shadow: inset 3px 0 0 var(--warn-border);
+}
+
+.detail-unsupported.review {
+  color: var(--warn-text);
+  background: var(--warn-bg);
+  border-color: var(--warn-border);
+}
+
 .issue-row.issue-policy {
   color: var(--warn-text);
   background: var(--warn-bg);

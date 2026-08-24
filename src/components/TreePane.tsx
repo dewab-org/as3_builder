@@ -25,7 +25,7 @@ interface TreePaneProps {
   /** Deployment blacklist rule for a value, if any. */
   unsupportedForValue?: (
     value: Record<string, unknown>
-  ) => { mode: "hard" | "soft"; reason?: string } | undefined;
+  ) => { mode: "hard" | "soft" | "review"; reason?: string } | undefined;
 }
 
 // Deep enough to reach policy rules and their conditions/actions
@@ -82,7 +82,7 @@ function TreeNode({
   searchKeys: Set<string> | null;
   unsupportedForValue?: (
     value: Record<string, unknown>
-  ) => { mode: "hard" | "soft"; reason?: string } | undefined;
+  ) => { mode: "hard" | "soft" | "review"; reason?: string } | undefined;
 }) {
   const isBranch =
     (isPlainObject(value) || Array.isArray(value)) && depth < MAX_DEPTH;
@@ -99,7 +99,7 @@ function TreeNode({
   return (
     <div className="tree-node">
       <div
-        className={`tree-label${selected ? " selected" : ""}${isModified(path) ? " modified" : ""}${relatedKeys.has(pathKey(path)) ? " related" : ""}${searchKeys !== null && !searchKeys.has(pathKey(path)) ? " unmatched" : ""}${unsupported ? " unsupported" : ""}`}
+        className={`tree-label${selected ? " selected" : ""}${isModified(path) ? " modified" : ""}${relatedKeys.has(pathKey(path)) ? " related" : ""}${searchKeys !== null && !searchKeys.has(pathKey(path)) ? " unmatched" : ""}${unsupported ? (unsupported.mode === "review" ? " unsupported review" : " unsupported") : ""}`}
         onClick={() => onSelect(path)}
         onMouseEnter={(e) =>
           onHoverPath({ path, x: e.clientX, y: e.clientY })

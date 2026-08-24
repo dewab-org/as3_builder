@@ -222,6 +222,32 @@ describe("simplified view: what the eye is told", () => {
     ).toBeGreaterThan(0);
   });
 
+  it("badges requires-review items in their own vocabulary, still editable", async () => {
+    renderPane({
+      doc: {
+        app: {
+          class: "Application",
+          redirect: { class: "iRule", label: "needs eyes" },
+        },
+      },
+      unsupportedForValue: (value) =>
+        value.class === "iRule"
+          ? { mode: "review" as const, reason: "LB team reviews iRules" }
+          : undefined,
+    });
+    const card = screen
+      .getByText("redirect", { selector: ".obj-name" })
+      .closest(".obj-card") as HTMLElement;
+
+    expect(card).toHaveClass("review-item");
+    expect(card).not.toHaveClass("unsupported-item");
+    expect(within(card).getByText("requires review")).toBeInTheDocument();
+    expect(within(card).queryByText("unsupported")).not.toBeInTheDocument();
+    // Review is supported: editing stays open.
+    await userEvent.click(within(card).getByText("needs eyes"));
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
+  });
+
   it("reports what the pointer is over, with where it is", async () => {
     const props = renderPane();
     await userEvent.hover(within(row("pool")).getByText("pool"));

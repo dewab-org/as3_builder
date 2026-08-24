@@ -215,13 +215,16 @@ export default function BigipDialog({
           <div className="modal-warnings">
             <strong>
               This declaration contains {unsupportedItems.length} item
-              {unsupportedItems.length === 1 ? "" : "s"} marked unsupported
-              here — it is submitted as-is, nothing is stripped:
+              {unsupportedItems.length === 1 ? "" : "s"} flagged by this
+              deployment's support policy — it is submitted as-is, nothing is
+              stripped:
             </strong>
             <ul>
               {unsupportedItems.map((item) => (
                 <li key={item.label}>
-                  {item.label} ({item.mode}): {item.reason}
+                  {item.label} (
+                  {item.mode === "review" ? "requires review" : item.mode}):{" "}
+                  {item.reason}
                 </li>
               ))}
             </ul>

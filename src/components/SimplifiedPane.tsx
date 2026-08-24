@@ -52,7 +52,7 @@ interface SimplifiedPaneProps {
   /** Deployment blacklist rule for a value, if any (SUPPORT-POLICY-PLAN §5). */
   unsupportedForValue?: (
     value: Record<string, unknown>
-  ) => { mode: "hard" | "soft"; reason?: string } | undefined;
+  ) => { mode: "hard" | "soft" | "review"; reason?: string } | undefined;
   /** Paths of hard-blacklisted objects: editing inside is disabled, delete
    * stays (badge+lock, never hide — resolved decision #1). */
   lockedKeys?: Set<string>;
@@ -307,7 +307,7 @@ interface RowCtx {
   matchesSearch: (path: JsonPath) => boolean;
   unsupportedRule: (
     value: Record<string, unknown>
-  ) => { mode: "hard" | "soft"; reason?: string } | undefined;
+  ) => { mode: "hard" | "soft" | "review"; reason?: string } | undefined;
   /** True when the path sits inside a hard-blacklisted object. */
   isLocked: (path: JsonPath) => boolean;
 }
@@ -567,7 +567,7 @@ function ObjectCard({
   const unsupported = ctx.unsupportedRule(value);
   return (
     <div
-      className={`obj-card ${variant}${selected ? " selected" : ""}${ctx.isModified(path) ? " modified" : ""}${collapsed ? " collapsed" : ""}${immutable ? " immutable" : ""}${ctx.isRelated(path) ? " related" : ""}${ctx.matchesSearch(path) ? "" : " unmatched"}${unsupported ? " unsupported-item" : ""}`}
+      className={`obj-card ${variant}${selected ? " selected" : ""}${ctx.isModified(path) ? " modified" : ""}${collapsed ? " collapsed" : ""}${immutable ? " immutable" : ""}${ctx.isRelated(path) ? " related" : ""}${ctx.matchesSearch(path) ? "" : " unmatched"}${unsupported ? (unsupported.mode === "review" ? " review-item" : " unsupported-item") : ""}`}
     >
       <div
         className="obj-card-head"
@@ -596,13 +596,16 @@ function ObjectCard({
         )}
         {unsupported && (
           <span
-            className="obj-unsupported"
+            className={`obj-unsupported${unsupported.mode === "review" ? " review" : ""}`}
             title={
               unsupported.reason ??
-              "marked unsupported by this deployment's configuration"
+              (unsupported.mode === "review"
+                ? "marked as requiring review by this deployment's configuration"
+                : "marked unsupported by this deployment's configuration")
             }
           >
-            unsupported{unsupported.mode === "hard" ? " · locked" : ""}
+            {unsupported.mode === "review" ? "requires review" : "unsupported"}
+            {unsupported.mode === "hard" ? " · locked" : ""}
           </span>
         )}
         {collapsed && entries.length > 0 && (
