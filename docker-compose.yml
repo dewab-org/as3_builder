@@ -1,7 +1,9 @@
 services:
   as3-builder:
-    build: .
-    image: as3-builder:latest
+    # The published image — `docker compose pull` updates it. To run a local
+    # build instead, use docker-compose.testing.yml, which builds from this
+    # checkout with the same wiring.
+    image: ghcr.io/dewab-org/as3_builder:latest
     ports:
       # Loopback only: the proxy routes reach any BIG-IP or NetBox the
       # container can route to, and with AS3B_EXPOSE_CREDENTIALS set the page

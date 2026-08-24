@@ -116,8 +116,12 @@ equivalent proxy in front.
 ## Docker
 
 ```bash
-docker compose up --build       # http://127.0.0.1:8088
+docker compose pull && docker compose up -d   # http://127.0.0.1:8088
 ```
+
+The deployment compose runs the **published image**
+(`ghcr.io/dewab-org/as3_builder:latest`); `pull` picks up new releases. To run
+a build of your local checkout instead, use `docker-compose.testing.yml`.
 
 Compose reads the same `.env` and sets `AS3B_EXPOSE_CREDENTIALS=1`, so the
 container prefills exactly like the dev server. Two things differ inside a
