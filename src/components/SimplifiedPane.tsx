@@ -48,6 +48,13 @@ interface SimplifiedPaneProps {
   relatedKeys: Set<string>;
   /** Find-in-document match paths (with ancestors); null when not searching. */
   searchKeys?: Set<string> | null;
+  /** Deployment blacklist rule for a value, if any (SUPPORT-POLICY-PLAN §5). */
+  unsupportedForValue?: (
+    value: Record<string, unknown>
+  ) => { mode: "hard" | "soft"; reason?: string } | undefined;
+  /** Paths of hard-blacklisted objects: editing inside is disabled, delete
+   * stays (badge+lock, never hide — resolved decision #1). */
+  lockedKeys?: Set<string>;
 }
 
 // Fold state lives outside the component so it survives switching to the
@@ -297,6 +304,11 @@ interface RowCtx {
   /** False only while a search is active and this node is not on the route
    * to any match. */
   matchesSearch: (path: JsonPath) => boolean;
+  unsupportedRule: (
+    value: Record<string, unknown>
+  ) => { mode: "hard" | "soft"; reason?: string } | undefined;
+  /** True when the path sits inside a hard-blacklisted object. */
+  isLocked: (path: JsonPath) => boolean;
 }
 
 /** A `{bigip: "/path"}` value names an object that lives on the device or in
@@ -540,9 +552,10 @@ function ObjectCard({
   // pushed is obvious before it is made.
   const immutability = immutabilityOf(value);
   const immutable = Boolean(immutability) || insideImmutable;
+  const unsupported = ctx.unsupportedRule(value);
   return (
     <div
-      className={`obj-card ${variant}${selected ? " selected" : ""}${ctx.isModified(path) ? " modified" : ""}${collapsed ? " collapsed" : ""}${immutable ? " immutable" : ""}${ctx.isRelated(path) ? " related" : ""}${ctx.matchesSearch(path) ? "" : " unmatched"}`}
+      className={`obj-card ${variant}${selected ? " selected" : ""}${ctx.isModified(path) ? " modified" : ""}${collapsed ? " collapsed" : ""}${immutable ? " immutable" : ""}${ctx.isRelated(path) ? " related" : ""}${ctx.matchesSearch(path) ? "" : " unmatched"}${unsupported ? " unsupported-item" : ""}`}
     >
       <div
         className="obj-card-head"
@@ -567,6 +580,17 @@ function ObjectCard({
             title="Differs from the loaded baseline — a push would write this"
           >
             edited
+          </span>
+        )}
+        {unsupported && (
+          <span
+            className="obj-unsupported"
+            title={
+              unsupported.reason ??
+              "marked unsupported by this deployment's configuration"
+            }
+          >
+            unsupported{unsupported.mode === "hard" ? " · locked" : ""}
           </span>
         )}
         {collapsed && entries.length > 0 && (
@@ -717,6 +741,8 @@ export default function SimplifiedPane({
   onHoverPath,
   relatedKeys,
   searchKeys = null,
+  unsupportedForValue,
+  lockedKeys,
 }: SimplifiedPaneProps) {
   const [editingPath, setEditingPath] = useState<JsonPath | null>(null);
   const [foldTick, setFoldTick] = useState(0);
@@ -779,6 +805,13 @@ export default function SimplifiedPane({
     isRelated: (path) => relatedKeys.has(pathKey(path)),
     matchesSearch: (path) =>
       searchKeys === null || searchKeys.has(pathKey(path)),
+    unsupportedRule: (value) => unsupportedForValue?.(value),
+    isLocked: (path) => {
+      if (!lockedKeys || lockedKeys.size === 0) return false;
+      for (let i = 1; i <= path.length; i++)
+        if (lockedKeys.has(pathKey(path.slice(0, i)))) return true;
+      return false;
+    },
     cursorPath,
     isCollapsed,
     toggleCollapse,
@@ -790,6 +823,9 @@ export default function SimplifiedPane({
       // reference highlighting all follow the cursor, and clicking a value is
       // the obvious way to ask "what is this, and what does it point at?".
       onSelect(path);
+      // Inside a hard-blacklisted object, selection still works but the
+      // editor does not open — badge+lock, delete allowed, never hidden.
+      if (ctx.isLocked(path)) return;
       setEditingPath(path);
     },
     deleteAt: (path) => onEditValue(path, undefined),

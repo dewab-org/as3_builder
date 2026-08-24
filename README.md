@@ -86,8 +86,17 @@ exposes them, since a local `.env` is the whole point. `.env` is gitignored.
 `as3b-config.json` (path via `AS3B_CONFIG` or `--config`; see
 `as3b-config.example.json`) sets per-deployment policy: `features.netbox`
 and `features.bigipApply` gates, plus an `unsupported` class blacklist with
-hard/soft modes (UI enforcement of the blacklist ships separately — see
-`SUPPORT-POLICY-PLAN.md`).
+hard/soft modes. **Soft** items stay usable but carry an `unsupported` badge
+(danger palette) wherever they appear — cards, tree, picker — with the rule's
+reason as tooltip, and adding a soft-blacklisted class asks once. **Hard**
+classes vanish from the pickers entirely; already-present hard items are
+badged `unsupported · locked` with editing disabled and delete still
+available (never hidden — hiding drops them silently on the next
+round-trip). Variant rules (`when`) note themselves on the class's picker row
+and flag the object the moment the property matches. Every match is listed
+in the issues bar (click-to-jump), counted in the status bar, and enumerated
+in the BIG-IP dialog before a dry-run or apply — payloads are never silently
+stripped.
 
 Gating is enforced in the server, not just the UI: with NetBox off the
 NetBox proxy answers 403, and with apply off the BIG-IP proxy refuses any

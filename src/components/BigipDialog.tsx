@@ -8,6 +8,9 @@ interface BigipDialogProps {
   /** False removes the Apply path entirely; validate/dry-run is untouched.
    * The proxy enforces the same gate server-side. */
   applyEnabled?: boolean;
+  /** Blacklisted objects present in the declaration — listed, never
+   * stripped (resolved decision #3). */
+  unsupportedItems?: { label: string; mode: string; reason: string }[];
   onClose: () => void;
 }
 
@@ -34,6 +37,7 @@ function authHeaders(
 export default function BigipDialog({
   declarationText,
   applyEnabled = true,
+  unsupportedItems = [],
   onClose,
 }: BigipDialogProps) {
   const [host, setHost] = useState(remembered.host);
@@ -207,6 +211,22 @@ export default function BigipDialog({
           Applying for real belongs in the Ansible workflow; the Apply button
           here is a deliberate exception and asks accordingly.
         </p>
+        {unsupportedItems.length > 0 && (
+          <div className="modal-warnings">
+            <strong>
+              This declaration contains {unsupportedItems.length} item
+              {unsupportedItems.length === 1 ? "" : "s"} marked unsupported
+              here — it is submitted as-is, nothing is stripped:
+            </strong>
+            <ul>
+              {unsupportedItems.map((item) => (
+                <li key={item.label}>
+                  {item.label} ({item.mode}): {item.reason}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         <label className="modal-field">
           <span>BIG-IP host/IP</span>
           <input
