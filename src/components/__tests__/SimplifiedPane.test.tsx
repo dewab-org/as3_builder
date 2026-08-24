@@ -144,6 +144,48 @@ describe("simplified view: what the eye is told", () => {
     ).not.toHaveClass("related");
   });
 
+  it("badges blacklisted objects and locks hard ones", async () => {
+    const props = renderPane({
+      doc: {
+        app: {
+          class: "Application",
+          mon: { class: "Monitor", monitorType: "sip", queryName: "Test" },
+          l4: { class: "Service_L4", virtualPort: 80 },
+        },
+      },
+      unsupportedForValue: (value) =>
+        value.class === "Monitor" && value.monitorType === "sip"
+          ? { mode: "soft" as const, reason: "SIP untested" }
+          : value.class === "Service_L4"
+            ? { mode: "hard" as const, reason: "NetScaler handles L4" }
+            : undefined,
+      lockedKeys: new Set([pathKey(["app", "l4"])]),
+    });
+    const card = (name: string) =>
+      screen
+        .getByText(name, { selector: ".obj-name" })
+        .closest(".obj-card") as HTMLElement;
+
+    // Soft: badged and tinted, still editable.
+    expect(card("mon")).toHaveClass("unsupported-item");
+    expect(within(card("mon")).getByText("unsupported")).toBeInTheDocument();
+    await userEvent.click(within(card("mon")).getByText("Test"));
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
+    await userEvent.type(screen.getByRole("textbox"), "{Escape}");
+
+    // Hard: badged "· locked", value clicks select but never open an editor,
+    // and the delete button stays — badge+lock, never hide.
+    expect(
+      within(card("l4")).getByText(/unsupported · locked/)
+    ).toBeInTheDocument();
+    await userEvent.click(within(card("l4")).getByText("80"));
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(props.onSelect).toHaveBeenCalledWith(["app", "l4", "virtualPort"]);
+    expect(
+      within(card("l4")).getAllByRole("button", { name: /remove/i }).length
+    ).toBeGreaterThan(0);
+  });
+
   it("reports what the pointer is over, with where it is", async () => {
     const props = renderPane();
     await userEvent.hover(within(row("pool")).getByText("pool"));

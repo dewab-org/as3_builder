@@ -487,6 +487,61 @@ body {
   opacity: 1;
 }
 
+/* Unsupported (deployment blacklist): danger palette so it reads as a
+   warning, not a state. "· locked" marks hard mode, whose subtree does not
+   open editors. */
+.obj-unsupported {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--danger-dark);
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  padding: 0 6px;
+  cursor: help;
+}
+
+.obj-card.unsupported-item {
+  border-color: var(--danger);
+  background: var(--danger-bg-soft);
+}
+
+.tree-label.unsupported {
+  box-shadow: inset 3px 0 0 var(--danger);
+}
+
+.addable-unsupported {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--danger-dark);
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  padding: 0 5px;
+  cursor: help;
+}
+
+.addable-unsupported.variant {
+  text-transform: none;
+  font-weight: 700;
+  padding: 0 6px;
+}
+
+.detail-unsupported {
+  color: var(--danger-dark);
+  background: var(--danger-bg-soft);
+  border: 1px solid var(--danger);
+  border-radius: 5px;
+  padding: 3px 6px;
+  font-size: 12px;
+  margin: 4px 0;
+}
+
+.issue-row.issue-policy {
+  color: var(--warn-text);
+  background: var(--warn-bg);
+}
+
 /* Modified state in words, matching read-only/external/linked — colour
    stays, but stops being the only signal. */
 .obj-edited {

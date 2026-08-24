@@ -29,6 +29,10 @@ export interface AddableDetail {
   allowedFields?: string[];
   tmsh?: TmshEquivalency;
   schemaReference?: string;
+  /** Deployment blacklist: soft rules are shown and confirmed on add. */
+  unsupported?: { mode: "hard" | "soft"; reason: string };
+  /** "some variants unsupported: …" for classes with when-scoped rules. */
+  unsupportedNote?: string;
 }
 
 export interface AddableItem {
@@ -54,6 +58,14 @@ export function DetailCard({
         {detail.type && <span className="detail-type">{detail.type}</span>}
         {detail.required && <span className="detail-required">required</span>}
       </div>
+      {detail.unsupported && (
+        <p className="detail-unsupported">
+          Unsupported here ({detail.unsupported.mode}): {detail.unsupported.reason}
+        </p>
+      )}
+      {detail.unsupportedNote && (
+        <p className="detail-unsupported">{detail.unsupportedNote}</p>
+      )}
       {detail.description && (
         <p className="detail-desc">{detail.description}</p>
       )}
@@ -230,6 +242,22 @@ export default function AddableList({ items, onAdd }: AddableListProps) {
             </span>
             {item.typeBadge && (
               <span className="addable-type">{item.typeBadge}</span>
+            )}
+            {item.detail.unsupported && (
+              <span
+                className="addable-unsupported"
+                title={item.detail.unsupported.reason}
+              >
+                unsupported
+              </span>
+            )}
+            {!item.detail.unsupported && item.detail.unsupportedNote && (
+              <span
+                className="addable-unsupported variant"
+                title={item.detail.unsupportedNote}
+              >
+                !
+              </span>
             )}
             <button
               className="addable-btn"

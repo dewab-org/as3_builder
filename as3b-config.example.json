@@ -1,5 +1,5 @@
 {
-  "//": "Deployment support policy — copy to as3b-config.json (or point AS3B_CONFIG / --config at a path) and restart. Missing file = everything enabled; a malformed file DISABLES NetBox and BIG-IP apply until fixed. See SUPPORT-POLICY-PLAN.md.",
+  "//": "Deployment support policy \u2014 copy to as3b-config.json (or point AS3B_CONFIG / --config at a path) and restart. Missing file = everything enabled; a malformed file DISABLES NetBox and BIG-IP apply until fixed. See SUPPORT-POLICY-PLAN.md.",
   "features": {
     "netbox": true,
     "bigipApply": true
@@ -12,9 +12,16 @@
     },
     {
       "class": "Monitor",
-      "when": { "monitorType": "sip" },
+      "when": {
+        "monitorType": "sip"
+      },
       "mode": "soft",
-      "reason": "SIP monitors are untested here — check with the LB team first"
+      "reason": "SIP monitors are untested here \u2014 check with the LB team first"
+    },
+    {
+      "class": "iRule",
+      "mode": "soft",
+      "reason": "iRules need a review before use here \u2014 raw Tcl bypasses the supported building blocks"
     }
   ]
 }

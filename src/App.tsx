@@ -35,7 +35,11 @@ import { getTemplate } from "./templates";
 import { useDocument } from "./hooks/useDocument";
 import { netboxSession } from "./netboxSession";
 import { loadAppConfig } from "./appConfig";
-import { DEFAULT_POLICY, type SupportPolicy } from "./engine/supportPolicy";
+import {
+  DEFAULT_POLICY,
+  type SupportPolicy,
+  type UnsupportedRule,
+} from "./engine/supportPolicy";
 import HoverCard, { type HoverAnchor } from "./components/HoverCard";
 import { applyBigipDefaults } from "./components/bigipSession";
 import { useValidation } from "./hooks/useValidation";
@@ -52,13 +56,18 @@ import {
   getContext,
   isPlainObject,
   loadAs3Documentation,
+  pathKey,
   loadBigipCatalog,
   resolveDrop,
   resolveSchemaForPath,
+  auditUnsupported,
   relatedPaths,
+  ruleReason,
   searchMatches,
   stubValue,
   summarizeEntry,
+  unsupportedClassOf,
+  unsupportedOf,
   xrefCandidatesAt,
   type BigipCatalog,
   type DocumentationIndex,
@@ -284,6 +293,48 @@ export default function App() {
       applyBigipDefaults(config.bigip);
     });
   }, []);
+
+  // Unsupported-item plumbing (SUPPORT-POLICY-PLAN.md §5). The audit feeds
+  // the issues bar and the BIG-IP dialog; the hard set locks editing inside
+  // matching objects; the value callback drives badges in both panes.
+  const policyAudit = useMemo(
+    () => auditUnsupported(policy, lastGoodDoc),
+    [policy, lastGoodDoc]
+  );
+  const hardLockedKeys = useMemo(
+    () =>
+      new Set(
+        policyAudit
+          .filter((a) => a.rule.mode === "hard")
+          .map((a) => pathKey(a.path))
+      ),
+    [policyAudit]
+  );
+  const unsupportedForValue = useCallback(
+    (value: Record<string, unknown>) => unsupportedOf(policy, value),
+    [policy]
+  );
+
+  // Soft-blacklisted classes ask once before an add/change goes through.
+  const [pendingUnsupported, setPendingUnsupported] = useState<{
+    className: string;
+    rule: UnsupportedRule;
+    proceed: () => void;
+  } | null>(null);
+  const guardClassAdd = useCallback(
+    (className: string, proceed: () => void) => {
+      const { rule } = unsupportedClassOf(policy, className);
+      if (rule?.mode === "hard") {
+        // Hard classes are filtered out of every picker; this is the net for
+        // drops and stale UI.
+        flashToast(`${className} is not supported here: ${ruleReason(rule)}`);
+        return;
+      }
+      if (rule) setPendingUnsupported({ className, rule, proceed });
+      else proceed();
+    },
+    [policy, flashToast]
+  );
 
   // Find-in-document: one query, both panes. Matches include their ancestors
   // so the route to a hit stays visible while everything else dims.
@@ -781,23 +832,30 @@ export default function App() {
         flashToast(res.reason);
         return;
       }
-      const targetPath = [...res.parentPath, res.key];
-      const next = applyEdit(targetPath, res.value);
-      const requiredChildren = isPlainObject(res.value)
-        ? Object.keys(res.value).filter((k) => k !== "class")
-        : [];
-      navigateWhenReady(targetPath, next, {
-        flashChildren: requiredChildren.length > 0 ? requiredChildren : undefined,
-        flash: requiredChildren.length === 0,
-      });
+      const insert = () => {
+        const targetPath = [...res.parentPath, res.key];
+        const next = applyEdit(targetPath, res.value);
+        const requiredChildren = isPlainObject(res.value)
+          ? Object.keys(res.value).filter((k) => k !== "class")
+          : [];
+        navigateWhenReady(targetPath, next, {
+          flashChildren:
+            requiredChildren.length > 0 ? requiredChildren : undefined,
+          flash: requiredChildren.length === 0,
+        });
+      };
+      if (payload.isClassObject && payload.className)
+        guardClassAdd(payload.className, insert);
+      else insert();
     },
-    [root, registry, text, applyEdit, navigateWhenReady, flashToast]
+    [root, registry, text, applyEdit, navigateWhenReady, flashToast, guardClassAdd]
   );
 
   const handleClassChange = useCallback(
     (path: JsonPath, className: string) => {
       const info = registry.get(className);
       if (!info) return;
+      guardClassAdd(className, () => {
       const stub = stubValue(root, info.schema);
       const existing = getAtPath(lastGoodDoc, path);
       const edits: [JsonPath, unknown][] = [[[...path, "class"], className]];
@@ -815,8 +873,9 @@ export default function App() {
         flashChildren: added.length > 0 ? added : undefined,
         flash: added.length === 0,
       });
+      });
     },
-    [root, registry, lastGoodDoc, applyEditMany, navigateWhenReady]
+    [root, registry, lastGoodDoc, applyEditMany, navigateWhenReady, guardClassAdd]
   );
 
   // The JSON path deletable from a given line: the property whose key starts
@@ -858,8 +917,10 @@ export default function App() {
   const handleAddChip = useCallback(
     (payload: ChipPayload) => {
       if (payload.isClassObject && payload.className) {
-        const info = registry.get(payload.className);
+        const className = payload.className;
+        const info = registry.get(className);
         if (!info) return;
+        guardClassAdd(className, () => {
         const appNode = lastGoodDoc
           ? (payload.sourcePath.reduce<unknown>(
               (acc, seg) =>
@@ -870,10 +931,10 @@ export default function App() {
             ) as Record<string, unknown> | undefined)
           : undefined;
         let n = 1;
-        let name = `new${payload.className.replace(/^Service_/, "Service")}${n}`;
+        let name = `new${className.replace(/^Service_/, "Service")}${n}`;
         while (appNode && name in appNode) {
           n += 1;
-          name = `new${payload.className.replace(/^Service_/, "Service")}${n}`;
+          name = `new${className.replace(/^Service_/, "Service")}${n}`;
         }
         const stub = stubValue(root, info.schema);
         const next = applyEdit([...payload.sourcePath, name], stub);
@@ -884,6 +945,7 @@ export default function App() {
           flashChildren:
             requiredChildren.length > 0 ? requiredChildren : undefined,
           flash: requiredChildren.length === 0,
+        });
         });
         return;
       }
@@ -901,6 +963,7 @@ export default function App() {
       lastGoodDoc,
       applyEdit,
       navigateWhenReady,
+      guardClassAdd,
     ]
   );
 
@@ -931,6 +994,11 @@ export default function App() {
         <BigipDialog
           declarationText={text}
           applyEnabled={policy.bigipApply}
+          unsupportedItems={policyAudit.map((a) => ({
+            label: a.path.join(" › "),
+            mode: a.rule.mode,
+            reason: ruleReason(a.rule),
+          }))}
           onClose={() => setShowBigipDialog(false)}
         />
       )}
@@ -1058,6 +1126,7 @@ export default function App() {
             searchQuery={searchQuery}
             onSearchQuery={setSearchQuery}
             searchKeys={searchKeys}
+            unsupportedForValue={unsupportedForValue}
           />
         </div>
         <div className="pane-editor">
@@ -1089,6 +1158,8 @@ export default function App() {
               onHoverPath={setHover}
               relatedKeys={relatedKeys}
               searchKeys={searchKeys}
+              unsupportedForValue={unsupportedForValue}
+              lockedKeys={hardLockedKeys}
             />
           )}
           {/* Mounted only once the JSON view has been opened, so a session
@@ -1130,6 +1201,7 @@ export default function App() {
             memberClasses={memberClasses}
             schemaRoot={root}
             documentation={documentation}
+            policy={policy}
             onEdit={handleEdit}
             onNavigate={(path) => navigateToPath(path)}
             onAddChip={handleAddChip}
@@ -1139,6 +1211,38 @@ export default function App() {
         </div>
       </div>
       {showAbout && <AboutDialog onClose={() => setShowAbout(false)} />}
+      {pendingUnsupported && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setPendingUnsupported(null)}
+        >
+          <div
+            className="modal modal-narrow"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2>Add an unsupported item?</h2>
+            <p className="ctx-hint">
+              <strong>{pendingUnsupported.className}</strong> is marked
+              unsupported here: {ruleReason(pendingUnsupported.rule)}
+            </p>
+            <div className="modal-actions">
+              <button autoFocus onClick={() => setPendingUnsupported(null)}>
+                Cancel
+              </button>
+              <button
+                className="danger"
+                onClick={() => {
+                  const pending = pendingUnsupported;
+                  setPendingUnsupported(null);
+                  pending.proceed();
+                }}
+              >
+                Add anyway
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {pendingLoad && (
         <div className="modal-backdrop" onClick={() => setPendingLoad(null)}>
           <div
@@ -1189,8 +1293,20 @@ export default function App() {
       )}
 
       <div className="errorbar-wrap">
-        {showIssues && issues.length > 0 && (
+        {showIssues && (issues.length > 0 || policyAudit.length > 0) && (
           <div className="issue-list">
+            {policyAudit.map(({ path, rule }) => (
+              <div
+                key={`policy-${path.join("/")}`}
+                className="issue-row issue-policy"
+                onClick={() => navigateToPath(path)}
+              >
+                <span className="issue-path">/{path.join("/")}</span>
+                <span>
+                  unsupported ({rule.mode}): {ruleReason(rule)}
+                </span>
+              </div>
+            ))}
             {issues.map((issue, i) => (
               <div
                 key={`${issue.instancePath}-${i}`}
@@ -1220,7 +1336,7 @@ export default function App() {
             <span className="statusbar-issues warn">syntax error — fix JSON</span>
           ) : !validatorReady ? (
             <span className="statusbar-hint">validating…</span>
-          ) : issues.length === 0 ? (
+          ) : issues.length === 0 && policyAudit.length === 0 ? (
             <span className="ok">✓ schema valid</span>
           ) : (
             <button
@@ -1228,7 +1344,11 @@ export default function App() {
               onClick={() => setShowIssues(!showIssues)}
               title="Click to show/hide the error list"
             >
-              ✗ {issues.length} schema error{issues.length === 1 ? "" : "s"}
+              {issues.length > 0
+                ? `✗ ${issues.length} schema error${issues.length === 1 ? "" : "s"}`
+                : "✓ schema valid"}
+              {policyAudit.length > 0 &&
+                ` · ⚠ ${policyAudit.length} unsupported`}
             </button>
           )}
         </div>

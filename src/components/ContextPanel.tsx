@@ -12,7 +12,11 @@ import {
   getAtPath,
   indexClassInstances,
   isPlainObject,
+  ruleReason,
+  unsupportedClassOf,
+  variantNote,
   type DocumentationIndex,
+  type SupportPolicy,
 } from "../engine";
 import PropertyWidget from "./PropertyWidget";
 import ConfirmButton from "./ConfirmButton";
@@ -30,6 +34,9 @@ interface ContextPanelProps {
   schemaRoot: JsonSchemaRoot;
   /** Generated F5 documentation index, loaded once by the app. */
   documentation: DocumentationIndex | undefined;
+  /** Deployment support policy: hard classes leave the pickers, soft ones
+   * are tagged, variant rules become a note (decisions #1/#4). */
+  policy: SupportPolicy;
   onEdit: (path: JsonPath, value: unknown) => void;
   onNavigate: (path: JsonPath) => void;
   onAddChip: (payload: ChipPayload) => void;
@@ -44,6 +51,7 @@ export default function ContextPanel({
   memberClasses,
   schemaRoot,
   documentation,
+  policy,
   onEdit,
   onNavigate,
   onAddChip,
@@ -113,8 +121,11 @@ export default function ContextPanel({
 
   const classItems: AddableItem[] = [...memberClasses]
     .sort((a, b) => a.className.localeCompare(b.className))
+    // Hard-blacklisted classes do not appear at all; that is what hard means.
+    .filter((c) => unsupportedClassOf(policy, c.className).rule?.mode !== "hard")
     .map((c) => {
       const docs = definitionDocumentation(documentation, c.definitionName);
+      const support = unsupportedClassOf(policy, c.className);
       return {
         key: c.className,
         label: c.className,
@@ -127,6 +138,10 @@ export default function ContextPanel({
           allowedFields: docs?.allowedFields,
           tmsh: docs?.tmsh,
           schemaReference: docs?.documentation.schemaReference,
+          unsupported: support.rule
+            ? { mode: support.rule.mode, reason: ruleReason(support.rule) }
+            : undefined,
+          unsupportedNote: variantNote(support.variants),
         },
         payload: {
           name: c.className,
@@ -139,8 +154,15 @@ export default function ContextPanel({
 
   // Class choices for the class dropdown: sibling-level member classes, plus
   // the current class if it's something else (e.g. Application itself).
-  const classOptions = memberClasses.map((c) => c.className).sort();
+  const classOptions = memberClasses
+    .map((c) => c.className)
+    .filter(
+      (name) => unsupportedClassOf(policy, name).rule?.mode !== "hard"
+    )
+    .sort();
   if (context.className && !classOptions.includes(context.className)) {
+    // The current class stays listed even when hard-blacklisted — hiding it
+    // would misrepresent the document.
     classOptions.unshift(context.className);
   }
 

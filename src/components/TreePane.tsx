@@ -22,6 +22,10 @@ interface TreePaneProps {
   onSearchQuery: (query: string) => void;
   /** Match paths (with ancestors); null when not searching. */
   searchKeys: Set<string> | null;
+  /** Deployment blacklist rule for a value, if any. */
+  unsupportedForValue?: (
+    value: Record<string, unknown>
+  ) => { mode: "hard" | "soft"; reason?: string } | undefined;
 }
 
 // Deep enough to reach policy rules and their conditions/actions
@@ -61,6 +65,7 @@ function TreeNode({
   relatedKeys,
   onHoverPath,
   searchKeys,
+  unsupportedForValue,
 }: {
   nodeKey: string | number;
   value: unknown;
@@ -75,9 +80,15 @@ function TreeNode({
     anchor: { path: JsonPath; x: number; y: number } | null
   ) => void;
   searchKeys: Set<string> | null;
+  unsupportedForValue?: (
+    value: Record<string, unknown>
+  ) => { mode: "hard" | "soft"; reason?: string } | undefined;
 }) {
   const isBranch =
     (isPlainObject(value) || Array.isArray(value)) && depth < MAX_DEPTH;
+  const unsupported = isPlainObject(value)
+    ? unsupportedForValue?.(value)
+    : undefined;
   const selected = pathsEqual(path, cursorPath);
   const children: [string | number, unknown][] = !isBranch
     ? []
@@ -88,7 +99,7 @@ function TreeNode({
   return (
     <div className="tree-node">
       <div
-        className={`tree-label${selected ? " selected" : ""}${isModified(path) ? " modified" : ""}${relatedKeys.has(pathKey(path)) ? " related" : ""}${searchKeys !== null && !searchKeys.has(pathKey(path)) ? " unmatched" : ""}`}
+        className={`tree-label${selected ? " selected" : ""}${isModified(path) ? " modified" : ""}${relatedKeys.has(pathKey(path)) ? " related" : ""}${searchKeys !== null && !searchKeys.has(pathKey(path)) ? " unmatched" : ""}${unsupported ? " unsupported" : ""}`}
         onClick={() => onSelect(path)}
         onMouseEnter={(e) =>
           onHoverPath({ path, x: e.clientX, y: e.clientY })
@@ -124,6 +135,7 @@ function TreeNode({
                 relatedKeys={relatedKeys}
                 onHoverPath={onHoverPath}
                 searchKeys={searchKeys}
+                unsupportedForValue={unsupportedForValue}
               />
             ))}
         </div>
@@ -144,6 +156,7 @@ export default function TreePane({
   searchQuery,
   onSearchQuery,
   searchKeys,
+  unsupportedForValue,
 }: TreePaneProps) {
   // Reveal the linked node in this pane too — the tree scrolls independently,
   // so the highlight can otherwise land out of sight.
@@ -198,6 +211,7 @@ export default function TreePane({
               relatedKeys={relatedKeys}
               onHoverPath={onHoverPath}
               searchKeys={searchKeys}
+              unsupportedForValue={unsupportedForValue}
             />
           ))}
       </div>
