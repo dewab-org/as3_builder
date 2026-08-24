@@ -20,8 +20,8 @@
     },
     {
       "class": "iRule",
-      "mode": "soft",
-      "reason": "iRules need a review before use here \u2014 raw Tcl bypasses the supported building blocks"
+      "mode": "review",
+      "reason": "Raw Tcl bypasses the supported building blocks \u2014 have the LB team review every iRule"
     }
   ]
 }

@@ -86,13 +86,15 @@ exposes them, since a local `.env` is the whole point. `.env` is gitignored.
 `as3b-config.json` (path via `AS3B_CONFIG` or `--config`; see
 `as3b-config.example.json`) sets per-deployment policy: `features.netbox`
 and `features.bigipApply` gates, plus an `unsupported` class blacklist with
-hard/soft modes. **Soft** items stay usable but carry an `unsupported` badge
-(danger palette) wherever they appear — cards, tree, picker — with the rule's
-reason as tooltip, and adding a soft-blacklisted class asks once. **Hard**
-classes vanish from the pickers entirely; already-present hard items are
-badged `unsupported · locked` with editing disabled and delete still
-available (never hidden — hiding drops them silently on the next
-round-trip). Variant rules (`when`) note themselves on the class's picker row
+hard/soft/review modes. **Soft** items stay usable but carry an
+`unsupported` badge (danger palette) wherever they appear — cards, tree,
+picker — with the rule's reason as tooltip, and adding a soft-blacklisted
+class asks once. **Review** items are supported but each use needs a human
+look: same behaviour as soft, badged `requires review` in the warning
+palette instead, and the add prompt is worded accordingly. **Hard** classes
+vanish from the pickers entirely; already-present hard items are badged
+`unsupported · locked` with editing disabled and delete still available
+(never hidden — hiding drops them silently on the next round-trip). Variant rules (`when`) note themselves on the class's picker row
 and flag the object the moment the property matches. Every match is listed
 in the issues bar (click-to-jump), counted in the status bar, and enumerated
 in the BIG-IP dialog before a dry-run or apply — payloads are never silently

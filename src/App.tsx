@@ -310,6 +310,10 @@ export default function App() {
       ),
     [policyAudit]
   );
+  const reviewCount = useMemo(
+    () => policyAudit.filter((a) => a.rule.mode === "review").length,
+    [policyAudit]
+  );
   const unsupportedForValue = useCallback(
     (value: Record<string, unknown>) => unsupportedOf(policy, value),
     [policy]
@@ -1220,10 +1224,17 @@ export default function App() {
             className="modal modal-narrow"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2>Add an unsupported item?</h2>
+            <h2>
+              {pendingUnsupported.rule.mode === "review"
+                ? "Add an item that requires review?"
+                : "Add an unsupported item?"}
+            </h2>
             <p className="ctx-hint">
-              <strong>{pendingUnsupported.className}</strong> is marked
-              unsupported here: {ruleReason(pendingUnsupported.rule)}
+              <strong>{pendingUnsupported.className}</strong>{" "}
+              {pendingUnsupported.rule.mode === "review"
+                ? "requires a review before use here"
+                : "is marked unsupported here"}
+              : {ruleReason(pendingUnsupported.rule)}
             </p>
             <div className="modal-actions">
               <button autoFocus onClick={() => setPendingUnsupported(null)}>
@@ -1298,12 +1309,15 @@ export default function App() {
             {policyAudit.map(({ path, rule }) => (
               <div
                 key={`policy-${path.join("/")}`}
-                className="issue-row issue-policy"
+                className={`issue-row issue-policy${rule.mode === "review" ? " review" : ""}`}
                 onClick={() => navigateToPath(path)}
               >
                 <span className="issue-path">/{path.join("/")}</span>
                 <span>
-                  unsupported ({rule.mode}): {ruleReason(rule)}
+                  {rule.mode === "review"
+                    ? "requires review"
+                    : `unsupported (${rule.mode})`}
+                  : {ruleReason(rule)}
                 </span>
               </div>
             ))}
@@ -1347,8 +1361,10 @@ export default function App() {
               {issues.length > 0
                 ? `✗ ${issues.length} schema error${issues.length === 1 ? "" : "s"}`
                 : "✓ schema valid"}
-              {policyAudit.length > 0 &&
-                ` · ⚠ ${policyAudit.length} unsupported`}
+              {policyAudit.length > reviewCount &&
+                ` · ⚠ ${policyAudit.length - reviewCount} unsupported`}
+              {reviewCount > 0 &&
+                ` · ⚠ ${reviewCount} require${reviewCount === 1 ? "s" : ""} review`}
             </button>
           )}
         </div>

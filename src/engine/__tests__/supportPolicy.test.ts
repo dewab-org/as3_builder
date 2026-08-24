@@ -5,6 +5,8 @@ import {
   auditUnsupported,
   parsePolicy,
   unsupportedClassOf,
+  modeLabel,
+  ruleReason,
   unsupportedOf,
   variantNote,
   type SupportPolicy,
@@ -46,6 +48,13 @@ describe("parsePolicy", () => {
     expect(() => parsePolicy({ features: { netbox: "yes" } })).toThrow(
       /features\.netbox/
     );
+  });
+
+  it("accepts the review mode", () => {
+    const parsed = parsePolicy({
+      unsupported: [{ class: "iRule", mode: "review" }],
+    });
+    expect(parsed.unsupported).toEqual([{ class: "iRule", mode: "review" }]);
   });
 
   it("the closed policy has both gates off", () => {
@@ -102,6 +111,31 @@ describe("unsupportedClassOf (pickers)", () => {
       "some variants unsupported: monitorType sip; monitorType external"
     );
     expect(variantNote([])).toBeUndefined();
+  });
+
+  it("says 'require review' when every variant is review-mode", () => {
+    expect(
+      variantNote([
+        { class: "Monitor", when: { monitorType: "sip" }, mode: "review" },
+      ])
+    ).toBe("some variants require review: monitorType sip");
+  });
+});
+
+describe("review vocabulary", () => {
+  it("labels review as such, never as unsupported", () => {
+    expect(modeLabel("review")).toBe("requires review");
+    expect(modeLabel("soft")).toBe("unsupported");
+    expect(modeLabel("hard")).toBe("unsupported");
+  });
+
+  it("the fallback reason matches the mode", () => {
+    expect(ruleReason({ class: "iRule", mode: "review" })).toMatch(
+      /requiring review/
+    );
+    expect(ruleReason({ class: "iRule", mode: "soft" })).toMatch(
+      /unsupported/
+    );
   });
 });
 

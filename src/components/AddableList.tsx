@@ -29,8 +29,8 @@ export interface AddableDetail {
   allowedFields?: string[];
   tmsh?: TmshEquivalency;
   schemaReference?: string;
-  /** Deployment blacklist: soft rules are shown and confirmed on add. */
-  unsupported?: { mode: "hard" | "soft"; reason: string };
+  /** Deployment blacklist: soft/review rules are shown and confirmed on add. */
+  unsupported?: { mode: "hard" | "soft" | "review"; reason: string };
   /** "some variants unsupported: …" for classes with when-scoped rules. */
   unsupportedNote?: string;
 }
@@ -59,8 +59,13 @@ export function DetailCard({
         {detail.required && <span className="detail-required">required</span>}
       </div>
       {detail.unsupported && (
-        <p className="detail-unsupported">
-          Unsupported here ({detail.unsupported.mode}): {detail.unsupported.reason}
+        <p
+          className={`detail-unsupported${detail.unsupported.mode === "review" ? " review" : ""}`}
+        >
+          {detail.unsupported.mode === "review"
+            ? "Requires review here"
+            : `Unsupported here (${detail.unsupported.mode})`}
+          : {detail.unsupported.reason}
         </p>
       )}
       {detail.unsupportedNote && (
@@ -245,10 +250,12 @@ export default function AddableList({ items, onAdd }: AddableListProps) {
             )}
             {item.detail.unsupported && (
               <span
-                className="addable-unsupported"
+                className={`addable-unsupported${item.detail.unsupported.mode === "review" ? " review" : ""}`}
                 title={item.detail.unsupported.reason}
               >
-                unsupported
+                {item.detail.unsupported.mode === "review"
+                  ? "review"
+                  : "unsupported"}
               </span>
             )}
             {!item.detail.unsupported && item.detail.unsupportedNote && (
