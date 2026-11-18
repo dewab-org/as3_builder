@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import goldenInput from "./fixtures/netbox-golden-input.json";
 import { renderNetboxApp } from "../netboxAs3";
-import { buildManifest, computeUpdates } from "../as3ToNetbox";
+import {
+  buildManifest,
+  computeUpdates,
+  findApplicationKey,
+  newAppManifest,
+} from "../as3ToNetbox";
 
 type Dict = Record<string, unknown>;
 
@@ -29,6 +34,58 @@ describe("write-back manifest", () => {
     expect(byKey.sg_web.endpoint).toBe("backend-pools");
     expect(byKey.ssl_vs_ssl_app.endpoint).toBe("ssl-profiles");
     expect(byKey.ssl_vs_ssl_app.className).toBe("TLS_Server");
+  });
+});
+
+describe("net-new application push", () => {
+  const declaration = {
+    id: "my-decl",
+    schemaVersion: "3.55.0",
+    newApp: {
+      class: "Application",
+      label: "Hand-authored app",
+      web: {
+        class: "Service_HTTP",
+        virtualAddresses: ["10.9.0.1"],
+        virtualPort: 80,
+        pool: "webPool",
+      },
+      webPool: {
+        class: "Pool",
+        members: [{ servicePort: 8080, serverAddresses: ["10.9.0.10"] }],
+      },
+    },
+  } as Record<string, unknown>;
+
+  it("finds the Application member of a declaration", () => {
+    expect(findApplicationKey(declaration)).toBe("newApp");
+    expect(findApplicationKey({ id: "x", schemaVersion: "3.55.0" })).toBeNull();
+  });
+
+  it("bootstraps a manifest whose changeset creates everything", () => {
+    const m = newAppManifest(
+      declaration,
+      "newApp",
+      { id: 42, name: "newApp", description: "Hand-authored app" },
+      7
+    );
+    expect(m.appId).toBe(42);
+    expect(m.createClusterId).toBe(7);
+    const { updates, creates, deletes, notes } = computeUpdates(
+      JSON.parse(JSON.stringify(declaration)),
+      m
+    );
+    expect(deletes).toEqual([]);
+    expect(notes).toEqual([]);
+    // Label matches the created description — no application update.
+    expect(updates).toEqual([]);
+    expect(creates.map((c) => [c.endpoint, c.as3Key])).toEqual([
+      ["backend-pools", "webPool"],
+      ["virtual-servers", "web"],
+    ]);
+    const vs = creates.find((c) => c.endpoint === "virtual-servers");
+    expect(vs?.fields.cluster).toBe(7);
+    expect(vs?.vipAddresses).toEqual(["10.9.0.1/32"]);
   });
 });
 

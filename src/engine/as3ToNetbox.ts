@@ -334,6 +334,12 @@ function vipAddressesFromAs3(
   if (!list) return { addresses: [], notes };
   for (const entry of list) {
     if (typeof entry === "string") {
+      if (entry.trim() === "") {
+        notes.push(
+          `"${vsKey}": virtualAddresses has an empty entry — addresses not pushed`
+        );
+        return { addresses: null, notes };
+      }
       out.push(withMask(entry));
     } else if (isPlainObject(entry) && typeof entry.use === "string") {
       const target = application[entry.use];
@@ -1075,6 +1081,69 @@ function buildCreate(
     vipAddresses: null, // filled by the caller (needs the application object)
     refs,
     label: `create ${className} "${as3Key}"`,
+  };
+}
+
+// ---- net-new applications --------------------------------------------------
+
+/** The declaration member that is the AS3 Application object, for
+ * bootstrapping a net-new push. null when the declaration has none. */
+export function findApplicationKey(declaration: Dict): string | null {
+  for (const [k, v] of Object.entries(declaration)) {
+    if (isPlainObject(v) && v.class === "Application") return k;
+  }
+  return null;
+}
+
+export function slugify(name: string): string {
+  return (
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "app"
+  );
+}
+
+/**
+ * Provenance for an application that was JUST created in NetBox from this
+ * declaration (net-new push): one application-level entry, so everything the
+ * declaration holds becomes a create against that application, placed on the
+ * surveyed cluster. From then on the ordinary diff machinery applies.
+ */
+export function newAppManifest(
+  declaration: Dict,
+  appKey: string,
+  createdApp: Dict,
+  clusterId: number
+): AppManifest {
+  const application = declaration[appKey];
+  return {
+    declarationId: String(declaration.id ?? ""),
+    appId: Number(createdApp.id),
+    appKey,
+    createClusterId: clusterId,
+    entries: [
+      {
+        as3Key: appKey,
+        endpoint: "applications",
+        id: Number(createdApp.id),
+        className: "Application",
+        // Snapshot the DECLARATION's view, not the created record: the
+        // surveyed description need not appear as a label in the editor, and
+        // must not diff as "clear the description". The post-push reload
+        // renders NetBox's truth back into the editor.
+        fields: isPlainObject(application)
+          ? APPLICATION_KIND.fromAs3(application).fields
+          : { description: "" },
+        as3Snapshot: isPlainObject(application)
+          ? JSON.parse(JSON.stringify(application))
+          : {},
+        lastUpdated: createdApp.last_updated as string | undefined,
+        isApplication: true,
+      },
+    ],
+    artifacts: {},
+    extraKeys: [],
   };
 }
 

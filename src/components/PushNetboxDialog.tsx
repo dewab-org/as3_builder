@@ -4,7 +4,10 @@ import {
   applicationGraphQuery,
   buildManifest,
   computeUpdates,
+  findApplicationKey,
+  newAppManifest,
   renderNetboxApp,
+  slugify,
   type AppManifest,
   type CreateObject,
   type DeleteObject,
@@ -63,6 +66,17 @@ export default function PushNetboxDialog({
   onClose,
 }: PushNetboxDialogProps) {
   const [manifest, setManifest] = useState<AppManifest | undefined>();
+  const [declaration, setDeclaration] = useState<Record<string, unknown>>();
+  /** Metadata survey for a declaration with no NetBox provenance: the fields
+   * a net-new Application needs that AS3 does not carry. */
+  const [survey, setSurvey] = useState<{
+    appKey: string;
+    name: string;
+    description: string;
+    snowSysId: string;
+    clusterId: number | null;
+    clusters: { id: number; name: string }[];
+  }>();
   const [rows, setRows] = useState<Row[]>([]);
   const [notes, setNotes] = useState<string[]>([]);
   const [error, setError] = useState<string | undefined>();
@@ -73,50 +87,39 @@ export default function PushNetboxDialog({
   // from a column of ticks.
   const [summary, setSummary] = useState<ReturnType<typeof summarizePush>>();
 
-  // Compute the change set + drift on open.
-  useEffect(() => {
-    void (async () => {
-      setBusy("Computing changes…");
-      setSummary(undefined);
-      try {
-        const declaration = parse(declarationText, [], {
-          allowTrailingComma: true,
-        }) as Record<string, unknown>;
-        if (!declaration || typeof declaration !== "object")
-          throw new Error("Editor content is not valid JSON");
-        const m = netboxSession.manifests.get(String(declaration.id ?? ""));
-        if (!m)
-          throw new Error(
-            "No NetBox provenance for this declaration. Load an application via “Load from NetBox…” first (write-back only works in the session that loaded it)."
+  // Compute the change set + drift for a (declaration, manifest) pair.
+  async function computeRows(
+    decl: Record<string, unknown>,
+    m: AppManifest
+  ): Promise<void> {
+    setManifest(m);
+    const changeSet = computeUpdates(decl, m);
+    setNotes(changeSet.notes);
+
+    // Drift check for updates and deletes.
+    setBusy("Checking for drift…");
+    const drift = new Map<string, boolean>();
+    const entries = [
+      ...changeSet.updates.map((u) => u.entry),
+      ...changeSet.deletes.map((d) => d.entry),
+    ];
+    await Promise.all(
+      entries.map(async (entry) => {
+        try {
+          const obj = await netboxRest<{ last_updated?: string }>(
+            `${PLUGIN_BASE}/${entry.endpoint}/${entry.id}/`
           );
-        setManifest(m);
-        const changeSet = computeUpdates(declaration, m);
-        setNotes(changeSet.notes);
+          const a = Date.parse(entry.lastUpdated ?? "");
+          const b = Date.parse(obj.last_updated ?? "");
+          // NaN !== NaN → unparseable timestamps fail safe (drifted).
+          drift.set(entry.as3Key, a !== b);
+        } catch {
+          drift.set(entry.as3Key, true);
+        }
+      })
+    );
 
-        // Drift check for updates and deletes.
-        setBusy("Checking for drift…");
-        const drift = new Map<string, boolean>();
-        const entries = [
-          ...changeSet.updates.map((u) => u.entry),
-          ...changeSet.deletes.map((d) => d.entry),
-        ];
-        await Promise.all(
-          entries.map(async (entry) => {
-            try {
-              const obj = await netboxRest<{ last_updated?: string }>(
-                `${PLUGIN_BASE}/${entry.endpoint}/${entry.id}/`
-              );
-              const a = Date.parse(entry.lastUpdated ?? "");
-              const b = Date.parse(obj.last_updated ?? "");
-              // NaN !== NaN → unparseable timestamps fail safe (drifted).
-              drift.set(entry.as3Key, a !== b);
-            } catch {
-              drift.set(entry.as3Key, true);
-            }
-          })
-        );
-
-        const newRows: Row[] = [
+    const newRows: Row[] = [
           ...changeSet.creates.map(
             (create): Row => ({
               kind: "create",
@@ -137,18 +140,57 @@ export default function PushNetboxDialog({
               status: "pending",
             };
           }),
-          ...changeSet.deletes.map(
-            (del): Row => ({
-              kind: "delete",
-              del,
-              // Deletions are destructive — never pre-checked.
-              checked: false,
-              drifted: drift.get(del.entry.as3Key) ?? false,
-              status: "pending",
-            })
-          ),
-        ];
-        setRows(newRows);
+      ...changeSet.deletes.map(
+        (del): Row => ({
+          kind: "delete",
+          del,
+          // Deletions are destructive — never pre-checked.
+          checked: false,
+          drifted: drift.get(del.entry.as3Key) ?? false,
+          status: "pending",
+        })
+      ),
+    ];
+    setRows(newRows);
+  }
+
+  // On open: parse the editor, find provenance, and either diff against it or
+  // open the net-new application survey.
+  useEffect(() => {
+    void (async () => {
+      setBusy("Computing changes…");
+      setSummary(undefined);
+      try {
+        const decl = parse(declarationText, [], {
+          allowTrailingComma: true,
+        }) as Record<string, unknown>;
+        if (!decl || typeof decl !== "object")
+          throw new Error("Editor content is not valid JSON");
+        setDeclaration(decl);
+        const m = netboxSession.manifests.get(String(decl.id ?? ""));
+        if (m) {
+          await computeRows(decl, m);
+          return;
+        }
+        // No provenance: this declaration can become a NET-NEW application.
+        const appKey = findApplicationKey(decl);
+        if (!appKey)
+          throw new Error(
+            "No NetBox provenance and no Application object in the declaration — nothing to push."
+          );
+        const appObj = decl[appKey] as Record<string, unknown>;
+        setBusy("Loading clusters…");
+        const clusters = await netboxRest<{
+          results: { id: number; name: string }[];
+        }>(`/api/virtualization/clusters/?limit=500`);
+        setSurvey({
+          appKey,
+          name: appKey,
+          description: typeof appObj.label === "string" ? appObj.label : "",
+          snowSysId: "",
+          clusterId: null,
+          clusters: clusters.results,
+        });
       } catch (err) {
         setError(String(err instanceof Error ? err.message : err));
       } finally {
@@ -157,6 +199,41 @@ export default function PushNetboxDialog({
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Create the surveyed application, bootstrap its provenance, and fall
+  // through to the ordinary changeset flow (everything becomes a create).
+  async function createApplication() {
+    if (!survey || !declaration || survey.clusterId === null) return;
+    setBusy("Creating application…");
+    setError(undefined);
+    try {
+      const body: Record<string, unknown> = {
+        name: survey.name.trim(),
+        slug: slugify(survey.name),
+        description: survey.description,
+      };
+      if (survey.snowSysId.trim()) body.snow_sys_id = survey.snowSysId.trim();
+      const created = await netboxRest<Record<string, unknown>>(
+        `${PLUGIN_BASE}/applications/`,
+        { method: "POST", body }
+      );
+      const m = newAppManifest(
+        declaration,
+        survey.appKey,
+        created,
+        survey.clusterId
+      );
+      netboxSession.manifests.set(m.declarationId, m);
+      netboxSession.apps = undefined; // the cached picker list is stale now
+      setSurvey(undefined);
+      setBusy("Computing changes…");
+      await computeRows(declaration, m);
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setBusy(null);
+    }
+  }
 
   const applicable = rows.filter((r) => r.checked && rowOpCount(r) > 0);
   const totalOps = applicable.reduce((n, r) => n + rowOpCount(r), 0);
@@ -585,12 +662,72 @@ export default function PushNetboxDialog({
           Writes this declaration's edits back to the NetBox objects it was
           loaded from: field updates, pool membership, virtual addresses, and
           object creation/deletion. IPs and placeholder certificate records are created as
-          needed. Deletions are never pre-selected.
+          needed. Deletions are never pre-selected. A declaration that was not
+          loaded from NetBox can be created as a new application.
         </p>
 
         {error && <div className="modal-error">{error}</div>}
 
-        {!error && rows.length === 0 && !busy && (
+        {survey && (
+          <>
+            <p className="ctx-hint">
+              This declaration was not loaded from NetBox, so it can be created
+              as a <strong>new application</strong>. NetBox needs a few fields
+              AS3 does not carry; the virtual servers are placed on the chosen
+              cluster.
+            </p>
+            <label className="modal-field">
+              <span>Application name</span>
+              <input
+                value={survey.name}
+                disabled={busy !== null}
+                onChange={(e) => setSurvey({ ...survey, name: e.target.value })}
+              />
+            </label>
+            <label className="modal-field">
+              <span>Description</span>
+              <input
+                value={survey.description}
+                disabled={busy !== null}
+                onChange={(e) =>
+                  setSurvey({ ...survey, description: e.target.value })
+                }
+              />
+            </label>
+            <label className="modal-field">
+              <span>SNOW sys_id (optional)</span>
+              <input
+                value={survey.snowSysId}
+                disabled={busy !== null}
+                onChange={(e) =>
+                  setSurvey({ ...survey, snowSysId: e.target.value })
+                }
+              />
+            </label>
+            <label className="modal-field">
+              <span>Cluster</span>
+              <select
+                value={survey.clusterId ?? ""}
+                disabled={busy !== null}
+                onChange={(e) =>
+                  setSurvey({
+                    ...survey,
+                    clusterId: e.target.value ? Number(e.target.value) : null,
+                  })
+                }
+              >
+                <option value="">Select a cluster…</option>
+                {survey.clusters.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </>
+        )}
+
+        {!error && !survey && rows.length === 0 && !busy && (
           <p className="ctx-hint">
             No pushable changes — the declaration matches NetBox.
           </p>
@@ -646,7 +783,20 @@ export default function PushNetboxDialog({
 
         <div className="modal-actions">
           <button onClick={onClose}>{done ? "Done" : "Close"}</button>
-          {!done && (
+          {!done && survey && (
+            <button
+              className="primary"
+              disabled={
+                busy !== null ||
+                survey.name.trim() === "" ||
+                survey.clusterId === null
+              }
+              onClick={() => void createApplication()}
+            >
+              {busy ?? "Create application…"}
+            </button>
+          )}
+          {!done && !survey && (
             <button
               className="primary"
               disabled={busy !== null || applicable.length === 0}
