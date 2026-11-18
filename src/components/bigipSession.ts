@@ -3,17 +3,54 @@
 //
 // Kept out of the dialog so that file exports only components (see chips.ts).
 
-export const remembered = {
-  host: "",
-  username: "",
-  password: "",
-  tenant: "Applications",
-  validateCert: true,
+const STORE_KEY = "as3b-bigip-session";
+
+interface BigipSession {
+  host: string;
+  username: string;
+  password: string;
+  tenant: string;
+  validateCert: boolean;
+  connected: boolean;
+  as3Version: string;
+}
+
+function restore(): Partial<BigipSession> {
+  try {
+    return JSON.parse(sessionStorage.getItem(STORE_KEY) ?? "{}") as Record<
+      string,
+      never
+    >;
+  } catch {
+    return {};
+  }
+}
+
+const stored = restore();
+
+export const remembered: BigipSession = {
+  host: stored.host ?? "",
+  username: stored.username ?? "",
+  password: stored.password ?? "",
+  tenant: stored.tenant ?? "Applications",
+  validateCert: stored.validateCert ?? true,
   /** True once "Connect to BIG-IP…" has verified the device this session. */
-  connected: false,
+  connected: stored.connected ?? false,
   /** AS3 version reported by the device at connect time. */
-  as3Version: "",
+  as3Version: stored.as3Version ?? "",
 };
+
+/** Mirror the session to this tab's storage, so a reload stays connected.
+ * Per-tab, gone when the tab closes; same CSP boundary as the in-memory
+ * copy. The password is included because every BIG-IP call sends basic
+ * auth — without it a restored "connection" could not make a single call. */
+export function persistBigipSession(): void {
+  try {
+    sessionStorage.setItem(STORE_KEY, JSON.stringify(remembered));
+  } catch {
+    /* storage unavailable: the in-memory session still works */
+  }
+}
 
 /** Request headers for the dev/production server's BIG-IP proxy. */
 export function bigipAuthHeaders(): Record<string, string> {

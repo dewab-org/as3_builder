@@ -35,7 +35,11 @@ import {
 } from "./schemas";
 import { getTemplate } from "./templates";
 import { useDocument } from "./hooks/useDocument";
-import { netboxSession } from "./netboxSession";
+import {
+  invalidateNetboxAuth,
+  netboxGraphql,
+  netboxSession,
+} from "./netboxSession";
 import { loadAppConfig } from "./appConfig";
 import {
   DEFAULT_POLICY,
@@ -43,11 +47,15 @@ import {
   type UnsupportedRule,
 } from "./engine/supportPolicy";
 import HoverCard, { type HoverAnchor } from "./components/HoverCard";
-import { applyBigipDefaults } from "./components/bigipSession";
+import {
+  applyBigipDefaults,
+  remembered as bigipRemembered,
+} from "./components/bigipSession";
 import { useValidation } from "./hooks/useValidation";
 import {
   applicationMemberClasses,
   bigipCandidates,
+  APPLICATION_LIST_QUERY,
   buildClassRegistry,
   computeUpdates,
   effectiveSchema,
@@ -152,8 +160,34 @@ export default function App() {
   const [baselineText, setBaselineText] = useState(INITIAL_TEXT);
   const [showBigipDialog, setShowBigipDialog] = useState(false);
   const [showBigipConnectDialog, setShowBigipConnectDialog] = useState(false);
-  const [bigipConnected, setBigipConnected] = useState(false);
+  // Restored from this tab's storage: a reload keeps the BIG-IP connection.
+  const [bigipConnected, setBigipConnected] = useState(
+    () => bigipRemembered.connected
+  );
+  const [netboxConnected, setNetboxConnected] = useState(
+    () => !!netboxSession.apps
+  );
   const [showConnectDialog, setShowConnectDialog] = useState(false);
+
+  // A reload keeps the NetBox token (sessionStorage); restore the app list —
+  // and with it the Connected state — in the background.
+  useEffect(() => {
+    if (!netboxSession.authHeader || netboxSession.apps) return;
+    void netboxGraphql<{ application_list: { id: string; name: string }[] }>(
+      APPLICATION_LIST_QUERY
+    )
+      .then((data) => {
+        netboxSession.apps = [...data.application_list].sort((a, b) =>
+          a.name.localeCompare(b.name)
+        );
+        setNetboxConnected(true);
+      })
+      .catch(() => {
+        // Token expired or NetBox away: back to Not connected.
+        invalidateNetboxAuth();
+        setNetboxConnected(false);
+      });
+  }, []);
   const [showNetboxDialog, setShowNetboxDialog] = useState(false);
   const [showBigipLoadDialog, setShowBigipLoadDialog] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
@@ -1026,7 +1060,7 @@ export default function App() {
         onValidateOnBigip={() => setShowBigipDialog(true)}
         netboxEnabled={policy.netbox}
         onConnectNetbox={() => setShowConnectDialog(true)}
-        netboxConnected={!!netboxSession.apps}
+        netboxConnected={netboxConnected || !!netboxSession.apps}
         onConnectBigip={() => setShowBigipConnectDialog(true)}
         bigipConnected={bigipConnected}
         onLoadFromNetbox={() => setShowNetboxDialog(true)}
@@ -1123,6 +1157,7 @@ export default function App() {
         <NetboxConnectDialog
           configWarnings={configWarnings}
           onConnected={() => {
+            setNetboxConnected(true);
             setShowConnectDialog(false);
             // Deep link: continue straight into loading the linked app.
             if (deepLinkRef.current?.appId) setShowNetboxDialog(true);

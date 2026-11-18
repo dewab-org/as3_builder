@@ -4,6 +4,7 @@ import {
   invalidateNetboxAuth,
   netboxGraphql,
   netboxSession,
+  persistNetboxSession,
   type AppEntry,
 } from "../netboxSession";
 
@@ -57,6 +58,7 @@ export default function NetboxConnectDialog({
       netboxSession.apps = [...data.application_list].sort((a, b) =>
         a.name.localeCompare(b.name)
       );
+      persistNetboxSession();
       onConnected();
     } catch (err) {
       invalidateNetboxAuth(); // stale token? re-provision next time

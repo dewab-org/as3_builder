@@ -1,4 +1,5 @@
 import { useRef, type ReactNode } from "react";
+import MaterialIcon from "./MaterialIcon";
 import { SCHEMA_LIST } from "../schemas";
 import { TEMPLATES, getTemplate } from "../templates";
 
@@ -34,7 +35,7 @@ function GroupButton({
     >
       {mode !== "text" && (
         <span className="btn-icon" aria-hidden="true">
-          {icon}
+          <MaterialIcon name={icon} />
         </span>
       )}
       {mode !== "icons" && <span className="btn-label">{label}</span>}
@@ -214,7 +215,7 @@ export default function Toolbar({
         title="Undo (⌘Z)"
         aria-label="Undo"
       >
-        ↶
+        <MaterialIcon name="undo" />
       </button>
       <button
         onClick={onRedo}
@@ -222,7 +223,7 @@ export default function Toolbar({
         title="Redo (⇧⌘Z)"
         aria-label="Redo"
       >
-        ↷
+        <MaterialIcon name="redo" />
       </button>
       <div className="spacer" />
       {netboxEnabled && (
@@ -230,7 +231,7 @@ export default function Toolbar({
           <span className="toolbar-group-label">NetBox</span>
           <div className="toolbar-group-buttons">
             <GroupButton
-              icon={netboxConnected ? "✓" : "⇄"}
+              icon={netboxConnected ? "check_circle" : "sync_alt"}
               label={netboxConnected ? "Connected" : "Connect…"}
               mode={labelMode}
               onClick={onConnectNetbox}
@@ -242,14 +243,14 @@ export default function Toolbar({
               }
             />
             <GroupButton
-              icon="⤓"
+              icon="download"
               label="Load…"
               mode={labelMode}
               onClick={onLoadFromNetbox}
               title="Read a load-balancer application from NetBox as AS3"
             />
             <GroupButton
-              icon="⤒"
+              icon="upload"
               label="Push…"
               mode={labelMode}
               onClick={onPushToNetbox}
@@ -281,7 +282,7 @@ export default function Toolbar({
         <span className="toolbar-group-label">BIG-IP</span>
         <div className="toolbar-group-buttons">
           <GroupButton
-            icon={bigipConnected ? "✓" : "⇄"}
+            icon={bigipConnected ? "check_circle" : "sync_alt"}
             label={bigipConnected ? "Connected" : "Connect…"}
             mode={labelMode}
             onClick={onConnectBigip}
@@ -293,14 +294,14 @@ export default function Toolbar({
             }
           />
           <GroupButton
-            icon="⤓"
+            icon="download"
             label="Load…"
             mode={labelMode}
             onClick={onLoadFromBigip}
             title="Read an application from a device's running configuration, via AS3's per-application API"
           />
           <GroupButton
-            icon="✓"
+            icon="task_alt"
             label="Validate…"
             mode={labelMode}
             onClick={onValidateOnBigip}
@@ -312,14 +313,14 @@ export default function Toolbar({
         <span className="toolbar-group-label">JSON</span>
         <div className="toolbar-group-buttons">
           <GroupButton
-            icon="📂"
+            icon="folder_open"
             label="Open…"
             mode={labelMode}
             onClick={() => fileInputRef.current?.click()}
             title="Open a declaration from a local JSON file"
           />
           <GroupButton
-            icon="💾"
+            icon="save"
             label="Save"
             mode={labelMode}
             onClick={handleSave}
@@ -352,7 +353,7 @@ export default function Toolbar({
         onClick={onToggleTheme}
         title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
       >
-        {theme === "dark" ? "☀" : "☾"}
+        <MaterialIcon name={theme === "dark" ? "light_mode" : "dark_mode"} />
       </button>
     </div>
   );

@@ -19,6 +19,7 @@ import {
   type DocumentationIndex,
   type SupportPolicy,
 } from "../engine";
+import MaterialIcon from "./MaterialIcon";
 import PropertyWidget from "./PropertyWidget";
 import ConfirmButton from "./ConfirmButton";
 import AddableList, {
@@ -208,7 +209,7 @@ export default function ContextPanel({
               aria-label={`Rename ${nodeName}`}
               onClick={() => setRename({ value: String(nodeName), error: null })}
             >
-              ✎
+              <MaterialIcon name="edit" size={16} />
             </button>
           )}
         {nodeName !== undefined && (
@@ -218,7 +219,7 @@ export default function ContextPanel({
             armedLabel="delete?"
             onConfirm={() => onDeleteNode(context.path)}
           >
-            🗑
+            <MaterialIcon name="delete" size={16} />
           </ConfirmButton>
         )}
       </div>

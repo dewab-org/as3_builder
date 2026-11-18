@@ -1,5 +1,9 @@
 import { useState } from "react";
-import { bigipAuthHeaders, remembered } from "./bigipSession";
+import {
+  bigipAuthHeaders,
+  persistBigipSession,
+  remembered,
+} from "./bigipSession";
 
 interface BigipConnectDialogProps {
   onConnected: () => void;
@@ -51,9 +55,11 @@ export default function BigipConnectDialog({
         typeof body === "object" && body !== null
           ? String((body as Record<string, unknown>).version ?? "")
           : "";
+      persistBigipSession();
       onConnected();
     } catch (err) {
       remembered.connected = false;
+      persistBigipSession();
       setError(String(err instanceof Error ? err.message : err));
     } finally {
       setBusy(null);
