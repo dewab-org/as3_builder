@@ -179,6 +179,14 @@ export default function PushNetboxDialog({
             "No NetBox provenance and no Application object in the declaration — nothing to push."
           );
         const appObj = decl[appKey] as Record<string, unknown>;
+        if (
+          !netboxSession.authHeader &&
+          !netboxSession.token.trim() &&
+          !netboxSession.username
+        )
+          throw new Error(
+            "Not connected to NetBox. Open “Load from NetBox…”, connect (the application list loading is enough), then push again to create this declaration as a new application."
+          );
         setBusy("Loading clusters…");
         const clusters = await netboxRest<{
           results: { id: number; name: string }[];

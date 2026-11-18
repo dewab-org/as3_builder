@@ -65,10 +65,16 @@ export async function provisionAuth(): Promise<string> {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
+    // DRF field errors ({username: ["This field is required."]}) carry the
+    // actual reason — a bare "HTTP 400" hides it.
+    const fallback =
+      typeof body === "object" && body !== null && Object.keys(body).length > 0
+        ? `HTTP ${res.status}: ${JSON.stringify(body).slice(0, 200)}`
+        : `HTTP ${res.status}`;
     throw new Error(
       res.status === 403 || res.status === 401
         ? "Authentication failed (check username/password)"
-        : (body.error ?? body.detail ?? `HTTP ${res.status}`)
+        : (body.error ?? body.detail ?? fallback)
     );
   }
   const header = body.token
