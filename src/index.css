@@ -2263,3 +2263,18 @@ body {
 .modified-line {
   background: var(--modified-bg);
 }
+
+/* Inline rename on double-click of an object card's name. */
+.obj-rename {
+  font: inherit;
+  font-weight: 600;
+  min-width: 120px;
+  padding: 0 4px;
+  border-radius: 4px;
+  border: 1px solid var(--toolbar-btn-border, #888);
+}
+
+.obj-rename.invalid {
+  border-color: #d33;
+  outline: 1px solid #d33;
+}

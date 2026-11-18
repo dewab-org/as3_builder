@@ -188,9 +188,17 @@ export default function PushNetboxDialog({
             "Not connected to NetBox. Use “Connect…” in the NetBox toolbar group, then push again to create this declaration as a new application."
           );
         setBusy("Loading clusters…");
-        const clusters = await netboxRest<{
+        // Virtual servers live on BIG-IP HA clusters; other cluster types
+        // (vSphere, Kubernetes) are not placement targets. Estates without
+        // the bigip-ha type fall back to the full list rather than a dead
+        // dropdown.
+        let clusters = await netboxRest<{
           results: { id: number; name: string }[];
-        }>(`/api/virtualization/clusters/?limit=500`);
+        }>(`/api/virtualization/clusters/?type=bigip-ha&limit=500`);
+        if (clusters.results.length === 0)
+          clusters = await netboxRest<{
+            results: { id: number; name: string }[];
+          }>(`/api/virtualization/clusters/?limit=500`);
         setSurvey({
           appKey,
           name: appKey,

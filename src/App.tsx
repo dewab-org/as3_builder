@@ -1266,6 +1266,7 @@ export default function App() {
               onEditValue={handleEdit}
               onEditMany={applyEditMany}
               onAppendObjectItem={handleAppendObjectItem}
+              onRenameNode={handleRenameNode}
               onHoverPath={setHover}
               relatedKeys={relatedKeys}
               searchKeys={searchKeys}

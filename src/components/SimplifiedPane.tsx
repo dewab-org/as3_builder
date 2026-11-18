@@ -41,6 +41,9 @@ interface SimplifiedPaneProps {
   onEditMany: (edits: [JsonPath, unknown][]) => void;
   /** Append a schema-stubbed object item (e.g. a pool member) and focus it. */
   onAppendObjectItem: (arrayPath: JsonPath, index: number) => void;
+  /** Rename an application or member key (references are rewritten);
+   * returns an error message or null. Offered on double-click of the name. */
+  onRenameNode?: (path: JsonPath, newName: string) => string | null;
   /** Reports what the pointer is over, with its position, for the hover card. */
   onHoverPath: (
     anchor: { path: JsonPath; x: number; y: number } | null
@@ -310,6 +313,8 @@ interface RowCtx {
   ) => { mode: "hard" | "soft" | "review"; reason?: string } | undefined;
   /** True when the path sits inside a hard-blacklisted object. */
   isLocked: (path: JsonPath) => boolean;
+  /** Rename handler for application/member keys; absent = not renameable. */
+  renameAt?: (path: JsonPath, newName: string) => string | null;
 }
 
 /** A `{bigip: "/path"}` value names an object that lives on the device or in
@@ -560,6 +565,18 @@ function ObjectCard({
   const selected = pathsEqual(path, ctx.cursorPath);
   const collapsed = ctx.isCollapsed(path);
   const entries = Object.entries(value).filter(([k]) => k !== "class");
+  // Double-click rename: applications and their members only (the engine
+  // rewrites references), never array items or locked objects.
+  const renameable =
+    ctx.renameAt !== undefined &&
+    path.length <= 2 &&
+    typeof path[path.length - 1] === "string" &&
+    !insideImmutable &&
+    !ctx.isLocked(path);
+  const [renaming, setRenaming] = useState<{
+    value: string;
+    error: string | null;
+  } | null>(null);
   // Objects NetBox cannot own read differently, so an edit that can never be
   // pushed is obvious before it is made.
   const immutability = immutabilityOf(value);
@@ -579,7 +596,43 @@ function ObjectCard({
         }}
       >
         <Chevron path={path} ctx={ctx} />
-        <span className="obj-name">{label}</span>
+        {renaming ? (
+          <input
+            className={`obj-rename${renaming.error ? " invalid" : ""}`}
+            autoFocus
+            onFocus={(e) => e.currentTarget.select()}
+            value={renaming.value}
+            title={renaming.error ?? "Enter renames, Escape cancels"}
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) =>
+              setRenaming({ value: e.target.value, error: null })
+            }
+            onBlur={() => setRenaming(null)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setRenaming(null);
+              if (e.key === "Enter") {
+                const err = ctx.renameAt!(path, renaming.value.trim());
+                if (err) setRenaming({ ...renaming, error: err });
+                else setRenaming(null);
+              }
+            }}
+          />
+        ) : (
+          <span
+            className="obj-name"
+            title={renameable ? "Double-click to rename" : undefined}
+            onDoubleClick={
+              renameable
+                ? (e) => {
+                    e.stopPropagation();
+                    setRenaming({ value: label, error: null });
+                  }
+                : undefined
+            }
+          >
+            {label}
+          </span>
+        )}
         {badge && <span className="obj-class">{badge}</span>}
         {immutability && !insideImmutable && (
           <span className="obj-readonly" title={immutability.reason}>
@@ -753,6 +806,7 @@ export default function SimplifiedPane({
   onEditValue,
   onEditMany,
   onAppendObjectItem,
+  onRenameNode,
   onHoverPath,
   relatedKeys,
   searchKeys = null,
@@ -852,6 +906,7 @@ export default function SimplifiedPane({
     },
     appendObjectItem: (arrayPath, length) =>
       onAppendObjectItem(arrayPath, length),
+    renameAt: onRenameNode,
     previewBase64: (wrapper) => {
       const d = decodeBase64Safely(wrapper.base64);
       const firstLine = d.text.split("\n")[0] ?? "";

@@ -228,6 +228,7 @@ export default function ContextPanel({
         <div className="ctx-rename-row">
           <input
             autoFocus
+            onFocus={(e) => e.currentTarget.select()}
             value={rename.value}
             onChange={(e) => setRename({ value: e.target.value, error: null })}
             onKeyDown={(e) => {
