@@ -189,6 +189,78 @@ describe("write-back changeset (W1)", () => {
     ]);
   });
 
+  it("round-trips a spread Service_* protocol profile without a detach op", () => {
+    // A Service_*-class protocol profile has no per-VS pointer (its options
+    // are spread into the service), so an untouched declaration must not
+    // produce a "detach all protocol profiles" op.
+    const graph = {
+      id: "900",
+      name: "app900",
+      virtual_servers: [
+        {
+          id: 90,
+          name: "vs-udp",
+          protocol: "udp",
+          service_port: 111,
+          virtual_addresses: [{ id: 1, address: "10.0.0.40/32" }],
+          protocol_profiles: [
+            {
+              id: 5,
+              name: "udp-idle",
+              options: { class: "Service_UDP", idleTimeout: 180 },
+            },
+          ],
+        },
+      ],
+    };
+    const { declaration } = renderNetboxApp(graph);
+    const manifest = buildManifest(graph, declaration);
+    const { updates, notes } = computeUpdates(
+      JSON.parse(JSON.stringify(declaration)),
+      manifest
+    );
+    expect(notes).toEqual([]);
+    expect(updates).toEqual([]);
+  });
+
+  it("round-trips a persistence iRule policy without a detach op", () => {
+    const graph = {
+      id: "901",
+      name: "app901",
+      virtual_servers: [
+        {
+          id: 91,
+          name: "vs-https",
+          protocol: "https",
+          service_port: 443,
+          persistence: ["universal"],
+          virtual_addresses: [{ id: 2, address: "10.0.0.41/32" }],
+          policies: [
+            {
+              id: 6,
+              name: "session-pol",
+              policy_type: "irule",
+              is_persistence: true,
+              rules: {
+                class: "iRule",
+                iRule: "when HTTP_REQUEST { persist uie 1 }",
+                isPersistenceMethod: true,
+              },
+            },
+          ],
+        },
+      ],
+    };
+    const { declaration } = renderNetboxApp(graph);
+    const manifest = buildManifest(graph, declaration);
+    const { updates, notes } = computeUpdates(
+      JSON.parse(JSON.stringify(declaration)),
+      manifest
+    );
+    expect(notes).toEqual([]);
+    expect(updates).toEqual([]);
+  });
+
   it("stores TLSv1.0 as version 0 instead of dropping it", () => {
     const { declaration, manifest } = freshRender();
     const appObj = declaration[appName] as Dict;

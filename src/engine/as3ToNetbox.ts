@@ -10,6 +10,7 @@
 import {
   LEGACY_LB_ALIASES,
   fqdnResolutionFromNetbox,
+  isPersistencePolicy,
   sanitizeKey,
 } from "./netboxAs3";
 import { decodeBase64 } from "./base64";
@@ -790,13 +791,28 @@ export function buildManifest(
       entry.snatPoolName = isPlainObject(netboxObj.snat_pool)
         ? String(netboxObj.snat_pool.name)
         : null;
-      const linkNames = (list: unknown) =>
-        ((list as Dict[] | undefined) ?? []).map((o) =>
-          sanitizeKey(String(o.name))
-        );
+      const linkNames = (list: Dict[]) =>
+        list.map((o) => sanitizeKey(String(o.name)));
+      // Only links the renderer represents as per-VS pointers belong here,
+      // or an untouched declaration diffs as a detach:
+      // - a Service_*-class protocol profile is spread into the service's own
+      //   fields (no pointer), so only TCP/HTTP profiles are link targets;
+      // - a persistence iRule (R5) is reached through persistenceMethods and
+      //   its Persist artifact, never the iRules list.
       entry.linkNames = {
-        policies: linkNames(netboxObj.policies),
-        protocol_profiles: linkNames(netboxObj.protocol_profiles),
+        policies: linkNames(
+          ((netboxObj.policies as Dict[] | undefined) ?? []).filter(
+            (p) => !isPersistencePolicy(p)
+          )
+        ),
+        protocol_profiles: linkNames(
+          ((netboxObj.protocol_profiles as Dict[] | undefined) ?? []).filter(
+            (pp) => {
+              const cls = isPlainObject(pp.options) ? pp.options.class : undefined;
+              return cls === "TCP_Profile" || cls === "HTTP_Profile";
+            }
+          )
+        ),
       };
     }
     entries.push(entry);
