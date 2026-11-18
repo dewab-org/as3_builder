@@ -2301,3 +2301,35 @@ body {
   opacity: 1;
   background: var(--accent-soft, rgba(216, 86, 2, 0.15));
 }
+
+/* Delete beside the name, styled like the rename pencil; first click arms
+   it (red "delete?"), second click deletes. */
+.obj-delete-trigger {
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 1px 3px;
+  border-radius: 3px;
+  opacity: 0.35;
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+}
+
+.obj-card-head:hover .obj-delete-trigger {
+  opacity: 0.8;
+}
+
+.obj-delete-trigger:hover {
+  opacity: 1;
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.obj-delete-trigger.armed {
+  opacity: 1;
+  color: #fff;
+  background: var(--danger);
+  font-weight: 600;
+}

@@ -9,6 +9,7 @@ import {
   validateValue,
 } from "../engine";
 import Base64Editor from "./Base64Editor";
+import ConfirmButton from "./ConfirmButton";
 import MaterialIcon from "./MaterialIcon";
 import { revealRelated } from "./revealRelated";
 
@@ -647,6 +648,16 @@ function ObjectCard({
             <MaterialIcon name="edit" size={13} />
           </button>
         )}
+        {!renaming && (
+          <ConfirmButton
+            className="obj-delete-trigger"
+            title={`Delete ${label}`}
+            armedLabel="delete?"
+            onConfirm={() => ctx.deleteAt(path)}
+          >
+            <MaterialIcon name="delete" size={13} />
+          </ConfirmButton>
+        )}
         {badge && <span className="obj-class">{badge}</span>}
         {immutability && !insideImmutable && (
           <span className="obj-readonly" title={immutability.reason}>
@@ -681,7 +692,6 @@ function ObjectCard({
           </span>
         )}
         <span className="obj-spacer" />
-        <DeleteBtn path={path} ctx={ctx} title={`Remove ${label}`} />
       </div>
       {!collapsed && (
         <div className="obj-card-body">

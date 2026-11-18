@@ -1,4 +1,5 @@
 import { useRef, type ReactNode } from "react";
+import AppLogo from "./AppLogo";
 import MaterialIcon from "./MaterialIcon";
 import { SCHEMA_LIST } from "../schemas";
 import { TEMPLATES, getTemplate } from "../templates";
@@ -137,8 +138,7 @@ export default function Toolbar({
   return (
     <div className="toolbar">
       {/* The title doubles as the About control: version and author live
-          behind the name, where convention puts them. The mark: a declaration
-          brace fanning out to three balanced nodes. */}
+          behind the name, where convention puts them. */}
       <h1>
         <button
           className="toolbar-title"
@@ -146,31 +146,7 @@ export default function Toolbar({
           title="About AS3 Builder (version, author)"
           aria-label="About AS3 Builder"
         >
-          <svg
-            className="app-logo"
-            viewBox="0 0 24 24"
-            width="24"
-            height="24"
-            aria-hidden="true"
-          >
-            <path
-              d="M9 3.5 C6.5 3.5 7.5 7 5.5 7 L4.5 7 L4.5 9 L5.5 9 C7.5 9 6.5 12.5 9 12.5"
-              transform="translate(0,4)"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-            />
-            <g stroke="currentColor" strokeWidth="1.5" fill="none">
-              <path d="M11 12 L17 5.5 M11 12 L18 12 M11 12 L17 18.5" />
-            </g>
-            <circle cx="11" cy="12" r="2.1" fill="currentColor" />
-            <g fill="currentColor">
-              <circle cx="18.5" cy="5" r="1.8" />
-              <circle cx="19.5" cy="12" r="1.8" />
-              <circle cx="18.5" cy="19" r="1.8" />
-            </g>
-          </svg>
+          <AppLogo />
           AS3 Builder
         </button>
       </h1>
