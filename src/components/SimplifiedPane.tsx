@@ -9,6 +9,7 @@ import {
   validateValue,
 } from "../engine";
 import Base64Editor from "./Base64Editor";
+import MaterialIcon from "./MaterialIcon";
 import { revealRelated } from "./revealRelated";
 
 // Indented key-value rendering of the document, without JSON syntax.
@@ -632,6 +633,19 @@ function ObjectCard({
           >
             {label}
           </span>
+        )}
+        {renameable && !renaming && (
+          <button
+            className="obj-rename-trigger"
+            title={`Rename ${label}`}
+            aria-label={`Rename ${label}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              setRenaming({ value: label, error: null });
+            }}
+          >
+            <MaterialIcon name="edit" size={13} />
+          </button>
         )}
         {badge && <span className="obj-class">{badge}</span>}
         {immutability && !insideImmutable && (
