@@ -220,7 +220,9 @@ export default function PushNetboxDialog({
       body.monitors = ids;
     }
     if (create.endpoint === "virtual-servers") {
-      body.applications = [appId];
+      // Required single-application FK since plugin 0.9.0 (G2); the required
+      // cluster is already in create.fields (stamped by computeUpdates).
+      body.application = appId;
       if (create.vipAddresses && create.vipAddresses.length > 0) {
         const ids: number[] = [];
         for (const address of create.vipAddresses)

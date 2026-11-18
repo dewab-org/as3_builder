@@ -7,7 +7,11 @@
 // back. Write-back therefore only works for declarations loaded through this
 // tool in the current session.
 
-import { LEGACY_LB_ALIASES, sanitizeKey } from "./netboxAs3";
+import {
+  LEGACY_LB_ALIASES,
+  fqdnResolutionFromNetbox,
+  sanitizeKey,
+} from "./netboxAs3";
 import { decodeBase64 } from "./base64";
 import { isPlainObject } from "./types";
 
@@ -35,6 +39,9 @@ export interface ManifestEntry {
   lastUpdated?: string;
   /** Pool entries: member rows as loaded (W2). */
   members?: MemberRow[];
+  /** Pool entries: FQDN member rows as loaded, in the normalized AS3-group
+   * shape. Compared only — FQDN member edits are not pushed. */
+  fqdnMembers?: Dict[];
   /** Virtual-server entries: VIP addresses as loaded (W2). */
   vips?: { id: number; address: string }[];
   /** Pool entries: monitor AS3 keys as loaded (W4). */
@@ -107,6 +114,11 @@ export interface AppManifest {
   declarationId: string;
   appId: number;
   appKey: string;
+  /** Cluster for NEW virtual servers (plugin 0.9.0 G1 makes it required):
+   * the single cluster the app's virtual servers run in, falling back to the
+   * app's single placement cluster. null/absent = ambiguous — creates are
+   * refused with a note rather than guessed. */
+  createClusterId?: number | null;
   entries: ManifestEntry[];
   /** Rendered objects WITHOUT a writable manifest entry (Service_Address,
    * Certificate, cipher objects, …): key → snapshot as rendered. Used to
@@ -166,15 +178,6 @@ export interface ChangeSet {
   notes: string[];
 }
 
-export function slugify(name: string): string {
-  return (
-    name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "obj"
-  );
-}
-
 /** FK-safe orders: create dependencies first, delete dependents first. */
 export const CREATE_ORDER = [
   "monitors",
@@ -230,8 +233,57 @@ function memberRowsFromNetbox(pool: Dict): MemberRow[] {
   return rows;
 }
 
+// NetBox FQDN member rows (plugin 0.8.0 F13) → the normalized AS3 group
+// shape the renderer emits, for compare-only diffing.
+function fqdnRowsFromNetbox(pool: Dict): Dict[] {
+  const rows: Dict[] = [];
+  for (const m of (pool.members as Dict[] | undefined) ?? []) {
+    const node = m.node as Dict | undefined;
+    if (node?.address || typeof m.hostname !== "string" || !m.hostname) continue;
+    rows.push({
+      hostname: m.hostname,
+      servicePort: Number(m.service_port),
+      enabled: m.enabled !== false,
+      ratio: (m.ratio as number | null) ?? 0,
+      priorityGroup: (m.priority_group as number | null) ?? 0,
+      ...fqdnResolutionFromNetbox(m),
+    });
+  }
+  return sortFqdnRows(rows);
+}
+
+// AS3 fqdn member groups → the same normalized shape.
+function fqdnRowsFromAs3(pool: Dict): Dict[] {
+  const rows: Dict[] = [];
+  for (const group of (pool.members as Dict[] | undefined) ?? []) {
+    if (!isPlainObject(group) || group.addressDiscovery !== "fqdn") continue;
+    const row: Dict = {
+      hostname: group.hostname,
+      servicePort: group.servicePort,
+      enabled: group.adminState !== "disable",
+      ratio: typeof group.ratio === "number" ? group.ratio : 0,
+      priorityGroup:
+        typeof group.priorityGroup === "number" ? group.priorityGroup : 0,
+    };
+    for (const prop of ["addressFamily", "autoPopulate", "queryInterval", "downInterval"]) {
+      if (group[prop] !== undefined) row[prop] = group[prop];
+    }
+    rows.push(row);
+  }
+  return sortFqdnRows(rows);
+}
+
+function sortFqdnRows(rows: Dict[]): Dict[] {
+  return rows.sort(
+    (a, b) =>
+      String(a.hostname).localeCompare(String(b.hostname)) ||
+      Number(a.servicePort) - Number(b.servicePort)
+  );
+}
+
 // AS3 pool.members (grouped) → normalized rows; unsupported member shapes
-// (fqdn/hostname, bigip refs) come back as notes.
+// (bigip refs, non-fqdn discovery) come back as notes. FQDN groups are
+// handled by fqdnRowsFromAs3 and skipped here without a blocking note.
 function memberRowsFromAs3(
   pool: Dict,
   poolKey: string
@@ -244,9 +296,10 @@ function memberRowsFromAs3(
       notes.push(`"${poolKey}": member group without numeric servicePort skipped`);
       continue;
     }
+    if (group.addressDiscovery === "fqdn") continue; // compare-only (F13)
     if (group.hostname || group.addressDiscovery) {
       notes.push(
-        `"${poolKey}": fqdn/discovery members cannot be pushed yet — skipped`
+        `"${poolKey}": discovery members other than fqdn cannot be pushed — skipped`
       );
       continue;
     }
@@ -380,9 +433,21 @@ function vsFieldsFromNetbox(vs: Dict): Dict {
     description: desc64(vs.description),
     enabled: vs.enabled !== false,
     vs_type: vs.vs_type ?? "standard",
-    persistence: vs.persistence ?? [],
+    persistence: [...((vs.persistence as unknown[] | undefined) ?? [])].sort(),
     extra_parameters: vs.extra_parameters ?? null, // snapshot only
   };
+}
+
+// AS3 persistenceMethods → the NetBox persistence list. A {use: …} pointer is
+// a Persist profile reference, which NetBox states as "universal" (R5);
+// builtin method names pass through. Sorted to match vsFieldsFromNetbox.
+function persistenceFromAs3(methods: unknown): unknown[] {
+  const out = new Set<string>();
+  for (const m of (methods as unknown[] | undefined) ?? []) {
+    if (typeof m === "string") out.add(m);
+    else if (isPlainObject(m) && typeof m.use === "string") out.add("universal");
+  }
+  return [...out].sort();
 }
 
 function vsFieldsFromAs3(svc: Dict): { fields: Dict; unsupported: string[] } {
@@ -391,7 +456,7 @@ function vsFieldsFromAs3(svc: Dict): { fields: Dict; unsupported: string[] } {
     description: desc64(svc.remark),
     enabled: svc.enable !== false,
     vs_type: svc.virtualType ?? "standard",
-    persistence: svc.persistenceMethods ?? [],
+    persistence: persistenceFromAs3(svc.persistenceMethods),
   };
   const protocol = PROTOCOL_BY_CLASS[String(svc.class)];
   if (protocol) fields.protocol = protocol;
@@ -453,6 +518,7 @@ function monitorFieldsFromAs3(m: Dict): { fields: Dict; unsupported: string[] } 
 }
 
 const TLS_INT_BY_LABEL: Record<string, number> = {
+  "TLSv1.0": 0,
   "TLSv1.1": 1,
   "TLSv1.2": 2,
   "TLSv1.3": 3,
@@ -473,12 +539,13 @@ function tlsFieldsFromNetbox(profile: Dict): Dict {
 function tlsFieldsFromAs3(tls: Dict): { fields: Dict; unsupported: string[] } {
   const unsupported: string[] = [];
   const versions: number[] = [];
-  // Effective enablement per AS3 defaults (1.0/1.1/1.2 on, 1.3 off).
+  // Effective enablement per AS3 defaults (1.0/1.1/1.2 on, 1.3 off). TLSv1.0
+  // is storable since plugin 0.8.0, but only on a profile whose THD Cyber
+  // exception reference is recorded in NetBox — NetBox refuses it otherwise.
+  if ((tls.tls1_0Enabled as boolean | undefined) ?? true) versions.push(0);
   if ((tls.tls1_1Enabled as boolean | undefined) ?? true) versions.push(1);
   if ((tls.tls1_2Enabled as boolean | undefined) ?? true) versions.push(2);
   if ((tls.tls1_3Enabled as boolean | undefined) ?? false) versions.push(3);
-  if (tls.tls1_0Enabled === true)
-    unsupported.push("TLSv1.0 cannot be stored in NetBox (no such choice)");
   return {
     fields: {
       ciphers:
@@ -698,6 +765,7 @@ export function buildManifest(
     };
     if (spec.endpoint === "backend-pools") {
       entry.members = memberRowsFromNetbox(netboxObj);
+      entry.fqdnMembers = fqdnRowsFromNetbox(netboxObj);
       entry.monitorKeys = (
         (netboxObj.monitors as Dict[] | undefined) ?? []
       ).map((m) => sanitizeKey(String(m.name)));
@@ -829,10 +897,26 @@ export function buildManifest(
     ? Object.keys(app.extra_parameters).map((k) => sanitizeKey(k))
     : [];
 
+  // Cluster for new virtual servers (0.9.0 G1): the single cluster the app's
+  // virtual servers resolve to, else the app's single placement cluster.
+  const clusterIds = new Set<number>();
+  for (const vs of (app.virtual_servers as Dict[] | undefined) ?? []) {
+    const cluster = vs.cluster as Dict | undefined;
+    if (cluster?.id != null) clusterIds.add(Number(cluster.id));
+  }
+  let createClusterId: number | null =
+    clusterIds.size === 1 ? [...clusterIds][0] : null;
+  if (createClusterId === null && clusterIds.size === 0) {
+    const placements = (app.clusters as Dict[] | undefined) ?? [];
+    if (placements.length === 1 && placements[0].id != null)
+      createClusterId = Number(placements[0].id);
+  }
+
   return {
     declarationId: String(declaration.id ?? ""),
     appId: Number(app.id),
     appKey,
+    createClusterId,
     entries,
     artifacts,
     extraKeys,
@@ -968,8 +1052,10 @@ function buildCreate(
   return {
     as3Key,
     className,
+    // slug is derived and read-only since plugin 0.9.0 (G1); cluster is
+    // stamped by computeUpdates from the manifest.
     endpoint: "virtual-servers",
-    fields: { name: as3Key, slug: slugify(as3Key), ...fields },
+    fields: { name: as3Key, ...fields },
     vipAddresses: null, // filled by the caller (needs the application object)
     refs,
     label: `create ${className} "${as3Key}"`,
@@ -1085,6 +1171,13 @@ export function computeUpdates(
             });
           }
         }
+      }
+      // FQDN members (F13) are rendered but compare-only: an edit is
+      // reported, never pushed.
+      if (!valueEq(entry.fqdnMembers ?? [], fqdnRowsFromAs3(current))) {
+        notes.push(
+          `"${entry.as3Key}": FQDN member changes are not pushed — edit them in NetBox.`
+        );
       }
     }
     if (entry.vips) {
@@ -1391,6 +1484,16 @@ export function computeUpdates(
       continue;
     }
     if (create.endpoint === "virtual-servers") {
+      // cluster is required since plugin 0.9.0 (G1). Never guess one: an
+      // ambiguous or unknown cluster refuses the create with a note.
+      const clusterId = manifest.createClusterId ?? null;
+      if (clusterId === null) {
+        notes.push(
+          `"${key}": a virtual server needs a cluster, and this application's could not be determined at load (several clusters, or a manifest from an older load) — create it in NetBox, or reload the application first.`
+        );
+        continue;
+      }
+      create.fields.cluster = clusterId;
       const { addresses, notes: vipNotes } = vipAddressesFromAs3(
         value,
         application,
