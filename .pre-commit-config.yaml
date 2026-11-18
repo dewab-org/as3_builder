@@ -16,6 +16,8 @@ repos:
         # Generated artifacts are megabytes and machine-written.
         exclude: ^(src/schemas/|package-lock\.json)
       - id: check-yaml
+        # Helm templates are not plain YAML; helm lint covers them.
+        exclude: ^chart/templates/
       - id: end-of-file-fixer
         exclude: ^src/schemas/
       - id: trailing-whitespace
@@ -33,6 +35,8 @@ repos:
     hooks:
       - id: yamllint
         args: [--strict]
+        # Helm templates are not plain YAML; helm lint covers them.
+        exclude: ^chart/templates/
 
   - repo: https://github.com/igorshubovych/markdownlint-cli
     rev: v0.45.0
