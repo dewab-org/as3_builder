@@ -40,10 +40,11 @@ export default function BigipConnectDialog({
       });
       const body: unknown = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const detail =
+        const rec =
           typeof body === "object" && body !== null
-            ? ((body as Record<string, unknown>).message as string | undefined)
-            : undefined;
+            ? (body as Record<string, unknown>)
+            : {};
+        const detail = (rec.message ?? rec.error) as string | undefined;
         throw new Error(
           res.status === 401
             ? "Authentication failed (check username/password)"
