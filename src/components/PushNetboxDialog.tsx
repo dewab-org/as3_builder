@@ -185,7 +185,7 @@ export default function PushNetboxDialog({
           !netboxSession.username
         )
           throw new Error(
-            "Not connected to NetBox. Open “Load from NetBox…”, connect (the application list loading is enough), then push again to create this declaration as a new application."
+            "Not connected to NetBox. Use “Connect…” in the NetBox toolbar group, then push again to create this declaration as a new application."
           );
         setBusy("Loading clusters…");
         const clusters = await netboxRest<{

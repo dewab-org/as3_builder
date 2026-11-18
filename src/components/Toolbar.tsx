@@ -16,6 +16,9 @@ interface ToolbarProps {
   /** False hides the NetBox buttons entirely: the deployment has switched
    * the capability off, so nothing should advertise it. */
   netboxEnabled: boolean;
+  onConnectNetbox: () => void;
+  /** Whether this session holds a NetBox connection (cached app list). */
+  netboxConnected: boolean;
   onLoadFromNetbox: () => void;
   onLoadFromBigip: () => void;
   onPushToNetbox: () => void;
@@ -40,6 +43,8 @@ export default function Toolbar({
   currentText,
   onValidateOnBigip,
   netboxEnabled,
+  onConnectNetbox,
+  netboxConnected,
   onLoadFromNetbox,
   onLoadFromBigip,
   onPushToNetbox,
@@ -144,45 +149,72 @@ export default function Toolbar({
       </button>
       <div className="spacer" />
       {netboxEnabled && (
-        <button onClick={onLoadFromNetbox} title="Read a load-balancer application from NetBox as AS3">
-          Load from NetBox…
-        </button>
-      )}
-      <button
-        onClick={onLoadFromBigip}
-        title="Read an application from a device's running configuration, via AS3's per-application API"
-      >
-        Load from BIG-IP…
-      </button>
-      {netboxEnabled && (
-      <button
-        onClick={onPushToNetbox}
-        title={
-          pushPreview
-            ? `${pushPreview.writes} change${pushPreview.writes === 1 ? "" : "s"} to write` +
-              (pushPreview.notes > 0
-                ? `, ${pushPreview.notes} edit${pushPreview.notes === 1 ? "" : "s"} that cannot be pushed`
-                : "")
-            : "Write edited fields back to the NetBox objects this declaration came from"
-        }
-      >
-        Push to NetBox…
-        {pushPreview && pushPreview.writes > 0 && (
-          <span className="toolbar-badge">{pushPreview.writes}</span>
-        )}
-        {pushPreview && pushPreview.notes > 0 && (
-          <span
-            className="toolbar-badge warn"
-            aria-label={`${pushPreview.notes} edits cannot be pushed`}
+        <div className="toolbar-group" role="group" aria-label="NetBox">
+          <span className="toolbar-group-label">NetBox</span>
+          <button
+            onClick={onConnectNetbox}
+            title={
+              netboxConnected
+                ? "Connected — reopen to change the connection"
+                : "Connect to NetBox (required before loading or pushing)"
+            }
           >
-            !{pushPreview.notes}
-          </span>
-        )}
-      </button>
+            <span className="btn-icon" aria-hidden="true">
+              {netboxConnected ? "✓" : "⇄"}
+            </span>
+            {netboxConnected ? "Connected" : "Connect…"}
+          </button>
+          <button
+            onClick={onLoadFromNetbox}
+            title="Read a load-balancer application from NetBox as AS3"
+          >
+            <span className="btn-icon" aria-hidden="true">⤓</span>
+            Load…
+          </button>
+          <button
+            onClick={onPushToNetbox}
+            title={
+              pushPreview
+                ? `${pushPreview.writes} change${pushPreview.writes === 1 ? "" : "s"} to write` +
+                  (pushPreview.notes > 0
+                    ? `, ${pushPreview.notes} edit${pushPreview.notes === 1 ? "" : "s"} that cannot be pushed`
+                    : "")
+                : "Write edits back to NetBox, or create this declaration as a new application"
+            }
+          >
+            <span className="btn-icon" aria-hidden="true">⤒</span>
+            Push…
+            {pushPreview && pushPreview.writes > 0 && (
+              <span className="toolbar-badge">{pushPreview.writes}</span>
+            )}
+            {pushPreview && pushPreview.notes > 0 && (
+              <span
+                className="toolbar-badge warn"
+                aria-label={`${pushPreview.notes} edits cannot be pushed`}
+              >
+                !{pushPreview.notes}
+              </span>
+            )}
+          </button>
+        </div>
       )}
-      <button onClick={onValidateOnBigip} title="Dry-run this declaration against a BIG-IP">
-        Validate on BIG-IP…
-      </button>
+      <div className="toolbar-group" role="group" aria-label="BIG-IP">
+        <span className="toolbar-group-label">BIG-IP</span>
+        <button
+          onClick={onLoadFromBigip}
+          title="Read an application from a device's running configuration, via AS3's per-application API"
+        >
+          <span className="btn-icon" aria-hidden="true">⤓</span>
+          Load…
+        </button>
+        <button
+          onClick={onValidateOnBigip}
+          title="Dry-run this declaration against a BIG-IP"
+        >
+          <span className="btn-icon" aria-hidden="true">✓</span>
+          Validate…
+        </button>
+      </div>
       <button onClick={() => fileInputRef.current?.click()}>Open</button>
       <input
         ref={fileInputRef}

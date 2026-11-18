@@ -13,6 +13,7 @@ import Toolbar from "./components/Toolbar";
 import BigipDialog from "./components/BigipDialog";
 import BigipLoadDialog from "./components/BigipLoadDialog";
 import AboutDialog from "./components/AboutDialog";
+import NetboxConnectDialog from "./components/NetboxConnectDialog";
 import NetboxDialog from "./components/NetboxDialog";
 import PushNetboxDialog from "./components/PushNetboxDialog";
 // Monaco is ~4MB of the bundle and the simplified view is the default, so the
@@ -140,18 +141,20 @@ export default function App() {
   const [cursorOffset, setCursorOffset] = useState(0);
   const [baselineText, setBaselineText] = useState(INITIAL_TEXT);
   const [showBigipDialog, setShowBigipDialog] = useState(false);
+  const [showConnectDialog, setShowConnectDialog] = useState(false);
   const [showNetboxDialog, setShowNetboxDialog] = useState(false);
   const [showBigipLoadDialog, setShowBigipLoadDialog] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const deepLinkRef = useRef<DeepLink | null>(null);
 
-  // Deep link: prefill the NetBox connection and open the Load dialog.
+  // Deep link: prefill the NetBox connection and open the Connect dialog;
+  // its onConnected continues into the Load dialog for the linked app.
   useEffect(() => {
     const link = parseDeepLink();
     if (!link) return;
     deepLinkRef.current = link;
     netboxSession.url = link.netbox;
-    setShowNetboxDialog(true);
+    setShowConnectDialog(true);
   }, []);
   const [showPushDialog, setShowPushDialog] = useState(false);
   const [theme, setTheme] = useState<Theme>(initialTheme);
@@ -283,6 +286,7 @@ export default function App() {
           "NetBox deep link ignored: NetBox support is disabled by this deployment's configuration."
         );
         deepLinkRef.current = null;
+        setShowConnectDialog(false);
         setShowNetboxDialog(false);
       }
       if (config.netbox.url) netboxSession.url = config.netbox.url;
@@ -982,6 +986,8 @@ export default function App() {
         currentText={text}
         onValidateOnBigip={() => setShowBigipDialog(true)}
         netboxEnabled={policy.netbox}
+        onConnectNetbox={() => setShowConnectDialog(true)}
+        netboxConnected={!!netboxSession.apps}
         onLoadFromNetbox={() => setShowNetboxDialog(true)}
         onLoadFromBigip={() => setShowBigipLoadDialog(true)}
         onPushToNetbox={() => setShowPushDialog(true)}
@@ -1061,9 +1067,23 @@ export default function App() {
           onClose={() => setShowBigipLoadDialog(false)}
         />
       )}
+      {policy.netbox && showConnectDialog && (
+        <NetboxConnectDialog
+          configWarnings={configWarnings}
+          onConnected={() => {
+            setShowConnectDialog(false);
+            // Deep link: continue straight into loading the linked app.
+            if (deepLinkRef.current?.appId) setShowNetboxDialog(true);
+          }}
+          onClose={() => setShowConnectDialog(false)}
+        />
+      )}
       {policy.netbox && showNetboxDialog && (
         <NetboxDialog
-          configWarnings={configWarnings}
+          onConnect={() => {
+            setShowNetboxDialog(false);
+            setShowConnectDialog(true);
+          }}
           autoLoadAppId={deepLinkRef.current?.appId}
           onLoad={(newText) => {
             guardedLoad(newText, "the NetBox render", () => {

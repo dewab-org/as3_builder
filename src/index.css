@@ -187,6 +187,39 @@ body {
   cursor: default;
 }
 
+/* Related actions boxed under one label: NetBox (connect/load/push) and
+   BIG-IP (load/validate). The label names the system once, so the buttons
+   inside keep short verbs. */
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px 3px 8px;
+  border: 1px solid var(--toolbar-btn-border);
+  border-radius: 8px;
+}
+
+.toolbar-group-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.85;
+  margin-right: 2px;
+}
+
+.toolbar-group button {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.btn-icon {
+  display: inline-block;
+  margin-right: 5px;
+  opacity: 0.9;
+}
+
 /* Counts on the Push button: what a push would write, and — in warn colour —
    how many edits it cannot. Knowing before the dialog opens is the point. */
 .toolbar-badge {
