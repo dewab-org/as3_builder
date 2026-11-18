@@ -1,6 +1,47 @@
-import { useRef } from "react";
+import { useRef, type ReactNode } from "react";
 import { SCHEMA_LIST } from "../schemas";
 import { TEMPLATES, getTemplate } from "../templates";
+
+/** How grouped toolbar buttons present themselves. */
+export type ToolbarLabelMode = "icons" | "text" | "both";
+
+/** A button inside a labelled toolbar group: icon, text, or both, per the
+ * user's preference. Icon-only keeps the label reachable via tooltip and
+ * aria-label. */
+function GroupButton({
+  icon,
+  label,
+  title,
+  mode,
+  onClick,
+  className,
+  children,
+}: {
+  icon: string;
+  label: string;
+  title: string;
+  mode: ToolbarLabelMode;
+  onClick: () => void;
+  className?: string;
+  children?: ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label={label}
+      className={className}
+      title={mode === "icons" ? `${label} — ${title}` : title}
+    >
+      {mode !== "text" && (
+        <span className="btn-icon" aria-hidden="true">
+          {icon}
+        </span>
+      )}
+      {mode !== "icons" && <span className="btn-label">{label}</span>}
+      {children}
+    </button>
+  );
+}
 
 interface ToolbarProps {
   schemaId: string;
@@ -28,6 +69,9 @@ interface ToolbarProps {
   theme: "light" | "dark";
   onToggleTheme: () => void;
   onAbout: () => void;
+  /** Grouped buttons: icons only (hover for text), text only, or both. */
+  labelMode: ToolbarLabelMode;
+  onLabelModeChange: (mode: ToolbarLabelMode) => void;
   onUndo: () => void;
   onRedo: () => void;
   canUndo: boolean;
@@ -52,6 +96,8 @@ export default function Toolbar({
   theme,
   onToggleTheme,
   onAbout,
+  labelMode,
+  onLabelModeChange,
   onUndo,
   onRedo,
   canUndo,
@@ -151,71 +197,93 @@ export default function Toolbar({
       {netboxEnabled && (
         <div className="toolbar-group" role="group" aria-label="NetBox">
           <span className="toolbar-group-label">NetBox</span>
-          <button
-            onClick={onConnectNetbox}
-            title={
-              netboxConnected
-                ? "Connected — reopen to change the connection"
-                : "Connect to NetBox (required before loading or pushing)"
-            }
-          >
-            <span className="btn-icon" aria-hidden="true">
-              {netboxConnected ? "✓" : "⇄"}
-            </span>
-            {netboxConnected ? "Connected" : "Connect…"}
-          </button>
-          <button
-            onClick={onLoadFromNetbox}
-            title="Read a load-balancer application from NetBox as AS3"
-          >
-            <span className="btn-icon" aria-hidden="true">⤓</span>
-            Load…
-          </button>
-          <button
-            onClick={onPushToNetbox}
-            title={
-              pushPreview
-                ? `${pushPreview.writes} change${pushPreview.writes === 1 ? "" : "s"} to write` +
-                  (pushPreview.notes > 0
-                    ? `, ${pushPreview.notes} edit${pushPreview.notes === 1 ? "" : "s"} that cannot be pushed`
-                    : "")
-                : "Write edits back to NetBox, or create this declaration as a new application"
-            }
-          >
-            <span className="btn-icon" aria-hidden="true">⤒</span>
-            Push…
-            {pushPreview && pushPreview.writes > 0 && (
-              <span className="toolbar-badge">{pushPreview.writes}</span>
-            )}
-            {pushPreview && pushPreview.notes > 0 && (
-              <span
-                className="toolbar-badge warn"
-                aria-label={`${pushPreview.notes} edits cannot be pushed`}
-              >
-                !{pushPreview.notes}
-              </span>
-            )}
-          </button>
+          <div className="toolbar-group-buttons">
+            <GroupButton
+              icon={netboxConnected ? "✓" : "⇄"}
+              label={netboxConnected ? "Connected" : "Connect…"}
+              mode={labelMode}
+              onClick={onConnectNetbox}
+              className={netboxConnected ? "is-connected" : "is-disconnected"}
+              title={
+                netboxConnected
+                  ? "Connected — reopen to change the connection"
+                  : "Not connected — connect to NetBox (required before loading or pushing)"
+              }
+            />
+            <GroupButton
+              icon="⤓"
+              label="Load…"
+              mode={labelMode}
+              onClick={onLoadFromNetbox}
+              title="Read a load-balancer application from NetBox as AS3"
+            />
+            <GroupButton
+              icon="⤒"
+              label="Push…"
+              mode={labelMode}
+              onClick={onPushToNetbox}
+              title={
+                pushPreview
+                  ? `${pushPreview.writes} change${pushPreview.writes === 1 ? "" : "s"} to write` +
+                    (pushPreview.notes > 0
+                      ? `, ${pushPreview.notes} edit${pushPreview.notes === 1 ? "" : "s"} that cannot be pushed`
+                      : "")
+                  : "Write edits back to NetBox, or create this declaration as a new application"
+              }
+            >
+              {pushPreview && pushPreview.writes > 0 && (
+                <span className="toolbar-badge">{pushPreview.writes}</span>
+              )}
+              {pushPreview && pushPreview.notes > 0 && (
+                <span
+                  className="toolbar-badge warn"
+                  aria-label={`${pushPreview.notes} edits cannot be pushed`}
+                >
+                  !{pushPreview.notes}
+                </span>
+              )}
+            </GroupButton>
+          </div>
         </div>
       )}
       <div className="toolbar-group" role="group" aria-label="BIG-IP">
         <span className="toolbar-group-label">BIG-IP</span>
-        <button
-          onClick={onLoadFromBigip}
-          title="Read an application from a device's running configuration, via AS3's per-application API"
-        >
-          <span className="btn-icon" aria-hidden="true">⤓</span>
-          Load…
-        </button>
-        <button
-          onClick={onValidateOnBigip}
-          title="Dry-run this declaration against a BIG-IP"
-        >
-          <span className="btn-icon" aria-hidden="true">✓</span>
-          Validate…
-        </button>
+        <div className="toolbar-group-buttons">
+          <GroupButton
+            icon="⤓"
+            label="Load…"
+            mode={labelMode}
+            onClick={onLoadFromBigip}
+            title="Read an application from a device's running configuration, via AS3's per-application API"
+          />
+          <GroupButton
+            icon="✓"
+            label="Validate…"
+            mode={labelMode}
+            onClick={onValidateOnBigip}
+            title="Dry-run this declaration against a BIG-IP"
+          />
+        </div>
       </div>
-      <button onClick={() => fileInputRef.current?.click()}>Open</button>
+      <div className="toolbar-group" role="group" aria-label="JSON">
+        <span className="toolbar-group-label">JSON</span>
+        <div className="toolbar-group-buttons">
+          <GroupButton
+            icon="📂"
+            label="Open…"
+            mode={labelMode}
+            onClick={() => fileInputRef.current?.click()}
+            title="Open a declaration from a local JSON file"
+          />
+          <GroupButton
+            icon="💾"
+            label="Save"
+            mode={labelMode}
+            onClick={handleSave}
+            title="Save the declaration as a local JSON file"
+          />
+        </div>
+      </div>
       <input
         ref={fileInputRef}
         type="file"
@@ -226,7 +294,17 @@ export default function Toolbar({
           e.target.value = "";
         }}
       />
-      <button onClick={handleSave}>Save</button>
+      <select
+        className="toolbar-labelmode"
+        value={labelMode}
+        onChange={(e) => onLabelModeChange(e.target.value as ToolbarLabelMode)}
+        title="How the grouped buttons present themselves"
+        aria-label="Toolbar button style"
+      >
+        <option value="icons">Icons</option>
+        <option value="text">Text</option>
+        <option value="both">Icons + text</option>
+      </select>
       <button
         onClick={onToggleTheme}
         title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}

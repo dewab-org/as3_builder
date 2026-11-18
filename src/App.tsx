@@ -9,7 +9,7 @@ import {
 } from "react";
 import type { editor } from "monaco-editor";
 import { findNodeAtLocation, getLocation, parse, parseTree } from "jsonc-parser";
-import Toolbar from "./components/Toolbar";
+import Toolbar, { type ToolbarLabelMode } from "./components/Toolbar";
 import BigipDialog from "./components/BigipDialog";
 import BigipLoadDialog from "./components/BigipLoadDialog";
 import AboutDialog from "./components/AboutDialog";
@@ -121,6 +121,13 @@ function initialTheme(): Theme {
     : "light";
 }
 
+function initialLabelMode(): ToolbarLabelMode {
+  const stored = localStorage.getItem("as3b-toolbar-labels");
+  return stored === "text" || stored === "both" || stored === "icons"
+    ? stored
+    : "icons";
+}
+
 function monacoRangeFor(
   model: editor.ITextModel,
   offset: number,
@@ -201,6 +208,11 @@ export default function App() {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("as3b-theme", theme);
   }, [theme]);
+
+  const [labelMode, setLabelMode] = useState<ToolbarLabelMode>(initialLabelMode);
+  useEffect(() => {
+    localStorage.setItem("as3b-toolbar-labels", labelMode);
+  }, [labelMode]);
 
   const docState = useDocument(INITIAL_TEXT);
   const {
@@ -995,6 +1007,8 @@ export default function App() {
         theme={theme}
         onAbout={() => setShowAbout(true)}
         onToggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
+        labelMode={labelMode}
+        onLabelModeChange={setLabelMode}
         onUndo={undo}
         onRedo={redo}
         canUndo={canUndo}

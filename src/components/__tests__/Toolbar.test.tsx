@@ -16,6 +16,8 @@ function renderToolbar(overrides: Partial<ToolbarProps> = {}) {
     netboxEnabled: true,
     onConnectNetbox: vi.fn(),
     netboxConnected: false,
+    labelMode: "both" as const,
+    onLabelModeChange: vi.fn(),
     onLoadFromNetbox: vi.fn(),
     onLoadFromBigip: vi.fn(),
     onPushToNetbox: vi.fn(),
@@ -41,11 +43,31 @@ describe("toolbar NetBox gate", () => {
     expect(group).toHaveTextContent("Push…");
   });
 
-  it("shows the connected state on the Connect button", () => {
+  it("shows the connected state on the Connect button, with state colour", () => {
     renderToolbar({ netboxConnected: true });
-    expect(
-      screen.getByRole("group", { name: "NetBox" })
-    ).toHaveTextContent("Connected");
+    const connect = screen.getByRole("button", { name: "Connected" });
+    expect(connect).toHaveClass("is-connected");
+  });
+
+  it("colours the Connect button while disconnected", () => {
+    renderToolbar();
+    expect(screen.getByRole("button", { name: "Connect…" })).toHaveClass(
+      "is-disconnected"
+    );
+  });
+
+  it("icons mode hides the text but keeps the name reachable", () => {
+    renderToolbar({ labelMode: "icons" });
+    const load = screen.getAllByRole("button", { name: "Load…" })[0];
+    expect(load).not.toHaveTextContent("Load…");
+    expect(load.title).toContain("Load…");
+  });
+
+  it("groups Open and Save under a JSON label", () => {
+    renderToolbar();
+    const json = screen.getByRole("group", { name: "JSON" });
+    expect(json).toHaveTextContent("Open…");
+    expect(json).toHaveTextContent("Save");
   });
 
   it("hides the group entirely — not disables — when gated off", () => {

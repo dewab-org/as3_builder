@@ -187,37 +187,74 @@ body {
   cursor: default;
 }
 
-/* Related actions boxed under one label: NetBox (connect/load/push) and
-   BIG-IP (load/validate). The label names the system once, so the buttons
-   inside keep short verbs. */
+/* Related actions boxed under one label — NetBox (connect/load/push),
+   BIG-IP (load/validate), JSON (open/save) — with the system named once
+   ABOVE the buttons, so each button keeps a short verb or just its icon. */
 .toolbar-group {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 3px 6px 3px 8px;
+  gap: 2px;
+  padding: 2px 6px 4px;
   border: 1px solid var(--toolbar-btn-border);
   border-radius: 8px;
 }
 
 .toolbar-group-label {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   opacity: 0.85;
-  margin-right: 2px;
+  line-height: 1;
 }
 
-.toolbar-group button {
+.toolbar-group-buttons {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.toolbar-group-buttons button {
   display: inline-flex;
   align-items: center;
   white-space: nowrap;
 }
 
+/* Icons carry the buttons, so they are deliberately prominent. */
 .btn-icon {
   display: inline-block;
-  margin-right: 5px;
-  opacity: 0.9;
+  font-size: 17px;
+  line-height: 1;
+  opacity: 0.95;
+}
+
+.btn-icon + .btn-label {
+  margin-left: 6px;
+}
+
+/* Connection state at a glance: green when this session holds a NetBox
+   connection, ember red while it does not. */
+.toolbar button.is-connected {
+  background: #1d6b2f;
+  border-color: #5fbf74;
+}
+
+.toolbar button.is-connected:hover:not(:disabled) {
+  background: #175526;
+}
+
+.toolbar button.is-disconnected {
+  background: #a02c10;
+  border-color: #ffd0a8;
+}
+
+.toolbar button.is-disconnected:hover:not(:disabled) {
+  background: #7f2209;
+}
+
+.toolbar select.toolbar-labelmode {
+  max-width: 110px;
 }
 
 /* Counts on the Push button: what a push would write, and — in warn colour —
