@@ -143,6 +143,14 @@ body {
   cursor: pointer;
   color: inherit;
   font: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-logo {
+  flex: none;
+  display: block;
 }
 
 .toolbar button.toolbar-title:hover {
@@ -255,6 +263,37 @@ body {
 
 .toolbar select.toolbar-labelmode {
   max-width: 110px;
+}
+
+/* Rename affordance beside delete in the context panel's breadcrumb. */
+.ctx-rename {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  opacity: 0.7;
+  padding: 0 4px;
+}
+
+.ctx-rename:hover {
+  opacity: 1;
+}
+
+.ctx-rename-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 6px 0;
+}
+
+.ctx-rename-row input {
+  flex: 1;
+  min-width: 140px;
+}
+
+.ctx-rename-row .modal-error {
+  flex-basis: 100%;
 }
 
 /* Counts on the Push button: what a push would write, and — in warn colour —

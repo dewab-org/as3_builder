@@ -18,3 +18,4 @@ export * from "./search";
 export * from "./supportPolicy";
 export * from "./bigipCatalog";
 export * from "./dryRunSubstitution";
+export * from "./rename";

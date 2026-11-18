@@ -9,7 +9,21 @@ export const remembered = {
   password: "",
   tenant: "Applications",
   validateCert: true,
+  /** True once "Connect to BIG-IP…" has verified the device this session. */
+  connected: false,
+  /** AS3 version reported by the device at connect time. */
+  as3Version: "",
 };
+
+/** Request headers for the dev/production server's BIG-IP proxy. */
+export function bigipAuthHeaders(): Record<string, string> {
+  return {
+    authorization: `Basic ${btoa(`${remembered.username}:${remembered.password}`)}`,
+    "x-bigip-target": remembered.host.trim(),
+    "x-bigip-validate-cert": remembered.validateCert ? "1" : "0",
+    "content-type": "application/json",
+  };
+}
 
 /** Seed the fields from the server's environment, without overwriting
  * anything the user has already typed this session. */

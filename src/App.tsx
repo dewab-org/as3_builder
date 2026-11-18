@@ -13,6 +13,7 @@ import Toolbar, { type ToolbarLabelMode } from "./components/Toolbar";
 import BigipDialog from "./components/BigipDialog";
 import BigipLoadDialog from "./components/BigipLoadDialog";
 import AboutDialog from "./components/AboutDialog";
+import BigipConnectDialog from "./components/BigipConnectDialog";
 import NetboxConnectDialog from "./components/NetboxConnectDialog";
 import NetboxDialog from "./components/NetboxDialog";
 import PushNetboxDialog from "./components/PushNetboxDialog";
@@ -59,6 +60,8 @@ import {
   loadAs3Documentation,
   pathKey,
   loadBigipCatalog,
+  renameInManifest,
+  renameMember,
   resolveDrop,
   resolveSchemaForPath,
   auditUnsupported,
@@ -148,6 +151,8 @@ export default function App() {
   const [cursorOffset, setCursorOffset] = useState(0);
   const [baselineText, setBaselineText] = useState(INITIAL_TEXT);
   const [showBigipDialog, setShowBigipDialog] = useState(false);
+  const [showBigipConnectDialog, setShowBigipConnectDialog] = useState(false);
+  const [bigipConnected, setBigipConnected] = useState(false);
   const [showConnectDialog, setShowConnectDialog] = useState(false);
   const [showNetboxDialog, setShowNetboxDialog] = useState(false);
   const [showBigipLoadDialog, setShowBigipLoadDialog] = useState(false);
@@ -932,6 +937,28 @@ export default function App() {
     [applyEdit, navigateToPath]
   );
 
+  // Rename an application (or one of its members) and rewrite references.
+  // With NetBox provenance the manifest follows along, so the rename pushes
+  // as a NetBox name change instead of a delete + create.
+  const handleRenameNode = useCallback(
+    (path: JsonPath, newName: string): string | null => {
+      if (!isPlainObject(lastGoodDoc)) return "Fix JSON errors before renaming.";
+      const decl = lastGoodDoc as Record<string, unknown>;
+      const res = renameMember(decl, path as (string | number)[], newName);
+      if ("error" in res) return res.error;
+      const oldKey = String(path[path.length - 1]);
+      const manifest = netboxSession.manifests.get(String(decl.id ?? ""));
+      if (manifest) renameInManifest(manifest, oldKey, newName);
+      const newText = JSON.stringify(res.declaration, null, 2) + "\n";
+      replaceText(newText);
+      navigateWhenReady([...path.slice(0, -1), newName], newText, {
+        flash: true,
+      });
+      return null;
+    },
+    [lastGoodDoc, replaceText, navigateWhenReady]
+  );
+
   // Double-click insertion: add the property (or new class object) into the
   // chip's own context. Drag-to-editor lands in Phase 4.
   const handleAddChip = useCallback(
@@ -1000,6 +1027,8 @@ export default function App() {
         netboxEnabled={policy.netbox}
         onConnectNetbox={() => setShowConnectDialog(true)}
         netboxConnected={!!netboxSession.apps}
+        onConnectBigip={() => setShowBigipConnectDialog(true)}
+        bigipConnected={bigipConnected}
         onLoadFromNetbox={() => setShowNetboxDialog(true)}
         onLoadFromBigip={() => setShowBigipLoadDialog(true)}
         onPushToNetbox={() => setShowPushDialog(true)}
@@ -1079,6 +1108,15 @@ export default function App() {
             guardedLoad(newText, "the BIG-IP configuration")
           }
           onClose={() => setShowBigipLoadDialog(false)}
+        />
+      )}
+      {showBigipConnectDialog && (
+        <BigipConnectDialog
+          onConnected={() => {
+            setBigipConnected(true);
+            setShowBigipConnectDialog(false);
+          }}
+          onClose={() => setShowBigipConnectDialog(false)}
         />
       )}
       {policy.netbox && showConnectDialog && (
@@ -1245,6 +1283,7 @@ export default function App() {
             onAddChip={handleAddChip}
             onDeleteNode={handleDeleteNode}
             onClassChange={handleClassChange}
+            onRenameNode={handleRenameNode}
           />
         </div>
       </div>

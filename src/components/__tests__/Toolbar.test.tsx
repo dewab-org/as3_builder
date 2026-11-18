@@ -16,6 +16,8 @@ function renderToolbar(overrides: Partial<ToolbarProps> = {}) {
     netboxEnabled: true,
     onConnectNetbox: vi.fn(),
     netboxConnected: false,
+    onConnectBigip: vi.fn(),
+    bigipConnected: false,
     labelMode: "both" as const,
     onLabelModeChange: vi.fn(),
     onLoadFromNetbox: vi.fn(),
@@ -49,11 +51,20 @@ describe("toolbar NetBox gate", () => {
     expect(connect).toHaveClass("is-connected");
   });
 
-  it("colours the Connect button while disconnected", () => {
+  it("colours both Connect buttons while disconnected", () => {
     renderToolbar();
-    expect(screen.getByRole("button", { name: "Connect…" })).toHaveClass(
-      "is-disconnected"
-    );
+    const buttons = screen.getAllByRole("button", { name: "Connect…" });
+    expect(buttons).toHaveLength(2); // NetBox and BIG-IP
+    for (const b of buttons) expect(b).toHaveClass("is-disconnected");
+  });
+
+  it("shows the BIG-IP connected state independently", () => {
+    renderToolbar({ bigipConnected: true });
+    const bigip = screen.getByRole("group", { name: "BIG-IP" });
+    expect(bigip).toHaveTextContent("Connected");
+    expect(
+      screen.getByRole("group", { name: "NetBox" })
+    ).not.toHaveTextContent("Connected");
   });
 
   it("icons mode hides the text but keeps the name reachable", () => {

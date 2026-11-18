@@ -33,6 +33,9 @@ export interface ManifestEntry {
   endpoint: string; // plugin REST collection, e.g. "virtual-servers"
   id: number;
   className: string;
+  /** The NetBox object's name as loaded. When the AS3 key stops matching it
+   * (a rename in the editor), the push renames the NetBox object. */
+  netboxName?: string;
   /** Invertible NetBox field values as loaded. */
   fields: Dict;
   /** The AS3 object exactly as rendered at load (detects out-of-scope edits). */
@@ -777,6 +780,7 @@ export function buildManifest(
       endpoint: spec.endpoint,
       id: Number(netboxObj.id),
       className,
+      netboxName: String(netboxObj.name ?? ""),
       fields: spec.fromNetbox(netboxObj),
       as3Snapshot: JSON.parse(JSON.stringify(as3Snapshot)),
       lastUpdated: netboxObj.last_updated as string | undefined,
@@ -910,6 +914,7 @@ export function buildManifest(
       endpoint: "applications",
       id: Number(app.id),
       className: "Application",
+      netboxName: String(app.name ?? ""),
       fields: APPLICATION_KIND.fromNetbox(app),
       as3Snapshot: JSON.parse(JSON.stringify(application)),
       lastUpdated: app.last_updated as string | undefined,
@@ -1203,6 +1208,7 @@ export function newAppManifest(
         endpoint: "applications",
         id: Number(createdApp.id),
         className: "Application",
+        netboxName: String(createdApp.name ?? ""),
         // Snapshot the DECLARATION's view, not the created record: the
         // surveyed description need not appear as a label in the editor, and
         // must not diff as "clear the description". The post-push reload
@@ -1279,6 +1285,16 @@ export function computeUpdates(
     for (const [field, to] of Object.entries(fields)) {
       const from = entry.fields[field];
       if (!valueEq(from, to)) changes.push({ field, from, to });
+    }
+
+    // A rename in the editor: the AS3 key no longer matches the name this
+    // object was loaded under, so the push renames it in NetBox in place
+    // (never delete + create).
+    if (
+      entry.netboxName !== undefined &&
+      entry.as3Key !== sanitizeKey(entry.netboxName)
+    ) {
+      changes.push({ field: "name", from: entry.netboxName, to: entry.as3Key });
     }
 
     // W2 granular ops: pool membership and VS virtual addresses.

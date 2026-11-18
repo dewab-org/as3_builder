@@ -60,6 +60,9 @@ interface ToolbarProps {
   onConnectNetbox: () => void;
   /** Whether this session holds a NetBox connection (cached app list). */
   netboxConnected: boolean;
+  onConnectBigip: () => void;
+  /** Whether "Connect to BIG-IP…" has verified the device this session. */
+  bigipConnected: boolean;
   onLoadFromNetbox: () => void;
   onLoadFromBigip: () => void;
   onPushToNetbox: () => void;
@@ -89,6 +92,8 @@ export default function Toolbar({
   netboxEnabled,
   onConnectNetbox,
   netboxConnected,
+  onConnectBigip,
+  bigipConnected,
   onLoadFromNetbox,
   onLoadFromBigip,
   onPushToNetbox,
@@ -131,7 +136,8 @@ export default function Toolbar({
   return (
     <div className="toolbar">
       {/* The title doubles as the About control: version and author live
-          behind the name, where convention puts them. */}
+          behind the name, where convention puts them. The mark: a declaration
+          brace fanning out to three balanced nodes. */}
       <h1>
         <button
           className="toolbar-title"
@@ -139,6 +145,31 @@ export default function Toolbar({
           title="About AS3 Builder (version, author)"
           aria-label="About AS3 Builder"
         >
+          <svg
+            className="app-logo"
+            viewBox="0 0 24 24"
+            width="24"
+            height="24"
+            aria-hidden="true"
+          >
+            <path
+              d="M9 3.5 C6.5 3.5 7.5 7 5.5 7 L4.5 7 L4.5 9 L5.5 9 C7.5 9 6.5 12.5 9 12.5"
+              transform="translate(0,4)"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+            />
+            <g stroke="currentColor" strokeWidth="1.5" fill="none">
+              <path d="M11 12 L17 5.5 M11 12 L18 12 M11 12 L17 18.5" />
+            </g>
+            <circle cx="11" cy="12" r="2.1" fill="currentColor" />
+            <g fill="currentColor">
+              <circle cx="18.5" cy="5" r="1.8" />
+              <circle cx="19.5" cy="12" r="1.8" />
+              <circle cx="18.5" cy="19" r="1.8" />
+            </g>
+          </svg>
           AS3 Builder
         </button>
       </h1>
@@ -249,6 +280,18 @@ export default function Toolbar({
       <div className="toolbar-group" role="group" aria-label="BIG-IP">
         <span className="toolbar-group-label">BIG-IP</span>
         <div className="toolbar-group-buttons">
+          <GroupButton
+            icon={bigipConnected ? "✓" : "⇄"}
+            label={bigipConnected ? "Connected" : "Connect…"}
+            mode={labelMode}
+            onClick={onConnectBigip}
+            className={bigipConnected ? "is-connected" : "is-disconnected"}
+            title={
+              bigipConnected
+                ? "Connected — reopen to change the device or credentials"
+                : "Not connected — connect to BIG-IP (used by load and validate)"
+            }
+          />
           <GroupButton
             icon="⤓"
             label="Load…"
