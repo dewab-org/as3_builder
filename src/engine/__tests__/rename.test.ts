@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { renameInManifest, renameMember } from "../rename";
+import {
+  referencePathsTo,
+  renameInManifest,
+  renameMember,
+} from "../rename";
 import { buildManifest, computeUpdates } from "../as3ToNetbox";
 import { renderNetboxApp } from "../netboxAs3";
 
@@ -143,5 +147,124 @@ describe("rename with NetBox provenance", () => {
     // The virtual server's stored ref name followed the rename: no vs-ref op.
     const vsUpdate = updates.find((u) => u.entry.endpoint === "virtual-servers");
     expect(vsUpdate ?? { ops: [] }).toMatchObject({ ops: [] });
+  });
+});
+
+/** Apply deletions in the order given, as the editor does. */
+function deleteAll(doc: Dict, paths: (string | number)[][]): Dict {
+  const clone = JSON.parse(JSON.stringify(doc)) as Dict;
+  for (const path of paths) {
+    let parent: unknown = clone;
+    for (const seg of path.slice(0, -1)) parent = (parent as Dict)[seg as string];
+    const last = path[path.length - 1];
+    if (Array.isArray(parent)) parent.splice(last as number, 1);
+    else delete (parent as Dict)[last as string];
+  }
+  return clone;
+}
+
+describe("referencePathsTo (delete clears references)", () => {
+  it("finds a string pointer property", () => {
+    expect(referencePathsTo(declaration(), ["myApp", "pool1"])).toEqual([
+      ["myApp", "web", "pool"],
+    ]);
+  });
+
+  it("finds list entries and {use} pointers", () => {
+    const d = declaration();
+    expect(referencePathsTo(d, ["myApp", "logger"])).toEqual([
+      ["myApp", "web", "iRules", 0],
+    ]);
+    expect(referencePathsTo(d, ["myApp", "mon1"])).toEqual([
+      ["myApp", "pool1", "monitors", 0],
+    ]);
+    expect(referencePathsTo(d, ["myApp", "web_vip"])).toEqual([
+      ["myApp", "web", "virtualAddresses", 0],
+    ]);
+    expect(referencePathsTo(d, ["myApp", "sess_persist"])).toEqual([
+      ["myApp", "web", "persistenceMethods", 0],
+    ]);
+  });
+
+  it("finds a Persist profile's iRule", () => {
+    expect(referencePathsTo(declaration(), ["myApp", "sess"])).toEqual([
+      ["myApp", "sess_persist", "iRule"],
+    ]);
+  });
+
+  it("removes a whole certificates entry, not just its pointer", () => {
+    const d = {
+      app: {
+        class: "Application",
+        tls: {
+          class: "TLS_Server",
+          certificates: [
+            { certificate: "keep" },
+            { certificate: "gone", matchToSNI: "x.example.com" },
+          ],
+        },
+        keep: { class: "Certificate" },
+        gone: { class: "Certificate" },
+      },
+    };
+    expect(referencePathsTo(d, ["app", "gone"])).toEqual([
+      ["app", "tls", "certificates", 1],
+    ]);
+  });
+
+  it("orders deletions so earlier list indexes stay valid", () => {
+    const d = declaration();
+    ((d.myApp as Dict).web as Dict).iRules = ["logger", "other", "logger"];
+    const paths = referencePathsTo(d, ["myApp", "logger"]);
+    expect(paths).toEqual([
+      ["myApp", "web", "iRules", 2],
+      ["myApp", "web", "iRules", 0],
+    ]);
+    const after = deleteAll(d, [...paths, ["myApp", "logger"]]);
+    expect(((after.myApp as Dict).web as Dict).iRules).toEqual(["other"]);
+  });
+
+  it("ignores names that only look like the key elsewhere", () => {
+    const d = declaration();
+    // A label or remark that happens to equal the key is not a pointer.
+    ((d.myApp as Dict).web as Dict).remark = "pool1";
+    expect(referencePathsTo(d, ["myApp", "pool1"])).toEqual([
+      ["myApp", "web", "pool"],
+    ]);
+  });
+
+  it("has nothing to clear for the application or nested paths", () => {
+    const d = declaration();
+    expect(referencePathsTo(d, ["myApp"])).toEqual([]);
+    expect(referencePathsTo(d, ["myApp", "web", "pool"])).toEqual([]);
+  });
+
+  it("pushes as unlink-then-delete, with nothing left dangling", () => {
+    const graph = {
+      id: "78",
+      name: "app78",
+      virtual_servers: [
+        {
+          id: 9,
+          name: "vs1",
+          protocol: "https",
+          service_port: 443,
+          cluster: { id: 4, name: "c1" },
+          virtual_addresses: [{ id: 1, address: "10.0.0.6/32" }],
+          backend_pool: { id: 10, name: "p1", members: [] },
+        },
+      ],
+    };
+    const { declaration: decl } = renderNetboxApp(graph);
+    const manifest = buildManifest(graph, decl);
+    const paths = referencePathsTo(decl as Dict, ["app78", "p1"]);
+    const after = deleteAll(decl as Dict, [...paths, ["app78", "p1"]]);
+    const { updates, deletes, notes } = computeUpdates(after, manifest);
+    expect(notes).toEqual([]);
+    expect(deletes.map((d) => d.entry.as3Key)).toEqual(["p1"]);
+    const vs = updates.find((u) => u.entry.endpoint === "virtual-servers");
+    expect(vs?.ops).toMatchObject([
+      { op: "vs-ref", field: "backend_pool", targetKey: null },
+    ]);
   });
 });

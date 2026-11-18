@@ -8,7 +8,13 @@ import {
   useState,
 } from "react";
 import type { editor } from "monaco-editor";
-import { findNodeAtLocation, getLocation, parse, parseTree } from "jsonc-parser";
+import {
+  findNodeAtLocation,
+  getLocation,
+  parse,
+  parseTree,
+  type ParseError,
+} from "jsonc-parser";
 import Toolbar, { type ToolbarLabelMode } from "./components/Toolbar";
 import BigipDialog from "./components/BigipDialog";
 import BigipLoadDialog from "./components/BigipLoadDialog";
@@ -68,6 +74,7 @@ import {
   loadAs3Documentation,
   pathKey,
   loadBigipCatalog,
+  referencePathsTo,
   renameInManifest,
   renameMember,
   resolveDrop,
@@ -693,11 +700,32 @@ export default function App() {
     [root, registry]
   );
 
+  // Delete a node, clearing every reference to it inside its application
+  // (only application members are referenced by name), as one undo step.
+  // With broken JSON there is no reliable structure to scan, so it falls
+  // back to a plain delete.
+  const deleteWithReferences = useCallback(
+    (path: JsonPath) => {
+      const errors: ParseError[] = [];
+      const current = parse(text, errors, { allowTrailingComma: true });
+      const refs =
+        errors.length === 0 && isPlainObject(current)
+          ? referencePathsTo(current, path as (string | number)[])
+          : [];
+      applyEditMany([
+        ...refs.map((p): [JsonPath, unknown] => [p as JsonPath, undefined]),
+        [path, undefined],
+      ]);
+    },
+    [text, applyEditMany]
+  );
+
   const handleEdit = useCallback(
     (path: JsonPath, value: unknown) => {
-      applyEdit(path, value);
+      if (value === undefined) deleteWithReferences(path);
+      else applyEdit(path, value);
     },
-    [applyEdit]
+    [applyEdit, deleteWithReferences]
   );
 
   const submitSchemaUrl = useCallback(async () => {
@@ -957,18 +985,18 @@ export default function App() {
 
   const handleDeleteRow = useCallback(
     (path: unknown) => {
-      applyEdit(path as JsonPath, undefined);
+      deleteWithReferences(path as JsonPath);
     },
-    [applyEdit]
+    [deleteWithReferences]
   );
 
   const handleDeleteNode = useCallback(
     (path: JsonPath) => {
       if (path.length === 0) return;
-      applyEdit(path, undefined);
+      deleteWithReferences(path);
       navigateToPath(path.slice(0, -1));
     },
-    [applyEdit, navigateToPath]
+    [deleteWithReferences, navigateToPath]
   );
 
   // Rename an application (or one of its members) and rewrite references.

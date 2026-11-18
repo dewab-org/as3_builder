@@ -54,6 +54,78 @@ function rewriteRefs(node: unknown, oldKey: string, newKey: string): number {
   return count;
 }
 
+type Path = (string | number)[];
+
+/** Later document position first, so deleting in this order never shifts an
+ * array index that a later deletion still relies on. */
+function reverseDocumentOrder(a: Path, b: Path): number {
+  for (let i = 0; i < Math.min(a.length, b.length); i++) {
+    if (a[i] === b[i]) continue;
+    if (typeof a[i] === "number" && typeof b[i] === "number")
+      return (b[i] as number) - (a[i] as number);
+    return String(b[i]).localeCompare(String(a[i]));
+  }
+  return b.length - a.length;
+}
+
+/**
+ * Where an application member is referenced from inside its application, as
+ * paths to delete when the member itself is deleted. A pointer held in a
+ * property loses that property (`pool`, `serverTLS: {use}`, Persist `iRule`);
+ * a pointer that is a list entry loses that entry (`iRules`, `monitors`,
+ * `virtualAddresses`, a `certificates` item). Empty for anything that is not
+ * [appKey, memberKey]. Sorted for sequential deletion.
+ */
+export function referencePathsTo(declaration: Dict, path: Path): Path[] {
+  if (path.length !== 2 || path.some((s) => typeof s !== "string")) return [];
+  const [appKey, key] = path as string[];
+  const application = declaration[appKey];
+  if (!isPlainObject(application)) return [];
+
+  const found: Path[] = [];
+
+  function walk(node: Dict, nodePath: Path, elementPath: Path | null): void {
+    for (const [prop, value] of Object.entries(node)) {
+      const propPath = [...nodePath, prop];
+      const isPointer =
+        (STRING_REF_PROPS.has(prop) && value === key) ||
+        (isPlainObject(value) && value.use === key);
+      if (isPointer) {
+        // A list item whose job is to name the target (a certificates entry)
+        // goes as a whole; elsewhere just the pointing property goes.
+        found.push(
+          elementPath && STRING_REF_PROPS.has(prop) ? elementPath : propPath
+        );
+        continue;
+      }
+      if (Array.isArray(value)) {
+        value.forEach((el, i) => {
+          const elPath = [...propPath, i];
+          if (
+            (ARRAY_REF_PROPS.has(prop) && el === key) ||
+            (isPlainObject(el) && el.use === key)
+          ) {
+            found.push(elPath);
+          } else if (isPlainObject(el)) {
+            walk(el, elPath, elPath);
+          }
+        });
+      } else if (isPlainObject(value)) {
+        walk(value, propPath, null);
+      }
+    }
+  }
+
+  for (const [memberKey, member] of Object.entries(application)) {
+    if (memberKey === key || !isPlainObject(member)) continue;
+    walk(member, [appKey, memberKey], null);
+  }
+
+  // One entry per location, latest first.
+  const unique = new Map(found.map((p) => [JSON.stringify(p), p]));
+  return [...unique.values()].sort(reverseDocumentOrder);
+}
+
 export interface RenameResult {
   /** The whole declaration, renamed, ready to serialize. */
   declaration: Dict;
