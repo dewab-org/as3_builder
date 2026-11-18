@@ -296,10 +296,43 @@ export default function PushNetboxDialog({
       }
       body.monitors = ids;
     }
+    // M2M links by AS3 key: this changeset's own creates first, then by
+    // NetBox name — a service may point at estate objects that were never
+    // part of this declaration.
+    async function resolveLinks(
+      endpoint: "policies" | "protocol-profiles",
+      keys: string[]
+    ): Promise<number[]> {
+      const ids: number[] = [];
+      for (const key of keys) {
+        const known = keyToId.get(key);
+        if (known !== undefined) {
+          ids.push(known);
+          continue;
+        }
+        const found = await netboxRest<{ results: { id: number }[] }>(
+          `${PLUGIN_BASE}/${endpoint}/?name=${encodeURIComponent(key)}`
+        );
+        if (found.results.length === 0)
+          throw new Error(
+            `"${key}" does not exist in NetBox — create it there first`
+          );
+        ids.push(found.results[0].id);
+      }
+      return ids;
+    }
+
     if (create.endpoint === "virtual-servers") {
       // Required single-application FK since plugin 0.9.0 (G2); the required
       // cluster is already in create.fields (stamped by computeUpdates).
       body.application = appId;
+      if (create.policyKeys && create.policyKeys.length > 0)
+        body.policies = await resolveLinks("policies", create.policyKeys);
+      if (create.protocolProfileKeys && create.protocolProfileKeys.length > 0)
+        body.protocol_profiles = await resolveLinks(
+          "protocol-profiles",
+          create.protocolProfileKeys
+        );
       if (create.vipAddresses && create.vipAddresses.length > 0) {
         const ids: number[] = [];
         for (const address of create.vipAddresses)

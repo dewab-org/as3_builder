@@ -87,6 +87,74 @@ describe("net-new application push", () => {
     expect(vs?.fields.cluster).toBe(7);
     expect(vs?.vipAddresses).toEqual(["10.9.0.1/32"]);
   });
+
+  it("creates and links policies and protocol profiles", () => {
+    const decl = {
+      id: "decl2",
+      schemaVersion: "3.55.0",
+      app2: {
+        class: "Application",
+        web: {
+          class: "Service_HTTPS",
+          virtualAddresses: ["10.9.1.1"],
+          virtualPort: 443,
+          persistenceMethods: [{ use: "sess_persist" }],
+          policyEndpoint: { use: "fwd" },
+          iRules: ["logger"],
+          profileTCP: { use: "tcp-tuned" },
+        },
+        fwd: {
+          class: "Endpoint_Policy",
+          strategy: "first-match",
+          rules: [{ name: "r1", actions: [] }],
+        },
+        logger: { class: "iRule", iRule: "when HTTP_REQUEST { log local0. x }" },
+        sess: { class: "iRule", iRule: "when HTTP_REQUEST { persist uie 1 }" },
+        sess_persist: {
+          class: "Persist",
+          persistenceMethod: "universal",
+          iRule: "sess",
+        },
+        "tcp-tuned": { class: "TCP_Profile", idleTimeout: 120 },
+      },
+    } as Record<string, unknown>;
+    const m = newAppManifest(decl, "app2", { id: 50, description: "" }, 7);
+    const { creates, notes } = computeUpdates(
+      JSON.parse(JSON.stringify(decl)),
+      m
+    );
+    expect(notes).toEqual([]);
+    expect(creates.map((c) => [c.endpoint, c.as3Key])).toEqual([
+      ["policies", "fwd"],
+      ["policies", "logger"],
+      ["policies", "sess"],
+      ["protocol-profiles", "tcp-tuned"],
+      ["virtual-servers", "web"],
+    ]);
+    const byKey = Object.fromEntries(creates.map((c) => [c.as3Key, c]));
+    expect(byKey.fwd.fields.policy_type).toBe("standard");
+    expect(byKey.fwd.fields.rules).toMatchObject({
+      class: "Endpoint_Policy",
+      strategy: "first-match",
+    });
+    expect(byKey.logger.fields.policy_type).toBe("irule");
+    // The Persist-referenced iRule is created AS a persistence method (R5).
+    expect(byKey.sess.fields.is_persistence).toBe(true);
+    expect(byKey.sess.fields.rules).toMatchObject({ isPersistenceMethod: true });
+    expect(byKey.logger.fields.is_persistence).toBeUndefined();
+    expect(byKey["tcp-tuned"].fields).toMatchObject({
+      protocol_type: "tcp",
+      options: { class: "TCP_Profile", idleTimeout: 120 },
+    });
+    // The service links all three policies and the profile.
+    expect([...(byKey.web.policyKeys ?? [])].sort()).toEqual([
+      "fwd",
+      "logger",
+      "sess",
+    ]);
+    expect(byKey.web.protocolProfileKeys).toEqual(["tcp-tuned"]);
+    expect(byKey.web.fields.persistence).toEqual(["universal"]);
+  });
 });
 
 describe("write-back changeset (W1)", () => {

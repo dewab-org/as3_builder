@@ -160,6 +160,13 @@ export interface CreateObject {
   refs: { field: string; targetKey: string }[];
   /** Pool creates: monitor references by AS3 key (M2M). */
   monitorRefs?: string[];
+  /** Service creates: linked policies by AS3 key (M2M) — policyEndpoint,
+   * iRules, and the policies behind Persist pointers. Resolved via the
+   * changeset's own creates first, then by NetBox name (estate objects). */
+  policyKeys?: string[];
+  /** Service creates: linked TCP/HTTP protocol profiles by AS3 key (M2M),
+   * resolved the same way. */
+  protocolProfileKeys?: string[];
   /** TLS profile creates: certificate names (get-or-created by name). */
   certificateNames?: string[];
   label: string;
@@ -183,11 +190,15 @@ export interface ChangeSet {
 export const CREATE_ORDER = [
   "monitors",
   "ssl-profiles",
+  "policies",
+  "protocol-profiles",
   "backend-pools",
   "virtual-servers",
 ];
 export const DELETE_ORDER = [
   "virtual-servers",
+  "policies",
+  "protocol-profiles",
   "ssl-profiles",
   "backend-pools",
   "monitors",
@@ -1041,6 +1052,45 @@ function buildCreate(
     };
   }
 
+  if (spec.endpoint === "policies") {
+    const policyType = className === "iRule" ? "irule" : "standard";
+    const { fields, unsupported } = spec.fromAs3(obj);
+    for (const u of unsupported) notes.push(`"${as3Key}": ${u}`);
+    if (!isPlainObject(fields.rules)) {
+      notes.push(
+        `"${as3Key}": ${className} without usable rules cannot be created`
+      );
+      return null;
+    }
+    return {
+      as3Key,
+      className,
+      endpoint: spec.endpoint,
+      fields: { name: as3Key, policy_type: policyType, ...fields },
+      refs: [],
+      label: `create ${policyType} policy "${as3Key}"`,
+    };
+  }
+
+  if (spec.endpoint === "protocol-profiles") {
+    const protocolType = className === "TCP_Profile" ? "tcp" : "http";
+    const { fields } = spec.fromAs3(obj);
+    return {
+      as3Key,
+      className,
+      endpoint: spec.endpoint,
+      fields: { name: as3Key, protocol_type: protocolType, ...fields },
+      refs: [],
+      label: `create ${className} "${as3Key}"`,
+    };
+  }
+
+  if (spec.endpoint !== "virtual-servers") {
+    // Cipher objects and the like: no standalone create path.
+    notes.push(`"${as3Key}": ${className} cannot be created from a push`);
+    return null;
+  }
+
   // virtual-servers
   const { fields } = vsFieldsFromAs3(obj);
   if (!fields.protocol) {
@@ -1071,6 +1121,29 @@ function buildCreate(
     });
   if (obj.snat !== undefined)
     notes.push(`"${as3Key}": snat is not part of virtual-server creation — set it in NetBox`);
+
+  // M2M links the service states as pointers: the endpoint policy, its
+  // iRules, and TCP/HTTP profile pointers. Persist pointers are resolved by
+  // the caller (they need the application object).
+  const asKey = (v: unknown): string | null =>
+    typeof v === "string"
+      ? sanitizeKey(v)
+      : isPlainObject(v) && typeof v.use === "string"
+        ? sanitizeKey(v.use)
+        : null;
+  const policyKeys: string[] = [];
+  const pe = asKey(obj.policyEndpoint);
+  if (pe) policyKeys.push(pe);
+  for (const r of (obj.iRules as unknown[] | undefined) ?? []) {
+    const k = asKey(r);
+    if (k) policyKeys.push(k);
+  }
+  const protocolProfileKeys: string[] = [];
+  for (const p of [obj.profileTCP, obj.profileHTTP]) {
+    const k = asKey(p);
+    if (k) protocolProfileKeys.push(k);
+  }
+
   return {
     as3Key,
     className,
@@ -1080,6 +1153,8 @@ function buildCreate(
     fields: { name: as3Key, ...fields },
     vipAddresses: null, // filled by the caller (needs the application object)
     refs,
+    policyKeys,
+    protocolProfileKeys,
     label: `create ${className} "${as3Key}"`,
   };
 }
@@ -1560,7 +1635,10 @@ export function computeUpdates(
         notes.push(CERTIFICATE_NOTE(key, "is new"));
       } else if (
         !KIND_BY_CLASS[cls] &&
-        cls !== "Service_Address"
+        cls !== "Service_Address" &&
+        // A Persist profile is represented by its policy's is_persistence
+        // flag and the service's persistence method — nothing of its own.
+        cls !== "Persist"
       ) {
         notes.push(
           `"${key}" (${cls}) has no NetBox model — stored in the application's extra_parameters.`
@@ -1586,8 +1664,46 @@ export function computeUpdates(
       );
       notes.push(...vipNotes);
       create.vipAddresses = addresses;
+      // Universal persistence points at a Persist artifact whose iRule names
+      // the persistence policy (R5) — that policy must be linked on the VS.
+      for (const m of (value.persistenceMethods as unknown[] | undefined) ?? []) {
+        if (!isPlainObject(m) || typeof m.use !== "string") continue;
+        const target = application[sanitizeKey(m.use)];
+        if (
+          isPlainObject(target) &&
+          target.class === "Persist" &&
+          typeof target.iRule === "string"
+        ) {
+          create.policyKeys = [
+            ...new Set([...(create.policyKeys ?? []), sanitizeKey(target.iRule)]),
+          ];
+        }
+      }
     }
     creates.push(create);
+  }
+
+  // An iRule referenced by a Persist artifact is a persistence method (R5):
+  // its created record must say so, or the plugin refuses a virtual server
+  // that requests universal persistence through it.
+  for (const [, value] of Object.entries(application)) {
+    if (
+      !isPlainObject(value) ||
+      value.class !== "Persist" ||
+      typeof value.iRule !== "string"
+    )
+      continue;
+    const policyCreate = creates.find(
+      (c) =>
+        c.endpoint === "policies" && c.as3Key === sanitizeKey(value.iRule as string)
+    );
+    if (policyCreate && isPlainObject(policyCreate.fields.rules)) {
+      policyCreate.fields.is_persistence = true;
+      policyCreate.fields.rules = {
+        ...policyCreate.fields.rules,
+        isPersistenceMethod: true,
+      };
+    }
   }
 
   // FK-safe ordering for the apply loop.
