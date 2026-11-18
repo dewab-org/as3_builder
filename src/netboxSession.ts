@@ -164,16 +164,20 @@ export async function netboxRest<T>(
 }
 
 // IPAM get-or-create: pool member nodes and VIPs are ipam.IPAddress FKs.
-export async function ensureIpAddress(addressWithMask: string): Promise<number> {
+// `created` lets a failed push roll back the addresses it minted without
+// ever touching pre-existing ones.
+export async function ensureIpAddress(
+  addressWithMask: string
+): Promise<{ id: number; created: boolean }> {
   const found = await netboxRest<{ results: { id: number }[] }>(
     `/api/ipam/ip-addresses/?address=${encodeURIComponent(addressWithMask)}`
   );
-  if (found.results.length > 0) return found.results[0].id;
+  if (found.results.length > 0) return { id: found.results[0].id, created: false };
   const created = await netboxRest<{ id: number }>(`/api/ipam/ip-addresses/`, {
     method: "POST",
     body: { address: addressWithMask },
   });
-  return created.id;
+  return { id: created.id, created: true };
 }
 
 export function invalidateNetboxAuth(): void {

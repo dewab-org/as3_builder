@@ -273,11 +273,19 @@ export default function PushNetboxDialog({
     return { id: created.id, placeholder: true };
   }
 
+  /** One object minted during an apply run, deletable on rollback. */
+  interface UndoEntry {
+    /** Proxy path to DELETE, e.g. "/api/plugins/netbox-load-balancer/backend-pools/12/". */
+    path: string;
+    label: string;
+  }
+
   /** Returns warnings worth surfacing on the row (placeholder certificates). */
   async function applyCreate(
     create: CreateObject,
     keyToId: Map<string, number>,
-    appId: number
+    appId: number,
+    undo: UndoEntry[]
   ): Promise<string[]> {
     const body: Record<string, unknown> = { ...create.fields };
     const warnings: string[] = [];
@@ -287,10 +295,15 @@ export default function PushNetboxDialog({
       for (const name of create.certificateNames) {
         const cert = await ensureCertificate(name);
         ids.push(cert.id);
-        if (cert.placeholder)
+        if (cert.placeholder) {
+          undo.push({
+            path: `${PLUGIN_BASE}/certificates/${cert.id}/`,
+            label: `placeholder certificate "${name}"`,
+          });
           warnings.push(
             `placeholder certificate "${name}" created in NetBox — it is a pointer only, so reconcile it with the certificate estate`
           );
+        }
       }
       body.certificates = ids;
     }
@@ -351,8 +364,15 @@ export default function PushNetboxDialog({
         );
       if (create.vipAddresses && create.vipAddresses.length > 0) {
         const ids: number[] = [];
-        for (const address of create.vipAddresses)
-          ids.push(await ensureIpAddress(address));
+        for (const address of create.vipAddresses) {
+          const ip = await ensureIpAddress(address);
+          if (ip.created)
+            undo.push({
+              path: `/api/ipam/ip-addresses/${ip.id}/`,
+              label: `IP address ${address}`,
+            });
+          ids.push(ip.id);
+        }
         body.virtual_addresses = ids;
       }
     }
@@ -362,20 +382,33 @@ export default function PushNetboxDialog({
       { method: "POST", body }
     );
     keyToId.set(create.as3Key, created.id);
+    undo.push({
+      path: `${PLUGIN_BASE}/${create.endpoint}/${created.id}/`,
+      label: `${create.className} "${create.as3Key}"`,
+    });
 
     for (const member of create.members ?? []) {
-      const nodeId = await ensureIpAddress(member.addressWithMask);
+      const ip = await ensureIpAddress(member.addressWithMask);
+      if (ip.created)
+        undo.push({
+          path: `/api/ipam/ip-addresses/${ip.id}/`,
+          label: `IP address ${member.addressWithMask}`,
+        });
       const memberBody: Record<string, unknown> = {
         pool: created.id,
-        node: nodeId,
+        node: ip.id,
         service_port: member.servicePort,
       };
       if (!member.enabled) memberBody.enabled = false;
       if (member.ratio) memberBody.ratio = member.ratio;
       if (member.priorityGroup) memberBody.priority_group = member.priorityGroup;
-      await netboxRest(`${PLUGIN_BASE}/pool-members/`, {
+      const m = await netboxRest<{ id: number }>(`${PLUGIN_BASE}/pool-members/`, {
         method: "POST",
         body: memberBody,
+      });
+      undo.push({
+        path: `${PLUGIN_BASE}/pool-members/${m.id}/`,
+        label: `member ${member.address}:${member.servicePort}`,
       });
     }
     return warnings;
@@ -383,7 +416,8 @@ export default function PushNetboxDialog({
 
   async function applyUpdate(
     change: ObjectChange,
-    keyToId: Map<string, number>
+    keyToId: Map<string, number>,
+    undo: UndoEntry[]
   ): Promise<void> {
     const { entry } = change;
     const base = `${PLUGIN_BASE}/${entry.endpoint}`;
@@ -395,10 +429,22 @@ export default function PushNetboxDialog({
     for (const op of change.ops) {
       switch (op.op) {
         case "member-create": {
-          const nodeId = await ensureIpAddress(op.addressWithMask);
-          await netboxRest(`${PLUGIN_BASE}/pool-members/`, {
-            method: "POST",
-            body: { pool: entry.id, node: nodeId, ...op.body },
+          const ip = await ensureIpAddress(op.addressWithMask);
+          if (ip.created)
+            undo.push({
+              path: `/api/ipam/ip-addresses/${ip.id}/`,
+              label: `IP address ${op.addressWithMask}`,
+            });
+          const m = await netboxRest<{ id: number }>(
+            `${PLUGIN_BASE}/pool-members/`,
+            {
+              method: "POST",
+              body: { pool: entry.id, node: ip.id, ...op.body },
+            }
+          );
+          undo.push({
+            path: `${PLUGIN_BASE}/pool-members/${m.id}/`,
+            label: op.label,
           });
           break;
         }
@@ -415,8 +461,15 @@ export default function PushNetboxDialog({
           break;
         case "vs-addresses": {
           const ids: number[] = [];
-          for (const address of op.addresses)
-            ids.push(await ensureIpAddress(address));
+          for (const address of op.addresses) {
+            const ip = await ensureIpAddress(address);
+            if (ip.created)
+              undo.push({
+                path: `/api/ipam/ip-addresses/${ip.id}/`,
+                label: `IP address ${address}`,
+              });
+            ids.push(ip.id);
+          }
           await netboxRest(`${base}/${entry.id}/`, {
             method: "PATCH",
             body: { virtual_addresses: ids },
@@ -509,6 +562,11 @@ export default function PushNetboxDialog({
     setConfirming(false);
     setBusy("Applying…");
     let failed = false;
+    // Everything minted in THIS run, deletable newest-first: creation is
+    // all-or-nothing, so a failure deletes the run's objects again instead
+    // of leaving half an application behind (and a retry full of
+    // duplicate-name errors).
+    const undo: UndoEntry[] = [];
 
     const keyToId = new Map<string, number>();
     for (const entry of manifest.entries) keyToId.set(entry.as3Key, entry.id);
@@ -533,8 +591,9 @@ export default function PushNetboxDialog({
       try {
         let warnings: string[] = [];
         if (row.kind === "create")
-          warnings = await applyCreate(row.create, keyToId, manifest.appId);
-        else if (row.kind === "update") await applyUpdate(row.change, keyToId);
+          warnings = await applyCreate(row.create, keyToId, manifest.appId, undo);
+        else if (row.kind === "update")
+          await applyUpdate(row.change, keyToId, undo);
         else
           await netboxRest(
             `${PLUGIN_BASE}/${row.del.entry.endpoint}/${row.del.entry.id}/`,
@@ -559,6 +618,33 @@ export default function PushNetboxDialog({
           )
         );
       }
+    }
+
+    // All-or-nothing creation: a failure deletes everything this run minted,
+    // newest first so references fall before their targets.
+    if (failed && undo.length > 0) {
+      setBusy(`Rolling back ${undo.length} created object${undo.length === 1 ? "" : "s"}…`);
+      const rollbackFailures: string[] = [];
+      for (const entry of [...undo].reverse()) {
+        try {
+          await netboxRest(entry.path, { method: "DELETE" });
+        } catch (err) {
+          rollbackFailures.push(
+            `${entry.label}: ${String(err instanceof Error ? err.message : err)}`
+          );
+        }
+      }
+      setRows((prev) =>
+        prev.map((r) =>
+          r.kind === "create" && r.status === "ok"
+            ? { ...r, status: "rolled-back" as RowStatus }
+            : r
+        )
+      );
+      if (rollbackFailures.length > 0)
+        setError(
+          `Rollback could not delete: ${rollbackFailures.join("; ")} — remove these in NetBox by hand.`
+        );
     }
 
     // Read the outcome from the rows themselves — they are the record of what
@@ -646,6 +732,14 @@ export default function PushNetboxDialog({
           {row.status === "skipped" && (
             <span className="push-skipped" title="Not attempted — an earlier change failed">
               skipped
+            </span>
+          )}
+          {row.status === "rolled-back" && (
+            <span
+              className="push-skipped"
+              title="Created, then deleted again: a later step failed, and creation is all-or-nothing"
+            >
+              rolled back
             </span>
           )}
         </label>
