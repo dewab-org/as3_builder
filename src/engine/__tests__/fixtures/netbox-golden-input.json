@@ -8,12 +8,6 @@
         "snow_sys_id": "SNOW1321C6392A28",
         "virtual_servers": [
           {
-            "applications": [
-              {
-                "id": "18",
-                "name": "fixture-lb_vserver_ssl-10_0_0_2-sample-bigip-a_01-1321c639"
-              }
-            ],
             "description": "",
             "destination_addresses": [],
             "enabled": true,
@@ -95,7 +89,17 @@
                 "priority_group_activation": false,
                 "priority_group_threshold": null
               }
-            ]
+            ],
+            "cluster": {
+              "id": 77,
+              "name": "lb-cluster-a"
+            }
+          }
+        ],
+        "clusters": [
+          {
+            "id": 77,
+            "name": "lb-cluster-a"
           }
         ]
       }

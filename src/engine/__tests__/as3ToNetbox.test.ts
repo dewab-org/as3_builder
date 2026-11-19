@@ -121,7 +121,7 @@ describe("write-back changeset (W1)", () => {
     ).toBe(true);
   });
 
-  it("builds full service create specs with refs, slug, and vips", () => {
+  it("builds full service create specs with refs, cluster, and vips", () => {
     const { declaration, manifest } = freshRender();
     const appObj = declaration[appName] as Dict;
     appObj.newVip = {
@@ -140,7 +140,7 @@ describe("write-back changeset (W1)", () => {
         endpoint: "virtual-servers",
         fields: {
           name: "newWeb",
-          slug: "newweb",
+          cluster: 77, // required since plugin 0.9.0 (G1)
           protocol: "http",
           service_port: 80, // AS3 default for http
           vs_type: "standard",
@@ -149,6 +149,128 @@ describe("write-back changeset (W1)", () => {
         vipAddresses: ["10.7.7.7/32"],
       },
     ]);
+    // slug is derived and read-only since plugin 0.9.0 (G1)
+    expect(creates[0].fields).not.toHaveProperty("slug");
+    expect(notes).toEqual([]);
+  });
+
+  it("records the create cluster from the loaded virtual servers", () => {
+    const { manifest } = freshRender();
+    expect(manifest.createClusterId).toBe(77);
+  });
+
+  it("refuses a service create when no cluster could be determined", () => {
+    const { declaration, manifest } = freshRender();
+    const appObj = declaration[appName] as Dict;
+    appObj.newWeb = {
+      class: "Service_HTTP",
+      virtualAddresses: ["10.7.7.7"],
+      virtualPort: 80,
+    };
+    const { creates, notes } = computeUpdates(declaration, {
+      ...manifest,
+      createClusterId: null,
+    });
+    expect(creates).toEqual([]);
+    expect(notes.some((n) => n.includes("cluster"))).toBe(true);
+  });
+
+  it("collapses Persist pointers back to the NetBox universal method", () => {
+    const { declaration, manifest } = freshRender();
+    const appObj = declaration[appName] as Dict;
+    (appObj.vs_ssl_app as Dict).persistenceMethods = [
+      { use: "session_persist" },
+      "source-address",
+    ];
+    const { updates } = computeUpdates(declaration, manifest);
+    expect(updates).toHaveLength(1);
+    expect(updates[0].changes).toEqual([
+      { field: "persistence", from: ["cookie"], to: ["source-address", "universal"] },
+    ]);
+  });
+
+  it("round-trips a spread Service_* protocol profile without a detach op", () => {
+    // A Service_*-class protocol profile has no per-VS pointer (its options
+    // are spread into the service), so an untouched declaration must not
+    // produce a "detach all protocol profiles" op.
+    const graph = {
+      id: "900",
+      name: "app900",
+      virtual_servers: [
+        {
+          id: 90,
+          name: "vs-udp",
+          protocol: "udp",
+          service_port: 111,
+          virtual_addresses: [{ id: 1, address: "10.0.0.40/32" }],
+          protocol_profiles: [
+            {
+              id: 5,
+              name: "udp-idle",
+              options: { class: "Service_UDP", idleTimeout: 180 },
+            },
+          ],
+        },
+      ],
+    };
+    const { declaration } = renderNetboxApp(graph);
+    const manifest = buildManifest(graph, declaration);
+    const { updates, notes } = computeUpdates(
+      JSON.parse(JSON.stringify(declaration)),
+      manifest
+    );
+    expect(notes).toEqual([]);
+    expect(updates).toEqual([]);
+  });
+
+  it("round-trips a persistence iRule policy without a detach op", () => {
+    const graph = {
+      id: "901",
+      name: "app901",
+      virtual_servers: [
+        {
+          id: 91,
+          name: "vs-https",
+          protocol: "https",
+          service_port: 443,
+          persistence: ["universal"],
+          virtual_addresses: [{ id: 2, address: "10.0.0.41/32" }],
+          policies: [
+            {
+              id: 6,
+              name: "session-pol",
+              policy_type: "irule",
+              is_persistence: true,
+              rules: {
+                class: "iRule",
+                iRule: "when HTTP_REQUEST { persist uie 1 }",
+                isPersistenceMethod: true,
+              },
+            },
+          ],
+        },
+      ],
+    };
+    const { declaration } = renderNetboxApp(graph);
+    const manifest = buildManifest(graph, declaration);
+    const { updates, notes } = computeUpdates(
+      JSON.parse(JSON.stringify(declaration)),
+      manifest
+    );
+    expect(notes).toEqual([]);
+    expect(updates).toEqual([]);
+  });
+
+  it("stores TLSv1.0 as version 0 instead of dropping it", () => {
+    const { declaration, manifest } = freshRender();
+    const appObj = declaration[appName] as Dict;
+    (appObj.ssl_vs_ssl_app as Dict).tls1_0Enabled = true;
+    const { updates, notes } = computeUpdates(declaration, manifest);
+    expect(updates).toHaveLength(1);
+    const fields = Object.fromEntries(
+      updates[0].changes.map((c) => [c.field, c.to])
+    );
+    expect(fields.tls_versions).toEqual([0, 1, 2]);
     expect(notes).toEqual([]);
   });
 
