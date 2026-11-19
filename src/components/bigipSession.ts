@@ -1,5 +1,8 @@
-// BIG-IP connection details for the dialog. In memory only — they survive
-// closing and reopening it, and are cleared on refresh, never persisted.
+// BIG-IP connection details for the dialogs. They survive closing and
+// reopening a dialog. The non-secret ones (host, username, tenant, TLS
+// choice, AS3 version) are mirrored to sessionStorage so a reload in the
+// same tab prefills them; the password lives in memory only, so after a
+// reload the session is Not connected until the user connects again.
 //
 // Kept out of the dialog so that file exports only components (see chips.ts).
 
@@ -15,15 +18,37 @@ interface BigipSession {
   as3Version: string;
 }
 
-function restore(): Partial<BigipSession> {
+/** The fields that may be written to browser storage. The password must
+ * never be; nor `connected`, which without the password would be a lie. */
+type StoredBigipSession = Pick<
+  BigipSession,
+  "host" | "username" | "tenant" | "validateCert" | "as3Version"
+>;
+
+/** Read the non-secret connection details. A record written by an older
+ * build may also hold the password: rewrite it without it. */
+function restore(): Partial<StoredBigipSession> {
+  let raw: Record<string, unknown>;
   try {
-    return JSON.parse(sessionStorage.getItem(STORE_KEY) ?? "{}") as Record<
-      string,
-      never
-    >;
+    const parsed: unknown = JSON.parse(sessionStorage.getItem(STORE_KEY) ?? "{}");
+    if (typeof parsed !== "object" || parsed === null) return {};
+    raw = parsed as Record<string, unknown>;
   } catch {
     return {};
   }
+  const kept: Partial<StoredBigipSession> = {};
+  for (const key of ["host", "username", "tenant", "as3Version"] as const) {
+    if (typeof raw[key] === "string") kept[key] = raw[key];
+  }
+  if (typeof raw.validateCert === "boolean") kept.validateCert = raw.validateCert;
+  if (Object.keys(raw).some((k) => !(k in kept))) {
+    try {
+      sessionStorage.setItem(STORE_KEY, JSON.stringify(kept));
+    } catch {
+      /* storage unavailable: nothing to scrub */
+    }
+  }
+  return kept;
 }
 
 const stored = restore();
@@ -34,22 +59,27 @@ const bigipSessionRestored = Boolean(stored.host);
 export const remembered: BigipSession = {
   host: stored.host ?? "",
   username: stored.username ?? "",
-  password: stored.password ?? "",
+  password: "",
   tenant: stored.tenant ?? "Applications",
   validateCert: stored.validateCert ?? true,
-  /** True once "Connect to BIG-IP…" has verified the device this session. */
-  connected: stored.connected ?? false,
+  /** True once "Connect to BIG-IP…" has verified the device this session.
+   * Never restored: without the password a reload cannot be connected. */
+  connected: false,
   /** AS3 version reported by the device at connect time. */
   as3Version: stored.as3Version ?? "",
 };
 
-/** Mirror the session to this tab's storage, so a reload stays connected.
- * Per-tab, gone when the tab closes; same CSP boundary as the in-memory
- * copy. The password is included because every BIG-IP call sends basic
- * auth — without it a restored "connection" could not make a single call. */
+/** Mirror the non-secret connection details to this tab's storage. */
 export function persistBigipSession(): void {
+  const record: StoredBigipSession = {
+    host: remembered.host,
+    username: remembered.username,
+    tenant: remembered.tenant,
+    validateCert: remembered.validateCert,
+    as3Version: remembered.as3Version,
+  };
   try {
-    sessionStorage.setItem(STORE_KEY, JSON.stringify(remembered));
+    sessionStorage.setItem(STORE_KEY, JSON.stringify(record));
   } catch {
     /* storage unavailable: the in-memory session still works */
   }
@@ -82,8 +112,12 @@ export function applyBigipDefaults(defaults: {
   validateCert: boolean;
 }): void {
   remembered.host ||= defaults.host;
-  remembered.username ||= defaults.username;
-  remembered.password ||= defaults.password;
+  // The server's credentials belong to the server's device: never hand them
+  // to a different host restored from this tab.
+  if (remembered.host.trim() === defaults.host.trim()) {
+    remembered.username ||= defaults.username;
+    remembered.password ||= defaults.password;
+  }
   // A session restored from this tab keeps its own TLS choice.
   if (!bigipSessionRestored) remembered.validateCert = defaults.validateCert;
 }
