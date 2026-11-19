@@ -36,6 +36,11 @@ function restore(): Partial<{
 
 const stored = restore();
 
+/** True when this tab restored a NetBox connection on load: the server's
+ * startup defaults must then fill gaps only, never replace it (a restored
+ * token belongs to the restored URL). */
+export const netboxSessionRestored = Boolean(stored.authHeader);
+
 export const netboxSession = {
   url: stored.url || "http://localhost:8080",
   username: stored.username ?? "",
@@ -180,8 +185,25 @@ export async function ensureIpAddress(
   return { id: created.id, created: true };
 }
 
+const listeners = new Set<(connected: boolean) => void>();
+
+/** Follow the Connected state (toolbar button). Returns an unsubscribe. */
+export function onNetboxConnectionChange(
+  fn: (connected: boolean) => void
+): () => void {
+  listeners.add(fn);
+  return () => {
+    listeners.delete(fn);
+  };
+}
+
+export function notifyNetboxConnected(connected: boolean): void {
+  for (const fn of listeners) fn(connected);
+}
+
 export function invalidateNetboxAuth(): void {
   netboxSession.authHeader = "";
   netboxSession.apps = undefined;
   persistNetboxSession();
+  notifyNetboxConnected(false);
 }

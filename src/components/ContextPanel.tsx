@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type {
   ClassInfo,
   JsonPath,
@@ -7,6 +7,7 @@ import type {
   PropertyInfo,
 } from "../engine";
 import {
+  canRename,
   describeSchema,
   definitionDocumentation,
   fieldDocumentation,
@@ -68,6 +69,10 @@ export default function ContextPanel({
     value: string;
     error: string | null;
   } | null>(null);
+  // An open rename belongs to the node it was opened on: moving the
+  // selection must not carry its text over to another node.
+  const selectionKey = JSON.stringify(context.path);
+  useEffect(() => setRename(null), [selectionKey]);
   const docNode = getAtPath(doc, context.path);
 
   // Cross-reference options: document objects grouped once, filtered per
@@ -200,9 +205,7 @@ export default function ContextPanel({
           )}
         </span>
         {nodeName !== undefined &&
-          isPlainObject(docNode) &&
-          context.path.length <= 2 &&
-          typeof context.path[context.path.length - 1] === "string" && (
+          canRename(context.path as (string | number)[], docNode) && (
             <button
               className="ctx-rename"
               title={`Rename ${nodeName} (references to it are rewritten)`}

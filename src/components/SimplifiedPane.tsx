@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { JsonPath, JsonSchema } from "../engine";
 import {
+  canRename,
   decodeBase64Safely,
   encodeBase64,
   isBase64Wrapper,
@@ -571,8 +572,7 @@ function ObjectCard({
   // rewrites references), never array items or locked objects.
   const renameable =
     ctx.renameAt !== undefined &&
-    path.length <= 2 &&
-    typeof path[path.length - 1] === "string" &&
+    canRename(path as (string | number)[], value) &&
     !insideImmutable &&
     !ctx.isLocked(path);
   const [renaming, setRenaming] = useState<{

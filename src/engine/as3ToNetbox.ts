@@ -970,6 +970,14 @@ const DEFAULT_PORT_BY_PROTOCOL: Record<string, number> = {
 
 // Build a CreateObject for a declaration object with no manifest entry.
 // Returns null (with notes) when the object cannot be created.
+/** The AS3 key a pointer names ("name" or {use: "name"}), or null when it
+ * points outside the declaration (a {bigip} path with no NetBox row here). */
+function pointerKey(v: unknown): string | null {
+  if (typeof v === "string") return sanitizeKey(v);
+  if (isPlainObject(v) && typeof v.use === "string") return sanitizeKey(v.use);
+  return null;
+}
+
 function buildCreate(
   as3Key: string,
   obj: Dict,
@@ -1130,22 +1138,16 @@ function buildCreate(
   // M2M links the service states as pointers: the endpoint policy, its
   // iRules, and TCP/HTTP profile pointers. Persist pointers are resolved by
   // the caller (they need the application object).
-  const asKey = (v: unknown): string | null =>
-    typeof v === "string"
-      ? sanitizeKey(v)
-      : isPlainObject(v) && typeof v.use === "string"
-        ? sanitizeKey(v.use)
-        : null;
   const policyKeys: string[] = [];
-  const pe = asKey(obj.policyEndpoint);
+  const pe = pointerKey(obj.policyEndpoint);
   if (pe) policyKeys.push(pe);
   for (const r of (obj.iRules as unknown[] | undefined) ?? []) {
-    const k = asKey(r);
+    const k = pointerKey(r);
     if (k) policyKeys.push(k);
   }
   const protocolProfileKeys: string[] = [];
   for (const p of [obj.profileTCP, obj.profileHTTP]) {
-    const k = asKey(p);
+    const k = pointerKey(p);
     if (k) protocolProfileKeys.push(k);
   }
 
@@ -1208,7 +1210,9 @@ export function newAppManifest(
         endpoint: "applications",
         id: Number(createdApp.id),
         className: "Application",
-        netboxName: String(createdApp.name ?? ""),
+        // No netboxName: the surveyed name need not match the AS3 key, and
+        // must not read as a rename. The post-push reload builds a real
+        // manifest from NetBox.
         // Snapshot the DECLARATION's view, not the created record: the
         // surveyed description need not appear as a label in the editor, and
         // must not diff as "clear the description". The post-push reload
@@ -1449,14 +1453,6 @@ export function computeUpdates(
     // NetBox links them many-to-many. Retargeting is a relink of that set —
     // the objects themselves are written (or not) by their own entries.
     if (entry.linkNames) {
-      /** AS3 key a pointer names, or undefined when it points outside the
-       * declaration (a {bigip} path we cannot resolve to a NetBox row). */
-      const keyOf = (v: unknown): string | undefined => {
-        if (typeof v === "string") return sanitizeKey(v);
-        if (isPlainObject(v) && typeof v.use === "string")
-          return sanitizeKey(v.use);
-        return undefined;
-      };
       const gather = (
         values: unknown[]
       ): { keys: string[]; unresolved: unknown[] } => {
@@ -1464,10 +1460,10 @@ export function computeUpdates(
         const unresolved: unknown[] = [];
         for (const v of values) {
           if (v === undefined) continue;
-          const key = keyOf(v);
+          const key = pointerKey(v);
           // A rendered artifact (the merged multi-policy object, say) is not a
           // NetBox row, so it can never be the target of a link.
-          if (key === undefined || key in manifest.artifacts) unresolved.push(v);
+          if (key === null || key in manifest.artifacts) unresolved.push(v);
           else keys.push(key);
         }
         return { keys, unresolved };

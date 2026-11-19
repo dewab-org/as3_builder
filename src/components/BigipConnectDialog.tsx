@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   bigipAuthHeaders,
-  persistBigipSession,
+  rememberBigip,
   remembered,
+  setBigipConnected,
 } from "./bigipSession";
 
 interface BigipConnectDialogProps {
@@ -24,10 +25,11 @@ export default function BigipConnectDialog({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | undefined>();
 
-  remembered.host = host;
-  remembered.username = username;
-  remembered.password = password;
-  remembered.validateCert = validateCert;
+  // Effect, not render: changing the device flips the toolbar's Connected
+  // state, which is another component's state.
+  useEffect(() => {
+    rememberBigip({ host, username, password, validateCert });
+  }, [host, username, password, validateCert]);
 
   const canConnect = !busy && host.trim() !== "" && username !== "";
 
@@ -51,16 +53,14 @@ export default function BigipConnectDialog({
             : (detail ?? `HTTP ${res.status}`)
         );
       }
-      remembered.connected = true;
       remembered.as3Version =
         typeof body === "object" && body !== null
           ? String((body as Record<string, unknown>).version ?? "")
           : "";
-      persistBigipSession();
+      setBigipConnected(true);
       onConnected();
     } catch (err) {
-      remembered.connected = false;
-      persistBigipSession();
+      setBigipConnected(false);
       setError(String(err instanceof Error ? err.message : err));
     } finally {
       setBusy(null);

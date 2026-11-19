@@ -216,33 +216,27 @@ export default function PushNetboxDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Create the surveyed application, bootstrap its provenance, and fall
-  // through to the ordinary changeset flow (everything becomes a create).
-  async function createApplication() {
+  // Turn the survey into a change list. Nothing is written yet: the
+  // application itself is created as the first step of Apply, inside the
+  // same all-or-nothing run as everything else.
+  const [pendingApp, setPendingApp] = useState<Record<string, unknown> | null>(
+    null
+  );
+  async function continueFromSurvey() {
     if (!survey || !declaration || survey.clusterId === null) return;
-    setBusy("Creating application…");
     setError(undefined);
+    const body: Record<string, unknown> = {
+      name: survey.name.trim(),
+      slug: slugify(survey.name),
+      description: survey.description,
+    };
+    if (survey.snowSysId.trim()) body.snow_sys_id = survey.snowSysId.trim();
+    // id 0 until Apply creates the record.
+    const m = newAppManifest(declaration, survey.appKey, { id: 0 }, survey.clusterId);
+    setPendingApp(body);
+    setSurvey(undefined);
+    setBusy("Computing changes…");
     try {
-      const body: Record<string, unknown> = {
-        name: survey.name.trim(),
-        slug: slugify(survey.name),
-        description: survey.description,
-      };
-      if (survey.snowSysId.trim()) body.snow_sys_id = survey.snowSysId.trim();
-      const created = await netboxRest<Record<string, unknown>>(
-        `${PLUGIN_BASE}/applications/`,
-        { method: "POST", body }
-      );
-      const m = newAppManifest(
-        declaration,
-        survey.appKey,
-        created,
-        survey.clusterId
-      );
-      netboxSession.manifests.set(m.declarationId, m);
-      netboxSession.apps = undefined; // the cached picker list is stale now
-      setSurvey(undefined);
-      setBusy("Computing changes…");
       await computeRows(declaration, m);
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
@@ -252,7 +246,8 @@ export default function PushNetboxDialog({
   }
 
   const applicable = rows.filter((r) => r.checked && rowOpCount(r) > 0);
-  const totalOps = applicable.reduce((n, r) => n + rowOpCount(r), 0);
+  const totalOps =
+    applicable.reduce((n, r) => n + rowOpCount(r), 0) + (pendingApp ? 1 : 0);
   const deleteCount = applicable.filter((r) => r.kind === "delete").length;
 
   // NetBox holds certificate metadata only — the material lives in the
@@ -273,11 +268,40 @@ export default function PushNetboxDialog({
     return { id: created.id, placeholder: true };
   }
 
-  /** One object minted during an apply run, deletable on rollback. */
+  /** One step to reverse on rollback: DELETE what the run created (the
+   * default), PATCH an updated object's fields back to their prior values,
+   * or POST a deleted pool member back. */
   interface UndoEntry {
-    /** Proxy path to DELETE, e.g. "/api/plugins/netbox-load-balancer/backend-pools/12/". */
+    /** Proxy path, e.g. "/api/plugins/netbox-load-balancer/backend-pools/12/". */
     path: string;
     label: string;
+    method?: "DELETE" | "PATCH" | "POST";
+    body?: Record<string, unknown>;
+  }
+
+  /** A read-back value in the shape NetBox accepts on write: nested objects
+   * become their id, lists of them a list of ids. */
+  function writable(v: unknown): unknown {
+    if (Array.isArray(v))
+      return v.map((x) =>
+        x && typeof x === "object" && "id" in x ? (x as { id: unknown }).id : x
+      );
+    if (v && typeof v === "object" && "id" in v) return (v as { id: unknown }).id;
+    return v;
+  }
+
+  /** PATCH, after recording the fields' current values so a rollback can
+   * put them back. */
+  async function patchTracked(
+    path: string,
+    body: Record<string, unknown>,
+    undo: UndoEntry[]
+  ): Promise<void> {
+    const before = await netboxRest<Record<string, unknown>>(path);
+    const restore: Record<string, unknown> = {};
+    for (const field of Object.keys(body)) restore[field] = writable(before[field]);
+    await netboxRest(path, { method: "PATCH", body });
+    undo.push({ path, label: `restore ${path}`, method: "PATCH", body: restore });
   }
 
   /** Returns warnings worth surfacing on the row (placeholder certificates). */
@@ -424,7 +448,7 @@ export default function PushNetboxDialog({
     if (change.changes.length > 0) {
       const body: Record<string, unknown> = {};
       for (const c of change.changes) body[c.field] = c.to;
-      await netboxRest(`${base}/${entry.id}/`, { method: "PATCH", body });
+      await patchTracked(`${base}/${entry.id}/`, body, undo);
     }
     for (const op of change.ops) {
       switch (op.op) {
@@ -449,16 +473,31 @@ export default function PushNetboxDialog({
           break;
         }
         case "member-update":
-          await netboxRest(`${PLUGIN_BASE}/pool-members/${op.memberId}/`, {
-            method: "PATCH",
-            body: op.body,
+          await patchTracked(
+            `${PLUGIN_BASE}/pool-members/${op.memberId}/`,
+            op.body,
+            undo
+          );
+          break;
+        case "member-delete": {
+          // Read it first so a rollback can recreate it.
+          const path = `${PLUGIN_BASE}/pool-members/${op.memberId}/`;
+          const before = await netboxRest<Record<string, unknown>>(path);
+          const recreate: Record<string, unknown> = {};
+          for (const [k, v] of Object.entries(before)) {
+            if (["id", "url", "display", "display_url", "created", "last_updated"].includes(k))
+              continue;
+            recreate[k] = writable(v);
+          }
+          await netboxRest(path, { method: "DELETE" });
+          undo.push({
+            path: `${PLUGIN_BASE}/pool-members/`,
+            label: `restore ${op.label}`,
+            method: "POST",
+            body: recreate,
           });
           break;
-        case "member-delete":
-          await netboxRest(`${PLUGIN_BASE}/pool-members/${op.memberId}/`, {
-            method: "DELETE",
-          });
-          break;
+        }
         case "vs-addresses": {
           const ids: number[] = [];
           for (const address of op.addresses) {
@@ -470,10 +509,7 @@ export default function PushNetboxDialog({
               });
             ids.push(ip.id);
           }
-          await netboxRest(`${base}/${entry.id}/`, {
-            method: "PATCH",
-            body: { virtual_addresses: ids },
-          });
+          await patchTracked(`${base}/${entry.id}/`, { virtual_addresses: ids }, undo);
           break;
         }
         case "pool-monitors": {
@@ -484,10 +520,7 @@ export default function PushNetboxDialog({
               throw new Error(`monitor reference "${key}" does not resolve`);
             ids.push(id);
           }
-          await netboxRest(`${base}/${entry.id}/`, {
-            method: "PATCH",
-            body: { monitors: ids },
-          });
+          await patchTracked(`${base}/${entry.id}/`, { monitors: ids }, undo);
           break;
         }
         case "vs-links": {
@@ -512,10 +545,7 @@ export default function PushNetboxDialog({
               );
             ids.push(found.results[0].id);
           }
-          await netboxRest(`${base}/${entry.id}/`, {
-            method: "PATCH",
-            body: { [op.field]: ids },
-          });
+          await patchTracked(`${base}/${entry.id}/`, { [op.field]: ids }, undo);
           break;
         }
         case "vs-snat": {
@@ -531,10 +561,7 @@ export default function PushNetboxDialog({
               );
             id = found.results[0].id;
           }
-          await netboxRest(`${base}/${entry.id}/`, {
-            method: "PATCH",
-            body: { snat_pool: id },
-          });
+          await patchTracked(`${base}/${entry.id}/`, { snat_pool: id }, undo);
           break;
         }
         case "vs-ref": {
@@ -547,10 +574,7 @@ export default function PushNetboxDialog({
               );
             id = resolved;
           }
-          await netboxRest(`${base}/${entry.id}/`, {
-            method: "PATCH",
-            body: { [op.field]: id },
-          });
+          await patchTracked(`${base}/${entry.id}/`, { [op.field]: id }, undo);
           break;
         }
       }
@@ -567,6 +591,29 @@ export default function PushNetboxDialog({
     // of leaving half an application behind (and a retry full of
     // duplicate-name errors).
     const undo: UndoEntry[] = [];
+
+    // A net-new application is the run's first create and its last undo.
+    if (pendingApp) {
+      try {
+        const created = await netboxRest<{ id: number }>(
+          `${PLUGIN_BASE}/applications/`,
+          { method: "POST", body: pendingApp }
+        );
+        undo.push({
+          path: `${PLUGIN_BASE}/applications/${created.id}/`,
+          label: `application "${String(pendingApp.name)}"`,
+        });
+        manifest.appId = created.id;
+        for (const entry of manifest.entries)
+          if (entry.isApplication) entry.id = created.id;
+      } catch (err) {
+        setError(
+          `Could not create the application: ${String(err instanceof Error ? err.message : err)}`
+        );
+        setBusy(null);
+        return;
+      }
+    }
 
     const keyToId = new Map<string, number>();
     for (const entry of manifest.entries) keyToId.set(entry.as3Key, entry.id);
@@ -627,7 +674,10 @@ export default function PushNetboxDialog({
       const rollbackFailures: string[] = [];
       for (const entry of [...undo].reverse()) {
         try {
-          await netboxRest(entry.path, { method: "DELETE" });
+          await netboxRest(entry.path, {
+            method: entry.method ?? "DELETE",
+            body: entry.body,
+          });
         } catch (err) {
           rollbackFailures.push(
             `${entry.label}: ${String(err instanceof Error ? err.message : err)}`
@@ -636,7 +686,7 @@ export default function PushNetboxDialog({
       }
       setRows((prev) =>
         prev.map((r) =>
-          r.kind === "create" && r.status === "ok"
+          r.kind !== "delete" && r.status === "ok"
             ? { ...r, status: "rolled-back" as RowStatus }
             : r
         )
@@ -653,6 +703,17 @@ export default function PushNetboxDialog({
       setSummary(summarizePush(prev));
       return prev;
     });
+
+    if (!failed && pendingApp) {
+      netboxSession.manifests.set(manifest.declarationId, manifest);
+      netboxSession.apps = undefined; // the cached picker list is stale now
+      setPendingApp(null);
+    } else if (failed && pendingApp) {
+      // Rolled back: put the application id back to "not created yet" so a
+      // retry creates it again.
+      manifest.appId = 0;
+      for (const entry of manifest.entries) if (entry.isApplication) entry.id = 0;
+    }
 
     if (!failed) {
       // Re-fetch, re-render, refresh manifest — the editor then shows the
@@ -817,7 +878,8 @@ export default function PushNetboxDialog({
               This declaration was not loaded from NetBox, so it can be created
               as a <strong>new application</strong>. NetBox needs a few fields
               AS3 does not carry; the virtual servers are placed on the chosen
-              cluster.
+              cluster. Nothing is created until you apply, and a failed apply
+              creates nothing.
             </p>
             <label className="modal-field">
               <span>Application name</span>
@@ -870,14 +932,33 @@ export default function PushNetboxDialog({
           </>
         )}
 
-        {!error && !survey && rows.length === 0 && !busy && (
+        {!error && !survey && rows.length === 0 && !pendingApp && !busy && (
           <p className="ctx-hint">
             No pushable changes — the declaration matches NetBox.
           </p>
         )}
 
-        {rows.length > 0 && (
-          <div className="push-list">{rows.map((row, i) => renderRow(row, i))}</div>
+        {(rows.length > 0 || pendingApp) && (
+          <div className="push-list">
+            {pendingApp && (
+              <div className="push-row">
+                <div className="push-row-head">
+                  <span className="push-kind create">CREATE</span>
+                  <span className="push-name">
+                    {String(pendingApp.name)}
+                    <span className="push-class">Application</span>
+                  </span>
+                </div>
+                <div className="push-field">
+                  <span className="push-to">
+                    create application — first, and removed again if anything
+                    after it fails
+                  </span>
+                </div>
+              </div>
+            )}
+            {rows.map((row, i) => renderRow(row, i))}
+          </div>
         )}
 
         {notes.length > 0 && (
@@ -934,15 +1015,15 @@ export default function PushNetboxDialog({
                 survey.name.trim() === "" ||
                 survey.clusterId === null
               }
-              onClick={() => void createApplication()}
+              onClick={() => void continueFromSurvey()}
             >
-              {busy ?? "Create application…"}
+              {busy ?? "Continue…"}
             </button>
           )}
           {!done && !survey && (
             <button
               className="primary"
-              disabled={busy !== null || applicable.length === 0}
+              disabled={busy !== null || (applicable.length === 0 && !pendingApp)}
               onClick={() => setConfirming(true)}
             >
               {busy ?? `Apply ${totalOps} change${totalOps === 1 ? "" : "s"}…`}

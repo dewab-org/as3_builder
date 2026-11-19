@@ -45,6 +45,8 @@ import {
   invalidateNetboxAuth,
   netboxGraphql,
   netboxSession,
+  netboxSessionRestored,
+  onNetboxConnectionChange,
 } from "./netboxSession";
 import { loadAppConfig } from "./appConfig";
 import {
@@ -55,6 +57,7 @@ import {
 import HoverCard, { type HoverAnchor } from "./components/HoverCard";
 import {
   applyBigipDefaults,
+  onBigipConnectionChange,
   remembered as bigipRemembered,
 } from "./components/bigipSession";
 import { useValidation } from "./hooks/useValidation";
@@ -175,6 +178,11 @@ export default function App() {
     () => !!netboxSession.apps
   );
   const [showConnectDialog, setShowConnectDialog] = useState(false);
+
+  // The buttons follow the sessions: a lost token or a changed BIG-IP device
+  // turns them back to Not connected.
+  useEffect(() => onNetboxConnectionChange(setNetboxConnected), []);
+  useEffect(() => onBigipConnectionChange(setBigipConnected), []);
 
   // A reload keeps the NetBox token (sessionStorage); restore the app list —
   // and with it the Connected state — in the background.
@@ -347,11 +355,15 @@ export default function App() {
         setShowConnectDialog(false);
         setShowNetboxDialog(false);
       }
-      if (config.netbox.url) netboxSession.url = config.netbox.url;
+      // A connection restored from this tab wins over the server defaults:
+      // its token belongs to its URL and TLS setting.
+      if (!netboxSessionRestored) {
+        if (config.netbox.url) netboxSession.url = config.netbox.url;
+        netboxSession.validateCert = config.netbox.validateCert;
+      }
       netboxSession.username ||= config.netbox.username;
       netboxSession.password ||= config.netbox.password;
       netboxSession.token ||= config.netbox.token;
-      netboxSession.validateCert = config.netbox.validateCert;
       applyBigipDefaults(config.bigip);
     });
   }, []);
@@ -1088,7 +1100,7 @@ export default function App() {
         onValidateOnBigip={() => setShowBigipDialog(true)}
         netboxEnabled={policy.netbox}
         onConnectNetbox={() => setShowConnectDialog(true)}
-        netboxConnected={netboxConnected || !!netboxSession.apps}
+        netboxConnected={netboxConnected}
         onConnectBigip={() => setShowBigipConnectDialog(true)}
         bigipConnected={bigipConnected}
         onLoadFromNetbox={() => setShowNetboxDialog(true)}

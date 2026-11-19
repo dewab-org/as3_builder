@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { substituteDryRunCertificates } from "../engine";
-import { remembered } from "./bigipSession";
+import { bigipAuthHeaders, remembered, rememberBigip } from "./bigipSession";
 
 interface BigipDialogProps {
   /** Current editor text (the declaration to dry-run). */
@@ -18,20 +18,6 @@ interface StepState {
   label: string;
   state: "pending" | "running" | "ok" | "fail";
   detail?: string;
-}
-
-function authHeaders(
-  host: string,
-  username: string,
-  password: string,
-  validateCert: boolean
-): Record<string, string> {
-  return {
-    authorization: `Basic ${btoa(`${username}:${password}`)}`,
-    "x-bigip-target": host.trim(),
-    "x-bigip-validate-cert": validateCert ? "1" : "0",
-    "content-type": "application/json",
-  };
 }
 
 export default function BigipDialog({
@@ -70,10 +56,11 @@ export default function BigipDialog({
     lastDryRun.tenant === tenant.trim();
 
   // Keep the in-memory cache current so reopening the dialog restores fields.
-  remembered.host = host;
-  remembered.username = username;
-  remembered.password = password;
-  remembered.validateCert = validateCert;
+  // Effect, not render: changing the device flips the toolbar's Connected
+  // state, which is another component's state.
+  useEffect(() => {
+    rememberBigip({ host, username, password, validateCert });
+  }, [host, username, password, validateCert]);
   remembered.tenant = tenant;
 
   function cancelApply() {
@@ -95,7 +82,7 @@ export default function BigipDialog({
       { label: "Check AS3 API availability", state: "running" },
       { label: applyLabel, state: "pending" },
     ]);
-    const headers = authHeaders(host, username, password, validateCert);
+    const headers = bigipAuthHeaders({ host, username, password, validateCert });
 
     try {
       // Step 1: AS3 availability + version.

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { remembered } from "./bigipSession";
+import { bigipAuthHeaders, remembered, rememberBigip } from "./bigipSession";
 
 interface BigipLoadDialogProps {
   onLoad: (text: string) => void;
@@ -11,20 +11,6 @@ interface TenantApps {
   tenant: string;
   schemaVersion?: string;
   apps: { name: string; classes: number }[];
-}
-
-function authHeaders(
-  host: string,
-  username: string,
-  password: string,
-  validateCert: boolean
-): Record<string, string> {
-  return {
-    authorization: `Basic ${btoa(`${username}:${password}`)}`,
-    "x-bigip-target": host.trim(),
-    "x-bigip-validate-cert": validateCert ? "1" : "0",
-    "content-type": "application/json",
-  };
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -50,16 +36,17 @@ export default function BigipLoadDialog({ onLoad, onClose }: BigipLoadDialogProp
 
   // Same in-memory cache the validate dialog uses, so one set of device
   // credentials serves both.
-  remembered.host = host;
-  remembered.username = username;
-  remembered.password = password;
-  remembered.validateCert = validateCert;
+  // Effect, not render: changing the device flips the toolbar's Connected
+  // state, which is another component's state.
+  useEffect(() => {
+    rememberBigip({ host, username, password, validateCert });
+  }, [host, username, password, validateCert]);
 
   const canConnect = !busy && host.trim() !== "" && username !== "";
 
   async function bigipGet(path: string): Promise<unknown> {
     const res = await fetch(`/bigip-proxy${path}`, {
-      headers: authHeaders(host, username, password, validateCert),
+      headers: bigipAuthHeaders({ host, username, password, validateCert }),
     });
     const body: unknown = await res.json().catch(() => ({}));
     if (!res.ok) {

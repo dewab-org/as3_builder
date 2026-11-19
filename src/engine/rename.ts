@@ -73,14 +73,16 @@ function reverseDocumentOrder(a: Path, b: Path): number {
  * paths to delete when the member itself is deleted. A pointer held in a
  * property loses that property (`pool`, `serverTLS: {use}`, Persist `iRule`);
  * a pointer that is a list entry loses that entry (`iRules`, `monitors`,
- * `virtualAddresses`, a `certificates` item). Empty for anything that is not
- * [appKey, memberKey]. Sorted for sequential deletion.
+ * `virtualAddresses`); a pointer anywhere inside a list item loses the item
+ * (a `certificates` entry, a policy action). Empty for anything that is not
+ * [applicationKey, memberKey]. Sorted for sequential deletion.
  */
 export function referencePathsTo(declaration: Dict, path: Path): Path[] {
   if (path.length !== 2 || path.some((s) => typeof s !== "string")) return [];
   const [appKey, key] = path as string[];
   const application = declaration[appKey];
-  if (!isPlainObject(application)) return [];
+  if (!isPlainObject(application) || application.class !== "Application")
+    return [];
 
   const found: Path[] = [];
 
@@ -91,11 +93,11 @@ export function referencePathsTo(declaration: Dict, path: Path): Path[] {
         (STRING_REF_PROPS.has(prop) && value === key) ||
         (isPlainObject(value) && value.use === key);
       if (isPointer) {
-        // A list item whose job is to name the target (a certificates entry)
-        // goes as a whole; elsewhere just the pointing property goes.
-        found.push(
-          elementPath && STRING_REF_PROPS.has(prop) ? elementPath : propPath
-        );
+        // Inside a list item (a certificates entry, a policy action's
+        // select.pool) the whole item goes — removing just the pointer would
+        // leave a hollow item that silently means something else. Elsewhere
+        // just the pointing property goes.
+        found.push(elementPath ?? propPath);
         continue;
       }
       if (Array.isArray(value)) {
@@ -111,7 +113,8 @@ export function referencePathsTo(declaration: Dict, path: Path): Path[] {
           }
         });
       } else if (isPlainObject(value)) {
-        walk(value, propPath, null);
+        // Keep the nearest enclosing list item while descending.
+        walk(value, propPath, elementPath);
       }
     }
   }
@@ -124,6 +127,18 @@ export function referencePathsTo(declaration: Dict, path: Path): Path[] {
   // One entry per location, latest first.
   const unique = new Map(found.map((p) => [JSON.stringify(p), p]));
   return [...unique.values()].sort(reverseDocumentOrder);
+}
+
+/** Whether the node at `path` (holding `value`) is something rename
+ * supports: the Application itself, or one of its class-bearing members
+ * other than its Constants. Not controls, not plain properties. */
+export function canRename(path: (string | number)[], value: unknown): boolean {
+  if (!isPlainObject(value) || path.some((s) => typeof s !== "string"))
+    return false;
+  if (path.length === 1) return value.class === "Application";
+  if (path.length === 2)
+    return typeof value.class === "string" && value.class !== "Constants";
+  return false;
 }
 
 export interface RenameResult {
@@ -160,8 +175,8 @@ export function renameMember(
 
   if (path.length === 1) {
     // The application itself: move the top-level key, order preserved.
-    if (!isPlainObject(clone[oldKey]))
-      return { error: `"${oldKey}" is not an object in this declaration.` };
+    if (!isPlainObject(clone[oldKey]) || clone[oldKey].class !== "Application")
+      return { error: `"${oldKey}" is not an application.` };
     if (newKey in clone)
       return { error: `"${newKey}" already exists in the declaration.` };
     const renamed: Dict = {};
@@ -173,8 +188,8 @@ export function renameMember(
 
   const appKey = String(path[0]);
   const application = clone[appKey];
-  if (!isPlainObject(application))
-    return { error: `"${appKey}" is not an object in this declaration.` };
+  if (!isPlainObject(application) || application.class !== "Application")
+    return { error: `"${appKey}" is not an application.` };
   if (!(oldKey in application))
     return { error: `"${oldKey}" is not a member of "${appKey}".` };
   if (newKey in application)

@@ -28,6 +28,9 @@ function restore(): Partial<BigipSession> {
 
 const stored = restore();
 
+/** True when this tab restored BIG-IP connection details on load. */
+const bigipSessionRestored = Boolean(stored.host);
+
 export const remembered: BigipSession = {
   host: stored.host ?? "",
   username: stored.username ?? "",
@@ -52,12 +55,20 @@ export function persistBigipSession(): void {
   }
 }
 
-/** Request headers for the dev/production server's BIG-IP proxy. */
-export function bigipAuthHeaders(): Record<string, string> {
+/** Request headers for the dev/production server's BIG-IP proxy — for the
+ * given connection fields, or the remembered session by default. */
+export function bigipAuthHeaders(
+  fields: {
+    host: string;
+    username: string;
+    password: string;
+    validateCert: boolean;
+  } = remembered
+): Record<string, string> {
   return {
-    authorization: `Basic ${btoa(`${remembered.username}:${remembered.password}`)}`,
-    "x-bigip-target": remembered.host.trim(),
-    "x-bigip-validate-cert": remembered.validateCert ? "1" : "0",
+    authorization: `Basic ${btoa(`${fields.username}:${fields.password}`)}`,
+    "x-bigip-target": fields.host.trim(),
+    "x-bigip-validate-cert": fields.validateCert ? "1" : "0",
     "content-type": "application/json",
   };
 }
@@ -73,5 +84,44 @@ export function applyBigipDefaults(defaults: {
   remembered.host ||= defaults.host;
   remembered.username ||= defaults.username;
   remembered.password ||= defaults.password;
-  remembered.validateCert = defaults.validateCert;
+  // A session restored from this tab keeps its own TLS choice.
+  if (!bigipSessionRestored) remembered.validateCert = defaults.validateCert;
+}
+
+const listeners = new Set<(connected: boolean) => void>();
+
+/** Follow the Connected state (toolbar button). Returns an unsubscribe. */
+export function onBigipConnectionChange(
+  fn: (connected: boolean) => void
+): () => void {
+  listeners.add(fn);
+  return () => {
+    listeners.delete(fn);
+  };
+}
+
+export function setBigipConnected(connected: boolean): void {
+  if (remembered.connected === connected) return;
+  remembered.connected = connected;
+  persistBigipSession();
+  for (const fn of listeners) fn(connected);
+}
+
+/** Record the dialog's connection fields. Changing the device or the
+ * credentials means the verified connection no longer applies. */
+export function rememberBigip(fields: {
+  host: string;
+  username: string;
+  password: string;
+  validateCert: boolean;
+}): void {
+  const changed =
+    fields.host !== remembered.host ||
+    fields.username !== remembered.username ||
+    fields.password !== remembered.password ||
+    fields.validateCert !== remembered.validateCert;
+  if (!changed) return;
+  Object.assign(remembered, fields);
+  persistBigipSession();
+  setBigipConnected(false);
 }

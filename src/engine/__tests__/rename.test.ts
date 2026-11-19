@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  canRename,
   referencePathsTo,
   renameInManifest,
   renameMember,
 } from "../rename";
-import { buildManifest, computeUpdates } from "../as3ToNetbox";
+import { buildManifest, computeUpdates, newAppManifest } from "../as3ToNetbox";
 import { renderNetboxApp } from "../netboxAs3";
 
 type Dict = Record<string, unknown>;
@@ -266,5 +267,62 @@ describe("referencePathsTo (delete clears references)", () => {
     expect(vs?.ops).toMatchObject([
       { op: "vs-ref", field: "backend_pool", targetKey: null },
     ]);
+  });
+});
+
+describe("review fixes: rename and reference scope", () => {
+  it("removes a policy action whose select points at the deleted pool", () => {
+    const d = {
+      app: {
+        class: "Application",
+        pol: {
+          class: "Endpoint_Policy",
+          rules: [
+            {
+              name: "r1",
+              actions: [
+                { type: "forward", select: { pool: { use: "gone" } } },
+                { type: "httpHeader", insert: { name: "x", value: "y" } },
+              ],
+            },
+          ],
+        },
+        gone: { class: "Pool" },
+      },
+    };
+    expect(referencePathsTo(d, ["app", "gone"])).toEqual([
+      ["app", "pol", "rules", 0, "actions", 0],
+    ]);
+  });
+
+  it("does not scan non-application objects", () => {
+    const d = { controls: { class: "Controls", trace: true, logLevel: "debug" } };
+    expect(referencePathsTo(d, ["controls", "trace"])).toEqual([]);
+  });
+
+  it("only renames applications and their members", () => {
+    expect(canRename(["myApp"], { class: "Application" })).toBe(true);
+    expect(canRename(["controls"], { class: "Controls" })).toBe(false);
+    expect(canRename(["myApp", "pool1"], { class: "Pool" })).toBe(true);
+    expect(canRename(["myApp", "constants"], { class: "Constants" })).toBe(false);
+    expect(canRename(["myApp", "web", "pool"], "pool1")).toBe(false);
+    expect(
+      renameMember({ controls: { class: "Controls" } }, ["controls"], "x")
+    ).toMatchObject({ error: expect.stringContaining("not an application") });
+  });
+});
+
+describe("review fix: net-new survey name", () => {
+  it("does not read a surveyed name as a rename", () => {
+    const d: Dict = {
+      id: "n1",
+      myApp: {
+        class: "Application",
+        web: { class: "Service_HTTP", virtualAddresses: ["10.9.9.9"], virtualPort: 80 },
+      },
+    };
+    const m = newAppManifest(d, "myApp", { id: 0, name: "Storefront Prod" }, 3);
+    const { updates } = computeUpdates(JSON.parse(JSON.stringify(d)), m);
+    expect(updates).toEqual([]);
   });
 });
