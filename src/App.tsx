@@ -56,8 +56,6 @@ import {
 import { getTemplate } from "./templates";
 import { useDocument } from "./hooks/useDocument";
 import {
-  invalidateNetboxAuth,
-  netboxGraphql,
   netboxSession,
   netboxSessionRestored,
   onNetboxConnectionChange,
@@ -78,7 +76,6 @@ import { useValidation } from "./hooks/useValidation";
 import {
   applicationMemberClasses,
   bigipCandidates,
-  APPLICATION_LIST_QUERY,
   buildClassRegistry,
   computeUpdates,
   effectiveSchema,
@@ -174,7 +171,8 @@ export default function App() {
   const [baselineText, setBaselineText] = useState(INITIAL_TEXT);
   const [showBigipDialog, setShowBigipDialog] = useState(false);
   const [showBigipConnectDialog, setShowBigipConnectDialog] = useState(false);
-  // Restored from this tab's storage: a reload keeps the BIG-IP connection.
+  // No credential survives a reload, so both start Not connected; the
+  // Connect dialogs come back prefilled with the non-secret details.
   const [bigipConnected, setBigipConnected] = useState(
     () => bigipRemembered.connected
   );
@@ -192,25 +190,6 @@ export default function App() {
   useEffect(() => onNetboxConnectionChange(setNetboxConnected), []);
   useEffect(() => onBigipConnectionChange(setBigipConnected), []);
 
-  // A reload keeps the NetBox token (sessionStorage); restore the app list —
-  // and with it the Connected state — in the background.
-  useEffect(() => {
-    if (!netboxSession.authHeader || netboxSession.apps) return;
-    void netboxGraphql<{ application_list: { id: string; name: string }[] }>(
-      APPLICATION_LIST_QUERY
-    )
-      .then((data) => {
-        netboxSession.apps = [...data.application_list].sort((a, b) =>
-          a.name.localeCompare(b.name)
-        );
-        setNetboxConnected(true);
-      })
-      .catch(() => {
-        // Token expired or NetBox away: back to Not connected.
-        invalidateNetboxAuth();
-        setNetboxConnected(false);
-      });
-  }, []);
   const [showNetboxDialog, setShowNetboxDialog] = useState(false);
   const [showBigipLoadDialog, setShowBigipLoadDialog] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
@@ -369,15 +348,22 @@ export default function App() {
         setShowConnectDialog(false);
         setShowNetboxDialog(false);
       }
-      // A connection restored from this tab wins over the server defaults:
-      // its token belongs to its URL and TLS setting.
+      // Connection details restored from this tab win over the server
+      // defaults. The server's credentials belong to the server's URL, so
+      // they fill in only when that is the URL in use.
       if (!netboxSessionRestored) {
         if (config.netbox.url) netboxSession.url = config.netbox.url;
         netboxSession.validateCert = config.netbox.validateCert;
       }
-      netboxSession.username ||= config.netbox.username;
-      netboxSession.password ||= config.netbox.password;
-      netboxSession.token ||= config.netbox.token;
+      const sameNetbox =
+        !config.netbox.url ||
+        netboxSession.url.trim().replace(/\/+$/, "") ===
+          config.netbox.url.trim().replace(/\/+$/, "");
+      if (sameNetbox) {
+        netboxSession.username ||= config.netbox.username;
+        netboxSession.password ||= config.netbox.password;
+        netboxSession.token ||= config.netbox.token;
+      }
       applyBigipDefaults(config.bigip);
     });
   }, []);

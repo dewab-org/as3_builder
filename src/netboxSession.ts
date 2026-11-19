@@ -1,11 +1,10 @@
 // Shared NetBox session state: connection details, provisioned token, cached
 // application list, and provenance manifests for loaded applications.
 //
-// The connection itself (URL, token/auth header — not the password, not the
-// manifests) is mirrored to sessionStorage so a page reload in the same tab
-// keeps the session connected. sessionStorage is per-tab and gone when the
-// tab closes; the app's strict CSP is what stands between it and script
-// injection, the same boundary the in-memory copy lives behind.
+// Only the non-secret connection details (URL, username, TLS choice) are
+// mirrored to sessionStorage, so a page reload in the same tab prefills the
+// Connect dialog. The token, the Authorization header built from it and the
+// password live in memory only: after a reload the user connects again.
 
 import type { AppManifest } from "./engine";
 
@@ -17,56 +16,69 @@ export interface AppEntry {
 
 const STORE_KEY = "as3b-netbox-session";
 
-function restore(): Partial<{
+/** The fields that may be written to browser storage. Anything else — the
+ * token, the auth header, the password — must never be persisted. */
+interface StoredNetboxSession {
   url: string;
   username: string;
-  token: string;
-  authHeader: string;
   validateCert: boolean;
-}> {
+}
+
+/** Read the non-secret connection details. A record written by an older
+ * build may also hold the token and auth header: rewrite it without them. */
+function restore(): Partial<StoredNetboxSession> {
+  let raw: Record<string, unknown>;
   try {
-    return JSON.parse(sessionStorage.getItem(STORE_KEY) ?? "{}") as Record<
-      string,
-      never
-    >;
+    const parsed: unknown = JSON.parse(sessionStorage.getItem(STORE_KEY) ?? "{}");
+    if (typeof parsed !== "object" || parsed === null) return {};
+    raw = parsed as Record<string, unknown>;
   } catch {
     return {};
   }
+  const kept: Partial<StoredNetboxSession> = {};
+  if (typeof raw.url === "string") kept.url = raw.url;
+  if (typeof raw.username === "string") kept.username = raw.username;
+  if (typeof raw.validateCert === "boolean") kept.validateCert = raw.validateCert;
+  if (Object.keys(raw).some((k) => !(k in kept))) {
+    try {
+      sessionStorage.setItem(STORE_KEY, JSON.stringify(kept));
+    } catch {
+      /* storage unavailable: nothing to scrub */
+    }
+  }
+  return kept;
 }
 
 const stored = restore();
 
-/** True when this tab restored a NetBox connection on load: the server's
- * startup defaults must then fill gaps only, never replace it (a restored
- * token belongs to the restored URL). */
-export const netboxSessionRestored = Boolean(stored.authHeader);
+/** True when this tab restored NetBox connection details on load: the
+ * server's startup defaults must then not replace the restored URL and TLS
+ * choice, and its credentials apply only if they belong to that URL. No
+ * credential is ever restored, so this never means "connected". */
+export const netboxSessionRestored = Boolean(stored.url);
 
 export const netboxSession = {
   url: stored.url || "http://localhost:8080",
   username: stored.username ?? "",
   password: "",
   /** An API token, used as-is when present — no provisioning round trip. */
-  token: stored.token ?? "",
+  token: "",
   validateCert: stored.validateCert ?? true,
-  authHeader: stored.authHeader ?? "",
+  authHeader: "",
   apps: undefined as AppEntry[] | undefined,
   /** declaration id → provenance manifest from the load-time render. */
   manifests: new Map<string, AppManifest>(),
 };
 
-/** Mirror the reload-safe parts of the session to this tab's storage. */
+/** Mirror the non-secret connection details to this tab's storage. */
 export function persistNetboxSession(): void {
+  const record: StoredNetboxSession = {
+    url: netboxSession.url,
+    username: netboxSession.username,
+    validateCert: netboxSession.validateCert,
+  };
   try {
-    sessionStorage.setItem(
-      STORE_KEY,
-      JSON.stringify({
-        url: netboxSession.url,
-        username: netboxSession.username,
-        token: netboxSession.token,
-        authHeader: netboxSession.authHeader,
-        validateCert: netboxSession.validateCert,
-      })
-    );
+    sessionStorage.setItem(STORE_KEY, JSON.stringify(record));
   } catch {
     /* storage full or unavailable: the in-memory session still works */
   }
