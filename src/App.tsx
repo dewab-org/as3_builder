@@ -15,6 +15,7 @@ import {
   parseTree,
   type ParseError,
 } from "jsonc-parser";
+import SettingsDialog from "./components/SettingsDialog";
 import Toolbar, { type ToolbarLabelMode } from "./components/Toolbar";
 import BigipDialog from "./components/BigipDialog";
 import BigipLoadDialog from "./components/BigipLoadDialog";
@@ -206,6 +207,7 @@ export default function App() {
   const [showNetboxDialog, setShowNetboxDialog] = useState(false);
   const [showBigipLoadDialog, setShowBigipLoadDialog] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const deepLinkRef = useRef<DeepLink | null>(null);
 
   // Deep link: prefill the NetBox connection and open the Connect dialog;
@@ -1091,10 +1093,8 @@ export default function App() {
   return (
     <div className="app">
       <Toolbar
-        schemaId={schemaId}
-        onSchemaChange={setSchemaId}
-        urlSchemas={urlSchemas}
-        onAddSchemaUrl={() => setSchemaUrlDialog({ url: "", busy: false })}
+        schemaLabel={schemaEntry.label}
+        onOpenSettings={() => setShowSettings(true)}
         onLoadText={guardedLoad}
         currentText={text}
         onValidateOnBigip={() => setShowBigipDialog(true)}
@@ -1111,12 +1111,25 @@ export default function App() {
         onAbout={() => setShowAbout(true)}
         onToggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
         labelMode={labelMode}
-        onLabelModeChange={setLabelMode}
         onUndo={undo}
         onRedo={redo}
         canUndo={canUndo}
         canRedo={canRedo}
       />
+      {showSettings && (
+        <SettingsDialog
+          schemaId={schemaId}
+          onSchemaChange={setSchemaId}
+          urlSchemas={urlSchemas}
+          onAddSchemaUrl={() => {
+            setShowSettings(false);
+            setSchemaUrlDialog({ url: "", busy: false });
+          }}
+          labelMode={labelMode}
+          onLabelModeChange={setLabelMode}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
       {showBigipDialog && (
         <BigipDialog
           declarationText={text}

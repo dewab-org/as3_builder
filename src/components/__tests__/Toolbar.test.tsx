@@ -6,10 +6,8 @@ type ToolbarProps = Parameters<typeof Toolbar>[0];
 
 function renderToolbar(overrides: Partial<ToolbarProps> = {}) {
   const props: ToolbarProps = {
-    schemaId: "per-app",
-    onSchemaChange: vi.fn(),
-    urlSchemas: [],
-    onAddSchemaUrl: vi.fn(),
+    schemaLabel: "Per-App Schema",
+    onOpenSettings: vi.fn(),
     onLoadText: vi.fn(),
     currentText: "{}",
     onValidateOnBigip: vi.fn(),
@@ -19,7 +17,6 @@ function renderToolbar(overrides: Partial<ToolbarProps> = {}) {
     onConnectBigip: vi.fn(),
     bigipConnected: false,
     labelMode: "both" as const,
-    onLabelModeChange: vi.fn(),
     onLoadFromNetbox: vi.fn(),
     onLoadFromBigip: vi.fn(),
     onPushToNetbox: vi.fn(),
@@ -90,5 +87,20 @@ describe("toolbar NetBox gate", () => {
     const bigip = screen.getByRole("group", { name: "BIG-IP" });
     expect(bigip).toHaveTextContent("Load…");
     expect(bigip).toHaveTextContent("Validate…");
+  });
+});
+
+describe("toolbar settings", () => {
+  it("shows the schema in use as static text, not a picker", () => {
+    renderToolbar({ schemaLabel: "AS3 3.56.0-10 (full)" });
+    expect(screen.getByText("AS3 3.56.0-10 (full)")).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: /schema/i })).toBeNull();
+    expect(screen.queryByLabelText("Toolbar button style")).toBeNull();
+  });
+
+  it("opens settings from the gear", () => {
+    const props = renderToolbar();
+    screen.getByRole("button", { name: "Settings" }).click();
+    expect(props.onOpenSettings).toHaveBeenCalledOnce();
   });
 });

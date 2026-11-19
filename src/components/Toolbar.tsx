@@ -1,7 +1,6 @@
 import { useRef, type ReactNode } from "react";
 import AppLogo from "./AppLogo";
 import MaterialIcon from "./MaterialIcon";
-import { SCHEMA_LIST } from "../schemas";
 import { TEMPLATES, getTemplate } from "../templates";
 
 /** How grouped toolbar buttons present themselves. */
@@ -46,11 +45,9 @@ function GroupButton({
 }
 
 interface ToolbarProps {
-  schemaId: string;
-  onSchemaChange: (id: string) => void;
-  /** URL-sourced schemas added this session ({id, label}). */
-  urlSchemas: { id: string; label: string }[];
-  onAddSchemaUrl: () => void;
+  /** Display name of the schema in use (chosen in Settings). */
+  schemaLabel: string;
+  onOpenSettings: () => void;
   /** `source` names what is replacing the document ("the template", a file
    * name) for the replace-confirmation dialog. The guard lives in App. */
   onLoadText: (text: string, source: string) => void;
@@ -76,7 +73,6 @@ interface ToolbarProps {
   onAbout: () => void;
   /** Grouped buttons: icons only (hover for text), text only, or both. */
   labelMode: ToolbarLabelMode;
-  onLabelModeChange: (mode: ToolbarLabelMode) => void;
   onUndo: () => void;
   onRedo: () => void;
   canUndo: boolean;
@@ -84,10 +80,8 @@ interface ToolbarProps {
 }
 
 export default function Toolbar({
-  schemaId,
-  onSchemaChange,
-  urlSchemas,
-  onAddSchemaUrl,
+  schemaLabel,
+  onOpenSettings,
   onLoadText,
   currentText,
   onValidateOnBigip,
@@ -104,7 +98,6 @@ export default function Toolbar({
   onToggleTheme,
   onAbout,
   labelMode,
-  onLabelModeChange,
   onUndo,
   onRedo,
   canUndo,
@@ -150,28 +143,12 @@ export default function Toolbar({
           AS3 Builder
         </button>
       </h1>
-      <label>
-        Schema
-        <select
-          value={schemaId}
-          onChange={(e) => {
-            if (e.target.value === "__add-url__") onAddSchemaUrl();
-            else onSchemaChange(e.target.value);
-          }}
-        >
-          {SCHEMA_LIST.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.label}
-            </option>
-          ))}
-          {urlSchemas.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.label}
-            </option>
-          ))}
-          <option value="__add-url__">Load schema from URL…</option>
-        </select>
-      </label>
+      {/* Static: the schema is chosen in Settings, shown here so it is
+          always clear what the editor validates against. */}
+      <span className="toolbar-schema" title="Change in Settings">
+        <span className="toolbar-schema-label">Schema</span>
+        {schemaLabel}
+      </span>
       <label>
         Template
         <select value="" onChange={(e) => handleTemplateSelect(e.target.value)}>
@@ -314,17 +291,13 @@ export default function Toolbar({
           e.target.value = "";
         }}
       />
-      <select
-        className="toolbar-labelmode"
-        value={labelMode}
-        onChange={(e) => onLabelModeChange(e.target.value as ToolbarLabelMode)}
-        title="How the grouped buttons present themselves"
-        aria-label="Toolbar button style"
+      <button
+        onClick={onOpenSettings}
+        title="Settings — schema and toolbar button style"
+        aria-label="Settings"
       >
-        <option value="icons">Icons</option>
-        <option value="text">Text</option>
-        <option value="both">Icons + text</option>
-      </select>
+        <MaterialIcon name="settings" />
+      </button>
       <button
         onClick={onToggleTheme}
         title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
