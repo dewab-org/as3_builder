@@ -261,9 +261,6 @@ body {
   background: #7f2209;
 }
 
-.toolbar select.toolbar-labelmode {
-  max-width: 110px;
-}
 
 /* Rename affordance beside delete in the context panel's breadcrumb. */
 .ctx-rename {
@@ -2332,4 +2329,40 @@ body {
   color: #fff;
   background: var(--danger);
   font-weight: 600;
+}
+
+/* Static "Schema: …" readout; the picker lives in Settings. */
+.toolbar-schema {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.toolbar-schema-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.settings-heading {
+  margin: 14px 0 2px;
+  font-size: 13px;
+}
+
+.settings-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.settings-hint {
+  margin-left: 8px;
+  opacity: 0.6;
+  font-size: 12px;
 }
