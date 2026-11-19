@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "as3-builder.fullname" . }}
+  labels:
+    {{- include "as3-builder.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      {{- include "as3-builder.selector" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "as3-builder.labels" . | nindent 8 }}
+      {{- if or .Values.env .Values.configJson }}
+      annotations:
+        # Roll pods when connection defaults or the policy change.
+        checksum/config: {{ printf "%s%s" (toJson .Values.env) .Values.configJson | sha256sum }}
+      {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # Same hardening as the compose file: distroless nonroot uid, read-only
+      # root, no capabilities, /tmp as a small scratch tmpfs.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+      containers:
+        - name: as3-builder
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: PORT
+              value: "8080"
+          {{- if .Values.env }}
+          envFrom:
+            - secretRef:
+                name: {{ include "as3-builder.fullname" . }}-env
+          {{- end }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            {{- if .Values.configJson }}
+            - name: config
+              mountPath: /app/as3b-config.json
+              subPath: as3b-config.json
+              readOnly: true
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
+        {{- if .Values.configJson }}
+        - name: config
+          configMap:
+            name: {{ include "as3-builder.fullname" . }}-config
+        {{- end }}

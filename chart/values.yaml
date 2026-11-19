@@ -1,0 +1,46 @@
+image:
+  repository: ghcr.io/dewab-org/as3_builder
+  tag: latest
+  pullPolicy: Always
+
+# The GHCR image is private; the referenced secrets must already exist in the
+# release namespace (kubernetes.io/dockerconfigjson).
+imagePullSecrets:
+  - name: ghcr-pull
+
+replicas: 1
+
+# Connection defaults for the dialogs, served to the page by the app server
+# (hostnames and usernames prefill; passwords/tokens are withheld unless
+# AS3B_EXPOSE_CREDENTIALS is set, which an ingress-exposed deployment should
+# never set). Example: NETBOX_URL: http://thd-netbox:8080/
+env: {}
+
+# Optional deployment support policy (feature gates, unsupported classes),
+# mounted at /app/as3b-config.json when non-empty. See
+# as3b-config.example.json; install with --set-file configJson=as3b-config.json.
+configJson: ""
+
+resources:
+  limits:
+    cpu: "1"
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 64Mi
+
+service:
+  type: ClusterIP
+  port: 8080
+
+ingress:
+  enabled: true
+  className: nginx
+  host: thd-builder.lab.local
+  annotations:
+    cert-manager.io/issuer: step-cluster-issuer
+    cert-manager.io/issuer-group: certmanager.step.sm
+    cert-manager.io/issuer-kind: StepClusterIssuer
+  tls:
+    enabled: true
+    secretName: thd-builder-tls

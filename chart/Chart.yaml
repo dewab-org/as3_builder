@@ -1,0 +1,9 @@
+apiVersion: v2
+name: as3-builder
+description: >-
+  AS3 Builder — schema-aware web editor for F5 AS3 per-app declarations with
+  two-way NetBox integration. Single container serving the UI and its proxy;
+  mirrors this repository's docker-compose hardening.
+type: application
+version: 0.1.0
+appVersion: latest
