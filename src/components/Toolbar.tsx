@@ -1,13 +1,56 @@
-import { useRef } from "react";
-import { SCHEMA_LIST } from "../schemas";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import AppLogo from "./AppLogo";
+import MaterialIcon from "./MaterialIcon";
 import { TEMPLATES, getTemplate } from "../templates";
 
+/** How grouped toolbar buttons present themselves. */
+import type { ToolbarLabelMode } from "../settings";
+export type { ToolbarLabelMode };
+
+/** A button inside a labelled toolbar group: icon, text, or both, per the
+ * user's preference. Icon-only keeps the label reachable via tooltip and
+ * aria-label. */
+function GroupButton({
+  icon,
+  label,
+  title,
+  mode,
+  onClick,
+  className,
+  children,
+}: {
+  icon: string;
+  label: string;
+  title: string;
+  mode: ToolbarLabelMode;
+  onClick: () => void;
+  className?: string;
+  children?: ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label={label}
+      className={[className, mode === "icons" ? "icon-only" : ""]
+        .filter(Boolean)
+        .join(" ") || undefined}
+      title={mode === "icons" ? `${label} — ${title}` : title}
+    >
+      {mode !== "text" && (
+        <span className="btn-icon" aria-hidden="true">
+          <MaterialIcon name={icon} />
+        </span>
+      )}
+      {mode !== "icons" && <span className="btn-label">{label}</span>}
+      {children}
+    </button>
+  );
+}
+
 interface ToolbarProps {
-  schemaId: string;
-  onSchemaChange: (id: string) => void;
-  /** URL-sourced schemas added this session ({id, label}). */
-  urlSchemas: { id: string; label: string }[];
-  onAddSchemaUrl: () => void;
+  /** Display name of the schema in use (chosen in Settings). */
+  schemaLabel: string;
+  onOpenSettings: () => void;
   /** `source` names what is replacing the document ("the template", a file
    * name) for the replace-confirmation dialog. The guard lives in App. */
   onLoadText: (text: string, source: string) => void;
@@ -16,6 +59,12 @@ interface ToolbarProps {
   /** False hides the NetBox buttons entirely: the deployment has switched
    * the capability off, so nothing should advertise it. */
   netboxEnabled: boolean;
+  onConnectNetbox: () => void;
+  /** Whether this session holds a NetBox connection (cached app list). */
+  netboxConnected: boolean;
+  onConnectBigip: () => void;
+  /** Whether "Connect to BIG-IP…" has verified the device this session. */
+  bigipConnected: boolean;
   onLoadFromNetbox: () => void;
   onLoadFromBigip: () => void;
   onPushToNetbox: () => void;
@@ -25,6 +74,8 @@ interface ToolbarProps {
   theme: "light" | "dark";
   onToggleTheme: () => void;
   onAbout: () => void;
+  /** Grouped buttons: icons only (hover for text), text only, or both. */
+  labelMode: ToolbarLabelMode;
   onUndo: () => void;
   onRedo: () => void;
   canUndo: boolean;
@@ -32,14 +83,16 @@ interface ToolbarProps {
 }
 
 export default function Toolbar({
-  schemaId,
-  onSchemaChange,
-  urlSchemas,
-  onAddSchemaUrl,
+  schemaLabel,
+  onOpenSettings,
   onLoadText,
   currentText,
   onValidateOnBigip,
   netboxEnabled,
+  onConnectNetbox,
+  netboxConnected,
+  onConnectBigip,
+  bigipConnected,
   onLoadFromNetbox,
   onLoadFromBigip,
   onPushToNetbox,
@@ -47,12 +100,50 @@ export default function Toolbar({
   theme,
   onToggleTheme,
   onAbout,
+  labelMode,
   onUndo,
   onRedo,
   canUndo,
   canRedo,
 }: ToolbarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Labels that do not fit fall back to icons-only (names stay in the
+  // tooltips) instead of pushing the page into sideways scrolling; they
+  // come back once the window is wide enough for them again.
+  const barRef = useRef<HTMLDivElement>(null);
+  const [collapsed, setCollapsed] = useState(false);
+  const expandedWidth = useRef(0);
+  useLayoutEffect(() => {
+    const bar = barRef.current;
+    if (!bar || labelMode === "icons") {
+      setCollapsed(false);
+      return;
+    }
+    const check = () => {
+      if (!collapsed) {
+        if (bar.scrollWidth > bar.clientWidth + 1) {
+          expandedWidth.current = bar.scrollWidth;
+          setCollapsed(true);
+        }
+        // A little slack so a label that changes width (Connect… →
+        // Connected) cannot flip the bar back and forth.
+      } else if (bar.clientWidth >= expandedWidth.current + 16) {
+        setCollapsed(false);
+      }
+    };
+    check();
+    // The window resize covers browsers that throttle ResizeObserver.
+    window.addEventListener("resize", check);
+    const observer =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(check);
+    observer?.observe(bar);
+    return () => {
+      window.removeEventListener("resize", check);
+      observer?.disconnect();
+    };
+  }, [labelMode, collapsed]);
+  const mode: ToolbarLabelMode = collapsed ? "icons" : labelMode;
 
   function handleTemplateSelect(id: string) {
     if (!id) return;
@@ -78,7 +169,7 @@ export default function Toolbar({
   }
 
   return (
-    <div className="toolbar">
+    <div className="toolbar" ref={barRef}>
       {/* The title doubles as the About control: version and author live
           behind the name, where convention puts them. */}
       <h1>
@@ -88,102 +179,170 @@ export default function Toolbar({
           title="About AS3 Builder (version, author)"
           aria-label="About AS3 Builder"
         >
+          <AppLogo />
           AS3 Builder
         </button>
       </h1>
-      <label>
-        Schema
-        <select
-          value={schemaId}
-          onChange={(e) => {
-            if (e.target.value === "__add-url__") onAddSchemaUrl();
-            else onSchemaChange(e.target.value);
-          }}
-        >
-          {SCHEMA_LIST.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.label}
+      {/* Every item is a slot: a small label row on top, the control below.
+          Unboxed slots keep the label row (blank if unlabelled), so their
+          controls sit on the same line as the boxed groups' buttons. */}
+      <div className="toolbar-group bare" title="Change in Settings">
+        <span className="toolbar-group-label">Schema</span>
+        <div className="toolbar-group-buttons">
+          {/* Static: chosen in Settings, shown so it is always clear what
+              the editor validates against. */}
+          <span className="toolbar-schema">{schemaLabel}</span>
+        </div>
+      </div>
+      <div className="toolbar-group bare">
+        <label className="toolbar-group-label" htmlFor="toolbar-template">
+          Template
+        </label>
+        <div className="toolbar-group-buttons">
+          <select
+            id="toolbar-template"
+            value=""
+            onChange={(e) => handleTemplateSelect(e.target.value)}
+          >
+            <option value="" disabled>
+              Load template…
             </option>
-          ))}
-          {urlSchemas.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.label}
-            </option>
-          ))}
-          <option value="__add-url__">Load schema from URL…</option>
-        </select>
-      </label>
-      <label>
-        Template
-        <select value="" onChange={(e) => handleTemplateSelect(e.target.value)}>
-          <option value="" disabled>
-            Load template…
-          </option>
-          {TEMPLATES.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <button
-        onClick={onUndo}
-        disabled={!canUndo}
-        title="Undo (⌘Z)"
-        aria-label="Undo"
-      >
-        ↶
-      </button>
-      <button
-        onClick={onRedo}
-        disabled={!canRedo}
-        title="Redo (⇧⌘Z)"
-        aria-label="Redo"
-      >
-        ↷
-      </button>
+            {TEMPLATES.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <div className="toolbar-group bare" role="group" aria-label="History">
+        <span className="toolbar-group-label" aria-hidden="true">
+          &nbsp;
+        </span>
+        <div className="toolbar-group-buttons">
+          <button
+            className="icon-only"
+            onClick={onUndo}
+            disabled={!canUndo}
+            title="Undo (⌘Z)"
+            aria-label="Undo"
+          >
+            <MaterialIcon name="undo" />
+          </button>
+          <button
+            className="icon-only"
+            onClick={onRedo}
+            disabled={!canRedo}
+            title="Redo (⇧⌘Z)"
+            aria-label="Redo"
+          >
+            <MaterialIcon name="redo" />
+          </button>
+        </div>
+      </div>
       <div className="spacer" />
       {netboxEnabled && (
-        <button onClick={onLoadFromNetbox} title="Read a load-balancer application from NetBox as AS3">
-          Load from NetBox…
-        </button>
+        <div className="toolbar-group" role="group" aria-label="NetBox">
+          <span className="toolbar-group-label">NetBox</span>
+          <div className="toolbar-group-buttons">
+            <GroupButton
+              icon={netboxConnected ? "check_circle" : "sync_alt"}
+              label={netboxConnected ? "Connected" : "Connect…"}
+              mode={mode}
+              onClick={onConnectNetbox}
+              className={netboxConnected ? "is-connected" : "is-disconnected"}
+              title={
+                netboxConnected
+                  ? "Connected — reopen to change the connection"
+                  : "Not connected — connect to NetBox (required before loading or pushing)"
+              }
+            />
+            <GroupButton
+              icon="download"
+              label="Load…"
+              mode={mode}
+              onClick={onLoadFromNetbox}
+              title="Read a load-balancer application from NetBox as AS3"
+            />
+            <GroupButton
+              icon="upload"
+              label="Push…"
+              mode={mode}
+              onClick={onPushToNetbox}
+              title={
+                pushPreview
+                  ? `${pushPreview.writes} change${pushPreview.writes === 1 ? "" : "s"} to write` +
+                    (pushPreview.notes > 0
+                      ? `, ${pushPreview.notes} edit${pushPreview.notes === 1 ? "" : "s"} that cannot be pushed`
+                      : "")
+                  : "Write edits back to NetBox, or create this declaration as a new application"
+              }
+            >
+              {pushPreview && pushPreview.writes > 0 && (
+                <span className="toolbar-badge">{pushPreview.writes}</span>
+              )}
+              {pushPreview && pushPreview.notes > 0 && (
+                <span
+                  className="toolbar-badge warn"
+                  aria-label={`${pushPreview.notes} edits cannot be pushed`}
+                >
+                  !{pushPreview.notes}
+                </span>
+              )}
+            </GroupButton>
+          </div>
+        </div>
       )}
-      <button
-        onClick={onLoadFromBigip}
-        title="Read an application from a device's running configuration, via AS3's per-application API"
-      >
-        Load from BIG-IP…
-      </button>
-      {netboxEnabled && (
-      <button
-        onClick={onPushToNetbox}
-        title={
-          pushPreview
-            ? `${pushPreview.writes} change${pushPreview.writes === 1 ? "" : "s"} to write` +
-              (pushPreview.notes > 0
-                ? `, ${pushPreview.notes} edit${pushPreview.notes === 1 ? "" : "s"} that cannot be pushed`
-                : "")
-            : "Write edited fields back to the NetBox objects this declaration came from"
-        }
-      >
-        Push to NetBox…
-        {pushPreview && pushPreview.writes > 0 && (
-          <span className="toolbar-badge">{pushPreview.writes}</span>
-        )}
-        {pushPreview && pushPreview.notes > 0 && (
-          <span
-            className="toolbar-badge warn"
-            aria-label={`${pushPreview.notes} edits cannot be pushed`}
-          >
-            !{pushPreview.notes}
-          </span>
-        )}
-      </button>
-      )}
-      <button onClick={onValidateOnBigip} title="Dry-run this declaration against a BIG-IP">
-        Validate on BIG-IP…
-      </button>
-      <button onClick={() => fileInputRef.current?.click()}>Open</button>
+      <div className="toolbar-group" role="group" aria-label="BIG-IP">
+        <span className="toolbar-group-label">BIG-IP</span>
+        <div className="toolbar-group-buttons">
+          <GroupButton
+            icon={bigipConnected ? "check_circle" : "sync_alt"}
+            label={bigipConnected ? "Connected" : "Connect…"}
+            mode={mode}
+            onClick={onConnectBigip}
+            className={bigipConnected ? "is-connected" : "is-disconnected"}
+            title={
+              bigipConnected
+                ? "Connected — reopen to change the device or credentials"
+                : "Not connected — connect to BIG-IP (used by load and validate)"
+            }
+          />
+          <GroupButton
+            icon="download"
+            label="Load…"
+            mode={mode}
+            onClick={onLoadFromBigip}
+            title="Read an application from a device's running configuration, via AS3's per-application API"
+          />
+          <GroupButton
+            icon="task_alt"
+            label="Validate…"
+            mode={mode}
+            onClick={onValidateOnBigip}
+            title="Dry-run this declaration against a BIG-IP"
+          />
+        </div>
+      </div>
+      <div className="toolbar-group" role="group" aria-label="JSON">
+        <span className="toolbar-group-label">JSON</span>
+        <div className="toolbar-group-buttons">
+          <GroupButton
+            icon="folder_open"
+            label="Open…"
+            mode={mode}
+            onClick={() => fileInputRef.current?.click()}
+            title="Open a declaration from a local JSON file"
+          />
+          <GroupButton
+            icon="save"
+            label="Save"
+            mode={mode}
+            onClick={handleSave}
+            title="Save the declaration as a local JSON file"
+          />
+        </div>
+      </div>
       <input
         ref={fileInputRef}
         type="file"
@@ -194,13 +353,29 @@ export default function Toolbar({
           e.target.value = "";
         }}
       />
-      <button onClick={handleSave}>Save</button>
-      <button
-        onClick={onToggleTheme}
-        title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-      >
-        {theme === "dark" ? "☀" : "☾"}
-      </button>
+      <div className="toolbar-group bare" role="group" aria-label="View">
+        <span className="toolbar-group-label" aria-hidden="true">
+          &nbsp;
+        </span>
+        <div className="toolbar-group-buttons">
+          <button
+            className="icon-only"
+            onClick={onOpenSettings}
+            title="Settings — schema and toolbar button style"
+            aria-label="Settings"
+          >
+            <MaterialIcon name="settings" />
+          </button>
+          <button
+            className="icon-only"
+            onClick={onToggleTheme}
+            title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+          >
+            <MaterialIcon name={theme === "dark" ? "light_mode" : "dark_mode"} />
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

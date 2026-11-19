@@ -45,6 +45,7 @@
   --toolbar-btn: #d85602;
   --toolbar-btn-border: #ffb27a;
   --toolbar-btn-hover: #b34702;
+  --toolbar-btn-text: #ffffff;
   --immutable-bg: #eef1f4;
   --immutable-border: #b6c0ca;
   --immutable-text: #5b6773;
@@ -90,6 +91,7 @@
   --toolbar-btn: #4a2503;
   --toolbar-btn-border: #8a4a12;
   --toolbar-btn-hover: #66330a;
+  --toolbar-btn-text: #ffffff;
   --immutable-bg: #1b2026;
   --immutable-border: #3c4854;
   --immutable-text: #8d9aa8;
@@ -133,6 +135,8 @@ body {
   font-weight: 700;
   margin: 0 12px 0 0;
   letter-spacing: 0.01em;
+  white-space: nowrap;
+  flex: none;
 }
 
 /* The title is a real button (it opens About) but must read as plain text.
@@ -143,6 +147,14 @@ body {
   cursor: pointer;
   color: inherit;
   font: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-logo {
+  flex: none;
+  display: block;
 }
 
 .toolbar button.toolbar-title:hover {
@@ -152,7 +164,7 @@ body {
 }
 
 .toolbar button.toolbar-title:focus-visible {
-  outline: 2px solid #ffffff;
+  outline: 2px solid var(--toolbar-text);
   outline-offset: 2px;
   border-radius: 3px;
 }
@@ -173,7 +185,7 @@ body {
   border-radius: 6px;
   border: 1px solid var(--toolbar-btn-border);
   background: var(--toolbar-btn);
-  color: #ffffff;
+  color: var(--toolbar-btn-text);
   cursor: pointer;
 }
 
@@ -185,6 +197,135 @@ body {
 .toolbar button:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+/* Related actions boxed under one label — NetBox (connect/load/push),
+   BIG-IP (load/validate), JSON (open/save) — with the system named once
+   ABOVE the buttons, so each button keeps a short verb or just its icon. */
+.toolbar-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 6px 4px;
+  border: 1px solid var(--toolbar-btn-border);
+  border-radius: 8px;
+}
+
+/* Beats ".toolbar label" so the Template label matches the group labels. */
+.toolbar .toolbar-group-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 1;
+  line-height: 1;
+}
+
+.toolbar-group-buttons {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Unboxed slot: identical geometry (transparent border, same padding and
+   label row), so its controls line up with the boxed groups' buttons. */
+.toolbar-group.bare {
+  border-color: transparent;
+}
+
+/* One control height across the bar; icon-only buttons are square. */
+.toolbar-group-buttons button,
+.toolbar-group-buttons select {
+  height: 30px;
+  box-sizing: border-box;
+}
+
+.toolbar button.icon-only {
+  width: 32px;
+  padding: 0;
+  justify-content: center;
+}
+
+.toolbar button:focus-visible,
+.toolbar select:focus-visible {
+  outline: 2px solid var(--toolbar-text);
+  outline-offset: 2px;
+}
+
+.toolbar-group-buttons button {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+/* Icons carry the buttons, so they are deliberately prominent. */
+.btn-icon {
+  /* Flex, not inline-block: an inline box sits on the text baseline and
+     lifts the icon a pixel above the standalone icon buttons. */
+  display: inline-flex;
+  font-size: 17px;
+  line-height: 1;
+  opacity: 0.95;
+}
+
+.btn-icon + .btn-label {
+  margin-left: 6px;
+}
+
+/* Connection state at a glance: green when this session holds a NetBox
+   connection, ember red while it does not. */
+.toolbar button.is-connected {
+  color: #ffffff;
+  background: #1d6b2f;
+  border-color: #5fbf74;
+}
+
+.toolbar button.is-connected:hover:not(:disabled) {
+  background: #175526;
+}
+
+.toolbar button.is-disconnected {
+  color: #ffffff;
+  background: #a02c10;
+  border-color: #ffd0a8;
+}
+
+.toolbar button.is-disconnected:hover:not(:disabled) {
+  background: #7f2209;
+}
+
+
+/* Rename affordance beside delete in the context panel's breadcrumb. */
+.ctx-rename {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  opacity: 0.7;
+  padding: 0 4px;
+}
+
+.ctx-rename:hover {
+  opacity: 1;
+}
+
+.ctx-rename-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 6px 0;
+}
+
+.ctx-rename-row input {
+  flex: 1;
+  min-width: 140px;
+}
+
+.ctx-rename-row .modal-error {
+  flex-basis: 100%;
 }
 
 /* Counts on the Push button: what a push would write, and — in warn colour —
@@ -2153,4 +2294,161 @@ body {
 
 .modified-line {
   background: var(--modified-bg);
+}
+
+/* Inline rename on double-click of an object card's name. */
+.obj-rename {
+  font: inherit;
+  font-weight: 600;
+  min-width: 120px;
+  padding: 0 4px;
+  border-radius: 4px;
+  border: 1px solid var(--toolbar-btn-border, #888);
+}
+
+.obj-rename.invalid {
+  border-color: #d33;
+  outline: 1px solid #d33;
+}
+
+/* Explicit rename affordance beside renameable names: quiet until the
+   header is hovered, so card heads stay readable. */
+.obj-rename-trigger {
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 1px 3px;
+  border-radius: 3px;
+  opacity: 0.35;
+  display: inline-flex;
+  align-items: center;
+}
+
+.obj-card-head:hover .obj-rename-trigger {
+  opacity: 0.8;
+}
+
+.obj-rename-trigger:hover {
+  opacity: 1;
+  background: var(--accent-soft, rgba(216, 86, 2, 0.15));
+}
+
+/* Delete beside the name, styled like the rename pencil; first click arms
+   it (red "delete?"), second click deletes. */
+.obj-delete-trigger {
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 1px 3px;
+  border-radius: 3px;
+  opacity: 0.35;
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+}
+
+.obj-card-head:hover .obj-delete-trigger {
+  opacity: 0.8;
+}
+
+.obj-delete-trigger:hover {
+  opacity: 1;
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.obj-delete-trigger.armed {
+  opacity: 1;
+  color: #fff;
+  background: var(--danger);
+  font-weight: 600;
+}
+
+/* Static schema readout; the picker lives in Settings. */
+.toolbar-schema {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.settings-heading {
+  margin: 14px 0 2px;
+  font-size: 13px;
+}
+
+.settings-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.settings-hint {
+  margin-left: 8px;
+  opacity: 0.6;
+  font-size: 12px;
+}
+
+/* Settings: color theme picker. */
+.palette-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 8px;
+  margin: 6px 0 4px;
+}
+
+.palette-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.palette-option:hover {
+  border-color: var(--accent-soft);
+}
+
+.palette-option.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.palette-option:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.palette-swatch {
+  display: flex;
+  width: 100%;
+  height: 18px;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--border-light);
+}
+
+.palette-swatch span {
+  flex: 1;
+}
+
+.palette-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.palette-variant {
+  font-size: 11px;
+  color: var(--muted);
 }

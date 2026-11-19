@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import goldenInput from "./fixtures/netbox-golden-input.json";
 import { renderNetboxApp } from "../netboxAs3";
-import { buildManifest, computeUpdates } from "../as3ToNetbox";
+import {
+  buildManifest,
+  computeUpdates,
+  findApplicationKey,
+  newAppManifest,
+} from "../as3ToNetbox";
 
 type Dict = Record<string, unknown>;
 
@@ -29,6 +34,126 @@ describe("write-back manifest", () => {
     expect(byKey.sg_web.endpoint).toBe("backend-pools");
     expect(byKey.ssl_vs_ssl_app.endpoint).toBe("ssl-profiles");
     expect(byKey.ssl_vs_ssl_app.className).toBe("TLS_Server");
+  });
+});
+
+describe("net-new application push", () => {
+  const declaration = {
+    id: "my-decl",
+    schemaVersion: "3.55.0",
+    newApp: {
+      class: "Application",
+      label: "Hand-authored app",
+      web: {
+        class: "Service_HTTP",
+        virtualAddresses: ["10.9.0.1"],
+        virtualPort: 80,
+        pool: "webPool",
+      },
+      webPool: {
+        class: "Pool",
+        members: [{ servicePort: 8080, serverAddresses: ["10.9.0.10"] }],
+      },
+    },
+  } as Record<string, unknown>;
+
+  it("finds the Application member of a declaration", () => {
+    expect(findApplicationKey(declaration)).toBe("newApp");
+    expect(findApplicationKey({ id: "x", schemaVersion: "3.55.0" })).toBeNull();
+  });
+
+  it("bootstraps a manifest whose changeset creates everything", () => {
+    const m = newAppManifest(
+      declaration,
+      "newApp",
+      { id: 42, name: "newApp", description: "Hand-authored app" },
+      7
+    );
+    expect(m.appId).toBe(42);
+    expect(m.createClusterId).toBe(7);
+    const { updates, creates, deletes, notes } = computeUpdates(
+      JSON.parse(JSON.stringify(declaration)),
+      m
+    );
+    expect(deletes).toEqual([]);
+    expect(notes).toEqual([]);
+    // Label matches the created description — no application update.
+    expect(updates).toEqual([]);
+    expect(creates.map((c) => [c.endpoint, c.as3Key])).toEqual([
+      ["backend-pools", "webPool"],
+      ["virtual-servers", "web"],
+    ]);
+    const vs = creates.find((c) => c.endpoint === "virtual-servers");
+    expect(vs?.fields.cluster).toBe(7);
+    expect(vs?.vipAddresses).toEqual(["10.9.0.1/32"]);
+  });
+
+  it("creates and links policies and protocol profiles", () => {
+    const decl = {
+      id: "decl2",
+      schemaVersion: "3.55.0",
+      app2: {
+        class: "Application",
+        web: {
+          class: "Service_HTTPS",
+          virtualAddresses: ["10.9.1.1"],
+          virtualPort: 443,
+          persistenceMethods: [{ use: "sess_persist" }],
+          policyEndpoint: { use: "fwd" },
+          iRules: ["logger"],
+          profileTCP: { use: "tcp-tuned" },
+        },
+        fwd: {
+          class: "Endpoint_Policy",
+          strategy: "first-match",
+          rules: [{ name: "r1", actions: [] }],
+        },
+        logger: { class: "iRule", iRule: "when HTTP_REQUEST { log local0. x }" },
+        sess: { class: "iRule", iRule: "when HTTP_REQUEST { persist uie 1 }" },
+        sess_persist: {
+          class: "Persist",
+          persistenceMethod: "universal",
+          iRule: "sess",
+        },
+        "tcp-tuned": { class: "TCP_Profile", idleTimeout: 120 },
+      },
+    } as Record<string, unknown>;
+    const m = newAppManifest(decl, "app2", { id: 50, description: "" }, 7);
+    const { creates, notes } = computeUpdates(
+      JSON.parse(JSON.stringify(decl)),
+      m
+    );
+    expect(notes).toEqual([]);
+    expect(creates.map((c) => [c.endpoint, c.as3Key])).toEqual([
+      ["policies", "fwd"],
+      ["policies", "logger"],
+      ["policies", "sess"],
+      ["protocol-profiles", "tcp-tuned"],
+      ["virtual-servers", "web"],
+    ]);
+    const byKey = Object.fromEntries(creates.map((c) => [c.as3Key, c]));
+    expect(byKey.fwd.fields.policy_type).toBe("standard");
+    expect(byKey.fwd.fields.rules).toMatchObject({
+      class: "Endpoint_Policy",
+      strategy: "first-match",
+    });
+    expect(byKey.logger.fields.policy_type).toBe("irule");
+    // The Persist-referenced iRule is created AS a persistence method (R5).
+    expect(byKey.sess.fields.is_persistence).toBe(true);
+    expect(byKey.sess.fields.rules).toMatchObject({ isPersistenceMethod: true });
+    expect(byKey.logger.fields.is_persistence).toBeUndefined();
+    expect(byKey["tcp-tuned"].fields).toMatchObject({
+      protocol_type: "tcp",
+      options: { class: "TCP_Profile", idleTimeout: 120 },
+    });
+    // The service links all three policies and the profile.
+    expect([...(byKey.web.policyKeys ?? [])].sort()).toEqual([
+      "fwd",
+      "logger",
+      "sess",
+    ]);
+    expect(byKey.web.protocolProfileKeys).toEqual(["tcp-tuned"]);
+    expect(byKey.web.fields.persistence).toEqual(["universal"]);
   });
 });
 
@@ -121,7 +246,7 @@ describe("write-back changeset (W1)", () => {
     ).toBe(true);
   });
 
-  it("builds full service create specs with refs, slug, and vips", () => {
+  it("builds full service create specs with refs, cluster, and vips", () => {
     const { declaration, manifest } = freshRender();
     const appObj = declaration[appName] as Dict;
     appObj.newVip = {
@@ -140,7 +265,7 @@ describe("write-back changeset (W1)", () => {
         endpoint: "virtual-servers",
         fields: {
           name: "newWeb",
-          slug: "newweb",
+          cluster: 77, // required since plugin 0.9.0 (G1)
           protocol: "http",
           service_port: 80, // AS3 default for http
           vs_type: "standard",
@@ -149,6 +274,128 @@ describe("write-back changeset (W1)", () => {
         vipAddresses: ["10.7.7.7/32"],
       },
     ]);
+    // slug is derived and read-only since plugin 0.9.0 (G1)
+    expect(creates[0].fields).not.toHaveProperty("slug");
+    expect(notes).toEqual([]);
+  });
+
+  it("records the create cluster from the loaded virtual servers", () => {
+    const { manifest } = freshRender();
+    expect(manifest.createClusterId).toBe(77);
+  });
+
+  it("refuses a service create when no cluster could be determined", () => {
+    const { declaration, manifest } = freshRender();
+    const appObj = declaration[appName] as Dict;
+    appObj.newWeb = {
+      class: "Service_HTTP",
+      virtualAddresses: ["10.7.7.7"],
+      virtualPort: 80,
+    };
+    const { creates, notes } = computeUpdates(declaration, {
+      ...manifest,
+      createClusterId: null,
+    });
+    expect(creates).toEqual([]);
+    expect(notes.some((n) => n.includes("cluster"))).toBe(true);
+  });
+
+  it("collapses Persist pointers back to the NetBox universal method", () => {
+    const { declaration, manifest } = freshRender();
+    const appObj = declaration[appName] as Dict;
+    (appObj.vs_ssl_app as Dict).persistenceMethods = [
+      { use: "session_persist" },
+      "source-address",
+    ];
+    const { updates } = computeUpdates(declaration, manifest);
+    expect(updates).toHaveLength(1);
+    expect(updates[0].changes).toEqual([
+      { field: "persistence", from: ["cookie"], to: ["source-address", "universal"] },
+    ]);
+  });
+
+  it("round-trips a spread Service_* protocol profile without a detach op", () => {
+    // A Service_*-class protocol profile has no per-VS pointer (its options
+    // are spread into the service), so an untouched declaration must not
+    // produce a "detach all protocol profiles" op.
+    const graph = {
+      id: "900",
+      name: "app900",
+      virtual_servers: [
+        {
+          id: 90,
+          name: "vs-udp",
+          protocol: "udp",
+          service_port: 111,
+          virtual_addresses: [{ id: 1, address: "10.0.0.40/32" }],
+          protocol_profiles: [
+            {
+              id: 5,
+              name: "udp-idle",
+              options: { class: "Service_UDP", idleTimeout: 180 },
+            },
+          ],
+        },
+      ],
+    };
+    const { declaration } = renderNetboxApp(graph);
+    const manifest = buildManifest(graph, declaration);
+    const { updates, notes } = computeUpdates(
+      JSON.parse(JSON.stringify(declaration)),
+      manifest
+    );
+    expect(notes).toEqual([]);
+    expect(updates).toEqual([]);
+  });
+
+  it("round-trips a persistence iRule policy without a detach op", () => {
+    const graph = {
+      id: "901",
+      name: "app901",
+      virtual_servers: [
+        {
+          id: 91,
+          name: "vs-https",
+          protocol: "https",
+          service_port: 443,
+          persistence: ["universal"],
+          virtual_addresses: [{ id: 2, address: "10.0.0.41/32" }],
+          policies: [
+            {
+              id: 6,
+              name: "session-pol",
+              policy_type: "irule",
+              is_persistence: true,
+              rules: {
+                class: "iRule",
+                iRule: "when HTTP_REQUEST { persist uie 1 }",
+                isPersistenceMethod: true,
+              },
+            },
+          ],
+        },
+      ],
+    };
+    const { declaration } = renderNetboxApp(graph);
+    const manifest = buildManifest(graph, declaration);
+    const { updates, notes } = computeUpdates(
+      JSON.parse(JSON.stringify(declaration)),
+      manifest
+    );
+    expect(notes).toEqual([]);
+    expect(updates).toEqual([]);
+  });
+
+  it("stores TLSv1.0 as version 0 instead of dropping it", () => {
+    const { declaration, manifest } = freshRender();
+    const appObj = declaration[appName] as Dict;
+    (appObj.ssl_vs_ssl_app as Dict).tls1_0Enabled = true;
+    const { updates, notes } = computeUpdates(declaration, manifest);
+    expect(updates).toHaveLength(1);
+    const fields = Object.fromEntries(
+      updates[0].changes.map((c) => [c.field, c.to])
+    );
+    expect(fields.tls_versions).toEqual([0, 1, 2]);
     expect(notes).toEqual([]);
   });
 

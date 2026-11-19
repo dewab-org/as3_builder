@@ -7,7 +7,12 @@
 // back. Write-back therefore only works for declarations loaded through this
 // tool in the current session.
 
-import { LEGACY_LB_ALIASES, sanitizeKey } from "./netboxAs3";
+import {
+  LEGACY_LB_ALIASES,
+  fqdnResolutionFromNetbox,
+  isPersistencePolicy,
+  sanitizeKey,
+} from "./netboxAs3";
 import { decodeBase64 } from "./base64";
 import { isPlainObject } from "./types";
 
@@ -28,6 +33,9 @@ export interface ManifestEntry {
   endpoint: string; // plugin REST collection, e.g. "virtual-servers"
   id: number;
   className: string;
+  /** The NetBox object's name as loaded. When the AS3 key stops matching it
+   * (a rename in the editor), the push renames the NetBox object. */
+  netboxName?: string;
   /** Invertible NetBox field values as loaded. */
   fields: Dict;
   /** The AS3 object exactly as rendered at load (detects out-of-scope edits). */
@@ -35,6 +43,9 @@ export interface ManifestEntry {
   lastUpdated?: string;
   /** Pool entries: member rows as loaded (W2). */
   members?: MemberRow[];
+  /** Pool entries: FQDN member rows as loaded, in the normalized AS3-group
+   * shape. Compared only — FQDN member edits are not pushed. */
+  fqdnMembers?: Dict[];
   /** Virtual-server entries: VIP addresses as loaded (W2). */
   vips?: { id: number; address: string }[];
   /** Pool entries: monitor AS3 keys as loaded (W4). */
@@ -107,6 +118,11 @@ export interface AppManifest {
   declarationId: string;
   appId: number;
   appKey: string;
+  /** Cluster for NEW virtual servers (plugin 0.9.0 G1 makes it required):
+   * the single cluster the app's virtual servers run in, falling back to the
+   * app's single placement cluster. null/absent = ambiguous — creates are
+   * refused with a note rather than guessed. */
+  createClusterId?: number | null;
   entries: ManifestEntry[];
   /** Rendered objects WITHOUT a writable manifest entry (Service_Address,
    * Certificate, cipher objects, …): key → snapshot as rendered. Used to
@@ -147,6 +163,13 @@ export interface CreateObject {
   refs: { field: string; targetKey: string }[];
   /** Pool creates: monitor references by AS3 key (M2M). */
   monitorRefs?: string[];
+  /** Service creates: linked policies by AS3 key (M2M) — policyEndpoint,
+   * iRules, and the policies behind Persist pointers. Resolved via the
+   * changeset's own creates first, then by NetBox name (estate objects). */
+  policyKeys?: string[];
+  /** Service creates: linked TCP/HTTP protocol profiles by AS3 key (M2M),
+   * resolved the same way. */
+  protocolProfileKeys?: string[];
   /** TLS profile creates: certificate names (get-or-created by name). */
   certificateNames?: string[];
   label: string;
@@ -166,24 +189,19 @@ export interface ChangeSet {
   notes: string[];
 }
 
-export function slugify(name: string): string {
-  return (
-    name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "obj"
-  );
-}
-
 /** FK-safe orders: create dependencies first, delete dependents first. */
 export const CREATE_ORDER = [
   "monitors",
   "ssl-profiles",
+  "policies",
+  "protocol-profiles",
   "backend-pools",
   "virtual-servers",
 ];
 export const DELETE_ORDER = [
   "virtual-servers",
+  "policies",
+  "protocol-profiles",
   "ssl-profiles",
   "backend-pools",
   "monitors",
@@ -230,8 +248,57 @@ function memberRowsFromNetbox(pool: Dict): MemberRow[] {
   return rows;
 }
 
+// NetBox FQDN member rows (plugin 0.8.0 F13) → the normalized AS3 group
+// shape the renderer emits, for compare-only diffing.
+function fqdnRowsFromNetbox(pool: Dict): Dict[] {
+  const rows: Dict[] = [];
+  for (const m of (pool.members as Dict[] | undefined) ?? []) {
+    const node = m.node as Dict | undefined;
+    if (node?.address || typeof m.hostname !== "string" || !m.hostname) continue;
+    rows.push({
+      hostname: m.hostname,
+      servicePort: Number(m.service_port),
+      enabled: m.enabled !== false,
+      ratio: (m.ratio as number | null) ?? 0,
+      priorityGroup: (m.priority_group as number | null) ?? 0,
+      ...fqdnResolutionFromNetbox(m),
+    });
+  }
+  return sortFqdnRows(rows);
+}
+
+// AS3 fqdn member groups → the same normalized shape.
+function fqdnRowsFromAs3(pool: Dict): Dict[] {
+  const rows: Dict[] = [];
+  for (const group of (pool.members as Dict[] | undefined) ?? []) {
+    if (!isPlainObject(group) || group.addressDiscovery !== "fqdn") continue;
+    const row: Dict = {
+      hostname: group.hostname,
+      servicePort: group.servicePort,
+      enabled: group.adminState !== "disable",
+      ratio: typeof group.ratio === "number" ? group.ratio : 0,
+      priorityGroup:
+        typeof group.priorityGroup === "number" ? group.priorityGroup : 0,
+    };
+    for (const prop of ["addressFamily", "autoPopulate", "queryInterval", "downInterval"]) {
+      if (group[prop] !== undefined) row[prop] = group[prop];
+    }
+    rows.push(row);
+  }
+  return sortFqdnRows(rows);
+}
+
+function sortFqdnRows(rows: Dict[]): Dict[] {
+  return rows.sort(
+    (a, b) =>
+      String(a.hostname).localeCompare(String(b.hostname)) ||
+      Number(a.servicePort) - Number(b.servicePort)
+  );
+}
+
 // AS3 pool.members (grouped) → normalized rows; unsupported member shapes
-// (fqdn/hostname, bigip refs) come back as notes.
+// (bigip refs, non-fqdn discovery) come back as notes. FQDN groups are
+// handled by fqdnRowsFromAs3 and skipped here without a blocking note.
 function memberRowsFromAs3(
   pool: Dict,
   poolKey: string
@@ -244,9 +311,10 @@ function memberRowsFromAs3(
       notes.push(`"${poolKey}": member group without numeric servicePort skipped`);
       continue;
     }
+    if (group.addressDiscovery === "fqdn") continue; // compare-only (F13)
     if (group.hostname || group.addressDiscovery) {
       notes.push(
-        `"${poolKey}": fqdn/discovery members cannot be pushed yet — skipped`
+        `"${poolKey}": discovery members other than fqdn cannot be pushed — skipped`
       );
       continue;
     }
@@ -280,6 +348,12 @@ function vipAddressesFromAs3(
   if (!list) return { addresses: [], notes };
   for (const entry of list) {
     if (typeof entry === "string") {
+      if (entry.trim() === "") {
+        notes.push(
+          `"${vsKey}": virtualAddresses has an empty entry — addresses not pushed`
+        );
+        return { addresses: null, notes };
+      }
       out.push(withMask(entry));
     } else if (isPlainObject(entry) && typeof entry.use === "string") {
       const target = application[entry.use];
@@ -380,9 +454,21 @@ function vsFieldsFromNetbox(vs: Dict): Dict {
     description: desc64(vs.description),
     enabled: vs.enabled !== false,
     vs_type: vs.vs_type ?? "standard",
-    persistence: vs.persistence ?? [],
+    persistence: [...((vs.persistence as unknown[] | undefined) ?? [])].sort(),
     extra_parameters: vs.extra_parameters ?? null, // snapshot only
   };
+}
+
+// AS3 persistenceMethods → the NetBox persistence list. A {use: …} pointer is
+// a Persist profile reference, which NetBox states as "universal" (R5);
+// builtin method names pass through. Sorted to match vsFieldsFromNetbox.
+function persistenceFromAs3(methods: unknown): unknown[] {
+  const out = new Set<string>();
+  for (const m of (methods as unknown[] | undefined) ?? []) {
+    if (typeof m === "string") out.add(m);
+    else if (isPlainObject(m) && typeof m.use === "string") out.add("universal");
+  }
+  return [...out].sort();
 }
 
 function vsFieldsFromAs3(svc: Dict): { fields: Dict; unsupported: string[] } {
@@ -391,7 +477,7 @@ function vsFieldsFromAs3(svc: Dict): { fields: Dict; unsupported: string[] } {
     description: desc64(svc.remark),
     enabled: svc.enable !== false,
     vs_type: svc.virtualType ?? "standard",
-    persistence: svc.persistenceMethods ?? [],
+    persistence: persistenceFromAs3(svc.persistenceMethods),
   };
   const protocol = PROTOCOL_BY_CLASS[String(svc.class)];
   if (protocol) fields.protocol = protocol;
@@ -453,6 +539,7 @@ function monitorFieldsFromAs3(m: Dict): { fields: Dict; unsupported: string[] } 
 }
 
 const TLS_INT_BY_LABEL: Record<string, number> = {
+  "TLSv1.0": 0,
   "TLSv1.1": 1,
   "TLSv1.2": 2,
   "TLSv1.3": 3,
@@ -473,12 +560,13 @@ function tlsFieldsFromNetbox(profile: Dict): Dict {
 function tlsFieldsFromAs3(tls: Dict): { fields: Dict; unsupported: string[] } {
   const unsupported: string[] = [];
   const versions: number[] = [];
-  // Effective enablement per AS3 defaults (1.0/1.1/1.2 on, 1.3 off).
+  // Effective enablement per AS3 defaults (1.0/1.1/1.2 on, 1.3 off). TLSv1.0
+  // is storable since plugin 0.8.0, but only on a profile whose THD Cyber
+  // exception reference is recorded in NetBox — NetBox refuses it otherwise.
+  if ((tls.tls1_0Enabled as boolean | undefined) ?? true) versions.push(0);
   if ((tls.tls1_1Enabled as boolean | undefined) ?? true) versions.push(1);
   if ((tls.tls1_2Enabled as boolean | undefined) ?? true) versions.push(2);
   if ((tls.tls1_3Enabled as boolean | undefined) ?? false) versions.push(3);
-  if (tls.tls1_0Enabled === true)
-    unsupported.push("TLSv1.0 cannot be stored in NetBox (no such choice)");
   return {
     fields: {
       ciphers:
@@ -692,12 +780,14 @@ export function buildManifest(
       endpoint: spec.endpoint,
       id: Number(netboxObj.id),
       className,
+      netboxName: String(netboxObj.name ?? ""),
       fields: spec.fromNetbox(netboxObj),
       as3Snapshot: JSON.parse(JSON.stringify(as3Snapshot)),
       lastUpdated: netboxObj.last_updated as string | undefined,
     };
     if (spec.endpoint === "backend-pools") {
       entry.members = memberRowsFromNetbox(netboxObj);
+      entry.fqdnMembers = fqdnRowsFromNetbox(netboxObj);
       entry.monitorKeys = (
         (netboxObj.monitors as Dict[] | undefined) ?? []
       ).map((m) => sanitizeKey(String(m.name)));
@@ -722,13 +812,28 @@ export function buildManifest(
       entry.snatPoolName = isPlainObject(netboxObj.snat_pool)
         ? String(netboxObj.snat_pool.name)
         : null;
-      const linkNames = (list: unknown) =>
-        ((list as Dict[] | undefined) ?? []).map((o) =>
-          sanitizeKey(String(o.name))
-        );
+      const linkNames = (list: Dict[]) =>
+        list.map((o) => sanitizeKey(String(o.name)));
+      // Only links the renderer represents as per-VS pointers belong here,
+      // or an untouched declaration diffs as a detach:
+      // - a Service_*-class protocol profile is spread into the service's own
+      //   fields (no pointer), so only TCP/HTTP profiles are link targets;
+      // - a persistence iRule (R5) is reached through persistenceMethods and
+      //   its Persist artifact, never the iRules list.
       entry.linkNames = {
-        policies: linkNames(netboxObj.policies),
-        protocol_profiles: linkNames(netboxObj.protocol_profiles),
+        policies: linkNames(
+          ((netboxObj.policies as Dict[] | undefined) ?? []).filter(
+            (p) => !isPersistencePolicy(p)
+          )
+        ),
+        protocol_profiles: linkNames(
+          ((netboxObj.protocol_profiles as Dict[] | undefined) ?? []).filter(
+            (pp) => {
+              const cls = isPlainObject(pp.options) ? pp.options.class : undefined;
+              return cls === "TCP_Profile" || cls === "HTTP_Profile";
+            }
+          )
+        ),
       };
     }
     entries.push(entry);
@@ -809,6 +914,7 @@ export function buildManifest(
       endpoint: "applications",
       id: Number(app.id),
       className: "Application",
+      netboxName: String(app.name ?? ""),
       fields: APPLICATION_KIND.fromNetbox(app),
       as3Snapshot: JSON.parse(JSON.stringify(application)),
       lastUpdated: app.last_updated as string | undefined,
@@ -829,10 +935,26 @@ export function buildManifest(
     ? Object.keys(app.extra_parameters).map((k) => sanitizeKey(k))
     : [];
 
+  // Cluster for new virtual servers (0.9.0 G1): the single cluster the app's
+  // virtual servers resolve to, else the app's single placement cluster.
+  const clusterIds = new Set<number>();
+  for (const vs of (app.virtual_servers as Dict[] | undefined) ?? []) {
+    const cluster = vs.cluster as Dict | undefined;
+    if (cluster?.id != null) clusterIds.add(Number(cluster.id));
+  }
+  let createClusterId: number | null =
+    clusterIds.size === 1 ? [...clusterIds][0] : null;
+  if (createClusterId === null && clusterIds.size === 0) {
+    const placements = (app.clusters as Dict[] | undefined) ?? [];
+    if (placements.length === 1 && placements[0].id != null)
+      createClusterId = Number(placements[0].id);
+  }
+
   return {
     declarationId: String(declaration.id ?? ""),
     appId: Number(app.id),
     appKey,
+    createClusterId,
     entries,
     artifacts,
     extraKeys,
@@ -848,6 +970,14 @@ const DEFAULT_PORT_BY_PROTOCOL: Record<string, number> = {
 
 // Build a CreateObject for a declaration object with no manifest entry.
 // Returns null (with notes) when the object cannot be created.
+/** The AS3 key a pointer names ("name" or {use: "name"}), or null when it
+ * points outside the declaration (a {bigip} path with no NetBox row here). */
+function pointerKey(v: unknown): string | null {
+  if (typeof v === "string") return sanitizeKey(v);
+  if (isPlainObject(v) && typeof v.use === "string") return sanitizeKey(v.use);
+  return null;
+}
+
 function buildCreate(
   as3Key: string,
   obj: Dict,
@@ -935,6 +1065,45 @@ function buildCreate(
     };
   }
 
+  if (spec.endpoint === "policies") {
+    const policyType = className === "iRule" ? "irule" : "standard";
+    const { fields, unsupported } = spec.fromAs3(obj);
+    for (const u of unsupported) notes.push(`"${as3Key}": ${u}`);
+    if (!isPlainObject(fields.rules)) {
+      notes.push(
+        `"${as3Key}": ${className} without usable rules cannot be created`
+      );
+      return null;
+    }
+    return {
+      as3Key,
+      className,
+      endpoint: spec.endpoint,
+      fields: { name: as3Key, policy_type: policyType, ...fields },
+      refs: [],
+      label: `create ${policyType} policy "${as3Key}"`,
+    };
+  }
+
+  if (spec.endpoint === "protocol-profiles") {
+    const protocolType = className === "TCP_Profile" ? "tcp" : "http";
+    const { fields } = spec.fromAs3(obj);
+    return {
+      as3Key,
+      className,
+      endpoint: spec.endpoint,
+      fields: { name: as3Key, protocol_type: protocolType, ...fields },
+      refs: [],
+      label: `create ${className} "${as3Key}"`,
+    };
+  }
+
+  if (spec.endpoint !== "virtual-servers") {
+    // Cipher objects and the like: no standalone create path.
+    notes.push(`"${as3Key}": ${className} cannot be created from a push`);
+    return null;
+  }
+
   // virtual-servers
   const { fields } = vsFieldsFromAs3(obj);
   if (!fields.protocol) {
@@ -965,14 +1134,101 @@ function buildCreate(
     });
   if (obj.snat !== undefined)
     notes.push(`"${as3Key}": snat is not part of virtual-server creation — set it in NetBox`);
+
+  // M2M links the service states as pointers: the endpoint policy, its
+  // iRules, and TCP/HTTP profile pointers. Persist pointers are resolved by
+  // the caller (they need the application object).
+  const policyKeys: string[] = [];
+  const pe = pointerKey(obj.policyEndpoint);
+  if (pe) policyKeys.push(pe);
+  for (const r of (obj.iRules as unknown[] | undefined) ?? []) {
+    const k = pointerKey(r);
+    if (k) policyKeys.push(k);
+  }
+  const protocolProfileKeys: string[] = [];
+  for (const p of [obj.profileTCP, obj.profileHTTP]) {
+    const k = pointerKey(p);
+    if (k) protocolProfileKeys.push(k);
+  }
+
   return {
     as3Key,
     className,
+    // slug is derived and read-only since plugin 0.9.0 (G1); cluster is
+    // stamped by computeUpdates from the manifest.
     endpoint: "virtual-servers",
-    fields: { name: as3Key, slug: slugify(as3Key), ...fields },
+    fields: { name: as3Key, ...fields },
     vipAddresses: null, // filled by the caller (needs the application object)
     refs,
+    policyKeys,
+    protocolProfileKeys,
     label: `create ${className} "${as3Key}"`,
+  };
+}
+
+// ---- net-new applications --------------------------------------------------
+
+/** The declaration member that is the AS3 Application object, for
+ * bootstrapping a net-new push. null when the declaration has none. */
+export function findApplicationKey(declaration: Dict): string | null {
+  for (const [k, v] of Object.entries(declaration)) {
+    if (isPlainObject(v) && v.class === "Application") return k;
+  }
+  return null;
+}
+
+export function slugify(name: string): string {
+  return (
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "app"
+  );
+}
+
+/**
+ * Provenance for an application that was JUST created in NetBox from this
+ * declaration (net-new push): one application-level entry, so everything the
+ * declaration holds becomes a create against that application, placed on the
+ * surveyed cluster. From then on the ordinary diff machinery applies.
+ */
+export function newAppManifest(
+  declaration: Dict,
+  appKey: string,
+  createdApp: Dict,
+  clusterId: number
+): AppManifest {
+  const application = declaration[appKey];
+  return {
+    declarationId: String(declaration.id ?? ""),
+    appId: Number(createdApp.id),
+    appKey,
+    createClusterId: clusterId,
+    entries: [
+      {
+        as3Key: appKey,
+        endpoint: "applications",
+        id: Number(createdApp.id),
+        className: "Application",
+        // No netboxName: the surveyed name need not match the AS3 key, and
+        // must not read as a rename. The post-push reload builds a real
+        // manifest from NetBox.
+        // Snapshot the DECLARATION's view, not the created record: the
+        // surveyed description need not appear as a label in the editor, and
+        // must not diff as "clear the description". The post-push reload
+        // renders NetBox's truth back into the editor.
+        fields: isPlainObject(application)
+          ? APPLICATION_KIND.fromAs3(application).fields
+          : { description: "" },
+        as3Snapshot: isPlainObject(application)
+          ? JSON.parse(JSON.stringify(application))
+          : {},
+        lastUpdated: createdApp.last_updated as string | undefined,
+        isApplication: true,
+      },
+    ],
+    artifacts: {},
+    extraKeys: [],
   };
 }
 
@@ -1035,6 +1291,16 @@ export function computeUpdates(
       if (!valueEq(from, to)) changes.push({ field, from, to });
     }
 
+    // A rename in the editor: the AS3 key no longer matches the name this
+    // object was loaded under, so the push renames it in NetBox in place
+    // (never delete + create).
+    if (
+      entry.netboxName !== undefined &&
+      entry.as3Key !== sanitizeKey(entry.netboxName)
+    ) {
+      changes.push({ field: "name", from: entry.netboxName, to: entry.as3Key });
+    }
+
     // W2 granular ops: pool membership and VS virtual addresses.
     const ops: WriteOp[] = [];
     if (entry.members) {
@@ -1085,6 +1351,13 @@ export function computeUpdates(
             });
           }
         }
+      }
+      // FQDN members (F13) are rendered but compare-only: an edit is
+      // reported, never pushed.
+      if (!valueEq(entry.fqdnMembers ?? [], fqdnRowsFromAs3(current))) {
+        notes.push(
+          `"${entry.as3Key}": FQDN member changes are not pushed — edit them in NetBox.`
+        );
       }
     }
     if (entry.vips) {
@@ -1180,14 +1453,6 @@ export function computeUpdates(
     // NetBox links them many-to-many. Retargeting is a relink of that set —
     // the objects themselves are written (or not) by their own entries.
     if (entry.linkNames) {
-      /** AS3 key a pointer names, or undefined when it points outside the
-       * declaration (a {bigip} path we cannot resolve to a NetBox row). */
-      const keyOf = (v: unknown): string | undefined => {
-        if (typeof v === "string") return sanitizeKey(v);
-        if (isPlainObject(v) && typeof v.use === "string")
-          return sanitizeKey(v.use);
-        return undefined;
-      };
       const gather = (
         values: unknown[]
       ): { keys: string[]; unresolved: unknown[] } => {
@@ -1195,10 +1460,10 @@ export function computeUpdates(
         const unresolved: unknown[] = [];
         for (const v of values) {
           if (v === undefined) continue;
-          const key = keyOf(v);
+          const key = pointerKey(v);
           // A rendered artifact (the merged multi-policy object, say) is not a
           // NetBox row, so it can never be the target of a link.
-          if (key === undefined || key in manifest.artifacts) unresolved.push(v);
+          if (key === null || key in manifest.artifacts) unresolved.push(v);
           else keys.push(key);
         }
         return { keys, unresolved };
@@ -1382,7 +1647,10 @@ export function computeUpdates(
         notes.push(CERTIFICATE_NOTE(key, "is new"));
       } else if (
         !KIND_BY_CLASS[cls] &&
-        cls !== "Service_Address"
+        cls !== "Service_Address" &&
+        // A Persist profile is represented by its policy's is_persistence
+        // flag and the service's persistence method — nothing of its own.
+        cls !== "Persist"
       ) {
         notes.push(
           `"${key}" (${cls}) has no NetBox model — stored in the application's extra_parameters.`
@@ -1391,6 +1659,16 @@ export function computeUpdates(
       continue;
     }
     if (create.endpoint === "virtual-servers") {
+      // cluster is required since plugin 0.9.0 (G1). Never guess one: an
+      // ambiguous or unknown cluster refuses the create with a note.
+      const clusterId = manifest.createClusterId ?? null;
+      if (clusterId === null) {
+        notes.push(
+          `"${key}": a virtual server needs a cluster, and this application's could not be determined at load (several clusters, or a manifest from an older load) — create it in NetBox, or reload the application first.`
+        );
+        continue;
+      }
+      create.fields.cluster = clusterId;
       const { addresses, notes: vipNotes } = vipAddressesFromAs3(
         value,
         application,
@@ -1398,8 +1676,46 @@ export function computeUpdates(
       );
       notes.push(...vipNotes);
       create.vipAddresses = addresses;
+      // Universal persistence points at a Persist artifact whose iRule names
+      // the persistence policy (R5) — that policy must be linked on the VS.
+      for (const m of (value.persistenceMethods as unknown[] | undefined) ?? []) {
+        if (!isPlainObject(m) || typeof m.use !== "string") continue;
+        const target = application[sanitizeKey(m.use)];
+        if (
+          isPlainObject(target) &&
+          target.class === "Persist" &&
+          typeof target.iRule === "string"
+        ) {
+          create.policyKeys = [
+            ...new Set([...(create.policyKeys ?? []), sanitizeKey(target.iRule)]),
+          ];
+        }
+      }
     }
     creates.push(create);
+  }
+
+  // An iRule referenced by a Persist artifact is a persistence method (R5):
+  // its created record must say so, or the plugin refuses a virtual server
+  // that requests universal persistence through it.
+  for (const [, value] of Object.entries(application)) {
+    if (
+      !isPlainObject(value) ||
+      value.class !== "Persist" ||
+      typeof value.iRule !== "string"
+    )
+      continue;
+    const policyCreate = creates.find(
+      (c) =>
+        c.endpoint === "policies" && c.as3Key === sanitizeKey(value.iRule as string)
+    );
+    if (policyCreate && isPlainObject(policyCreate.fields.rules)) {
+      policyCreate.fields.is_persistence = true;
+      policyCreate.fields.rules = {
+        ...policyCreate.fields.rules,
+        isPersistenceMethod: true,
+      };
+    }
   }
 
   // FK-safe ordering for the apply loop.

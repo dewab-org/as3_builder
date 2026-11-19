@@ -6,13 +6,15 @@ import Editor, { useMonaco } from "@monaco-editor/react";
 import type { editor } from "monaco-editor";
 import { useEffect, useRef } from "react";
 import { isDocumentHoverTarget } from "./editorHover";
+import { defineMonacoThemes } from "../themes";
 
 interface EditorPaneProps {
   text: string;
   onTextChange: (text: string) => void;
   schema: Record<string, unknown>;
   schemaId: string;
-  theme?: "light" | "dark";
+  /** Monaco theme name (see themes.ts monacoThemeName). */
+  monacoTheme: string;
   onEditorMount?: (editor: editor.IStandaloneCodeEditor) => void;
   onCursorOffsetChange?: (offset: number) => void;
   /** When a mouse click lands on a value with a closed set of choices,
@@ -48,7 +50,8 @@ interface EditorPaneProps {
 }
 
 export default function EditorPane(props: EditorPaneProps) {
-  const { text, onTextChange, schema, schemaId, theme, onEditorMount } = props;
+  const { text, onTextChange, schema, schemaId, monacoTheme, onEditorMount } =
+    props;
   const monaco = useMonaco();
 
   // The onMount handlers below live for the editor's lifetime; going through
@@ -76,7 +79,8 @@ export default function EditorPane(props: EditorPaneProps) {
   return (
     <Editor
       language="json"
-      theme={theme === "dark" ? "vs-dark" : "light"}
+      theme={monacoTheme}
+      beforeMount={(monacoApi) => defineMonacoThemes(monacoApi)}
       value={text}
       onChange={(value) => onTextChange(value ?? "")}
       onMount={(editorInstance, monacoApi) => {

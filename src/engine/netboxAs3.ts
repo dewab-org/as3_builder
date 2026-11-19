@@ -22,13 +22,16 @@ export const APPLICATION_LIST_QUERY = `query {
 }`;
 
 // Adapted from f5_toolbox application_by_snow_sys_id.graphql (filter by id).
+// Plugin 0.9.0 shape (G1/G2): virtual servers carry a required cluster and a
+// single application FK; the applications M2M no longer exists.
 export function applicationGraphQuery(appId: number | string): string {
   return `query {
   application_list(filters: { id: ${Number(appId)} }) {
     id name snow_sys_id description last_updated extra_parameters
+    clusters { id name }
     virtual_servers {
       id name slug description enabled last_updated
-      applications { id name }
+      cluster { id name }
       backend_pool {
         id name description load_balancing_algorithm last_updated
         monitors { id name description monitor_type interval timeout conditions last_updated }
@@ -36,13 +39,15 @@ export function applicationGraphQuery(appId: number | string): string {
         members {
           id
           node { id address }
+          hostname fqdn_address_family fqdn_auto_populate
+          fqdn_query_interval fqdn_down_interval
           service_port enabled ratio priority_group extra_parameters
         }
       }
       service_port vs_type protocol
       destination_addresses { id address }
       virtual_addresses { id address }
-      policies { id name policy_type rules description last_updated }
+      policies { id name policy_type is_persistence rules description last_updated }
       persistence
       ssl_profile {
         id name profile_type last_updated
@@ -86,6 +91,42 @@ export const LEGACY_LB_ALIASES: Record<string, string> = {
   "least-connections": "least-connections-member",
   "source-ip": "round-robin",
 };
+
+// Whether a policy is a persistence iRule, which renders as a universal
+// Persist profile (plugin 0.9.0 R5). The field is authoritative when stated;
+// older documents carry only the rules key the plugin mirrors it into.
+export function isPersistencePolicy(p: Record<string, unknown>): boolean {
+  if (p.policy_type !== "irule") return false;
+  if (p.is_persistence != null) return p.is_persistence === true;
+  const rules = p.rules;
+  return isPlainObject(rules) && rules.isPersistenceMethod === true;
+}
+
+// NetBox FQDN member fields → AS3 fqdn-discovery properties (plugin 0.8.0
+// F13), matching f5_toolbox's _fqdn_resolution.
+export const FQDN_RESOLUTION_FIELDS: Record<string, string> = {
+  fqdn_address_family: "addressFamily",
+  fqdn_auto_populate: "autoPopulate",
+  fqdn_query_interval: "queryInterval",
+  fqdn_down_interval: "downInterval",
+};
+
+const ADDRESS_FAMILY: Record<string, string> = { ipv4: "IPv4", ipv6: "IPv6" };
+
+export function fqdnResolutionFromNetbox(
+  member: Record<string, unknown>
+): Record<string, unknown> {
+  const resolution: Record<string, unknown> = {};
+  for (const [field, prop] of Object.entries(FQDN_RESOLUTION_FIELDS)) {
+    const value = member[field];
+    if (value == null || value === "") continue;
+    resolution[prop] =
+      field === "fqdn_address_family"
+        ? (ADDRESS_FAMILY[String(value).toLowerCase()] ?? value)
+        : value;
+  }
+  return resolution;
+}
 
 const SERVICE_CLASS: Record<string, string> = {
   tcp: "Service_TCP",
@@ -193,10 +234,34 @@ class Renderer {
 
     // Group members by (port, disabled, ratio, priorityGroup) — matches
     // f5_toolbox so equal-state members collapse into one serverAddresses[].
+    // An FQDN member (hostname instead of node, plugin 0.8.0 F13) renders as
+    // its own member with addressDiscovery fqdn; each distinct hostname is
+    // its own entry.
     const groups = new Map<string, Dict>();
     for (const member of (pool.members as Dict[] | undefined) ?? []) {
       const node = member.node as Dict | undefined;
       const address = node?.address ? stripCidr(String(node.address)) : undefined;
+      if (!address && typeof member.hostname === "string" && member.hostname) {
+        const disabled = member.enabled === false;
+        const ratio = (member.ratio as number | null) ?? 0;
+        const priorityGroup = (member.priority_group as number | null) ?? 0;
+        const groupKey = `fqdn|${member.hostname}|${member.service_port}|${disabled}|${ratio}|${priorityGroup}`;
+        let entry = groups.get(groupKey);
+        if (!entry) {
+          entry = {
+            servicePort: member.service_port,
+            addressDiscovery: "fqdn",
+            hostname: member.hostname,
+            ...fqdnResolutionFromNetbox(member),
+          };
+          if (disabled) entry.adminState = "disable";
+          if (ratio) entry.ratio = ratio;
+          if (priorityGroup) entry.priorityGroup = priorityGroup;
+          groups.set(groupKey, entry);
+        }
+        this.spreadExtras(entry, member.extra_parameters, `Pool "${key}" member`);
+        continue;
+      }
       if (!address) {
         this.warn(`Pool "${key}": member without node address skipped`);
         continue;
@@ -333,9 +398,12 @@ class Renderer {
     return typeof source === "string" && source.trim() !== "" ? source : null;
   }
 
-  renderPolicies(vsKey: string, service: Dict, policies: Dict[]): void {
+  /** Returns the AS3 keys of the Persist profiles rendered for persistence
+   * iRule policies (R5) — the targets universal persistence points at. */
+  renderPolicies(vsKey: string, service: Dict, policies: Dict[]): string[] {
     const standard = policies.filter((p) => p.policy_type === "standard");
     const irules = policies.filter((p) => p.policy_type === "irule");
+    const persistKeys: string[] = [];
 
     if (standard.length === 1) {
       const p = standard[0];
@@ -401,10 +469,23 @@ class Renderer {
         }
         const key = sanitizeKey(String(p.name));
         this.addObject(key, { class: "iRule", iRule: { base64: toBase64(source) } });
-        names.push(key);
+        // A persistence iRule (R5) is reached through a universal Persist
+        // profile, never the service's iRules list — matches f5_toolbox.
+        if (isPersistencePolicy(p)) {
+          persistKeys.push(
+            this.addObject(sanitizeKey(`${String(p.name)}_persist`), {
+              class: "Persist",
+              persistenceMethod: "universal",
+              iRule: key,
+            })
+          );
+        } else {
+          names.push(key);
+        }
       }
       if (names.length > 0) service.iRules = names;
     }
+    return persistKeys;
   }
 
   renderProtocolProfiles(service: Dict, profiles: Dict[]): void {
@@ -464,9 +545,6 @@ class Renderer {
     if (vs.enabled === false) service.enable = false;
     if (vs.vs_type && vs.vs_type !== "standard") service.virtualType = vs.vs_type;
 
-    const persistence = vs.persistence as string[] | undefined;
-    if (persistence?.length) service.persistenceMethods = persistence;
-
     // Live GraphQL exposes a single backend_pool; the offline payload shape
     // (and older plugin versions) use a backend_pools list.
     const pools = (
@@ -496,7 +574,28 @@ class Renderer {
       };
     }
 
-    this.renderPolicies(vsKey, service, (vs.policies as Dict[] | undefined) ?? []);
+    const persistKeys = this.renderPolicies(
+      vsKey,
+      service,
+      (vs.policies as Dict[] | undefined) ?? []
+    );
+
+    // universal persistence is reached through a Persist profile pointer
+    // (R5); other methods are AS3 builtin names and pass through.
+    const persistence = (vs.persistence as string[] | undefined) ?? [];
+    if (persistence.length > 0) {
+      const methods: unknown[] = persistence.filter((m) => m !== "universal");
+      if (persistence.includes("universal")) {
+        if (persistKeys.length === 0) {
+          this.warn(
+            `Virtual server "${vsKey}" requests universal persistence but has no persistence iRule policy — universal omitted`
+          );
+        }
+        methods.push(...persistKeys.map((k) => ({ use: k })));
+      }
+      if (methods.length > 0) service.persistenceMethods = methods;
+    }
+
     this.renderProtocolProfiles(
       service,
       (vs.protocol_profiles as Dict[] | undefined) ?? []

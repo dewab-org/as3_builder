@@ -195,6 +195,75 @@ describe("policy rendering (NetBox stores the whole AS3 object in rules)", () =>
   });
 });
 
+describe("persistence iRule policies (plugin 0.9.0 R5)", () => {
+  const tcl = "when HTTP_REQUEST { persist uie [HTTP::cookie session] }";
+  const persistPolicy = {
+    id: "7",
+    name: "session-pol",
+    policy_type: "irule",
+    is_persistence: true,
+    rules: { class: "iRule", iRule: tcl, isPersistenceMethod: true },
+  };
+
+  function renderWith(policies: unknown[], persistence: string[]) {
+    return renderNetboxApp({
+      id: "700",
+      name: "app700",
+      virtual_servers: [
+        {
+          name: "vs1",
+          protocol: "https",
+          service_port: 443,
+          virtual_addresses: [{ address: "10.0.0.30/32" }],
+          persistence,
+          policies,
+        },
+      ],
+    });
+  }
+
+  it("renders a universal Persist profile instead of a service iRule", () => {
+    const { declaration, warnings } = renderWith([persistPolicy], ["universal"]);
+    const app = declaration.app700 as Dict;
+    expect(app["session-pol_persist"]).toEqual({
+      class: "Persist",
+      persistenceMethod: "universal",
+      iRule: "session-pol",
+    });
+    // the iRule object itself is still emitted (the Persist references it)…
+    expect((app["session-pol"] as Dict).class).toBe("iRule");
+    // …but it is not in the service's iRules list.
+    const vs = app.vs1 as Dict;
+    expect(vs.iRules).toBeUndefined();
+    expect(vs.persistenceMethods).toEqual([{ use: "session-pol_persist" }]);
+    expect(warnings).toEqual([]);
+  });
+
+  it("falls back to the rules key when the field is absent (older documents)", () => {
+    const legacy = {
+      id: "8",
+      name: "legacy-pol",
+      policy_type: "irule",
+      rules: { class: "iRule", iRule: tcl, isPersistenceMethod: true },
+    };
+    const { declaration } = renderWith([legacy], ["universal"]);
+    const vs = (declaration.app700 as Dict).vs1 as Dict;
+    expect(vs.persistenceMethods).toEqual([{ use: "legacy-pol_persist" }]);
+  });
+
+  it("keeps builtin methods and warns when universal has no persistence policy", () => {
+    const { declaration, warnings } = renderWith(
+      [],
+      ["cookie", "universal"]
+    );
+    const vs = (declaration.app700 as Dict).vs1 as Dict;
+    expect(vs.persistenceMethods).toEqual(["cookie"]);
+    expect(
+      warnings.some((w) => w.includes("universal persistence"))
+    ).toBe(true);
+  });
+});
+
 describe("netbox renderer edge cases", () => {
   it("sanitizes AS3 keys", () => {
     expect(sanitizeKey("9bad name!")).toBe("A_9bad_name_");
@@ -261,6 +330,50 @@ describe("netbox renderer edge cases", () => {
       { servicePort: 80, serverAddresses: ["10.1.1.1", "10.1.1.2"] },
       { servicePort: 80, serverAddresses: ["10.1.1.3"], adminState: "disable" },
     ]);
+  });
+
+  it("renders an FQDN member as addressDiscovery fqdn (plugin F13)", () => {
+    const { declaration, warnings } = renderNetboxApp({
+      id: "4",
+      name: "app4",
+      virtual_servers: [
+        {
+          name: "vs1",
+          protocol: "http",
+          service_port: 80,
+          virtual_addresses: [{ address: "10.0.0.1/32" }],
+          backend_pool: {
+            name: "p1",
+            members: [
+              { node: { address: "10.1.1.1/32" }, service_port: 80, enabled: true },
+              {
+                hostname: "backend.example.com",
+                service_port: 8080,
+                enabled: true,
+                fqdn_address_family: "ipv4",
+                fqdn_auto_populate: true,
+                fqdn_query_interval: 30,
+                fqdn_down_interval: 5,
+              },
+            ],
+          },
+        },
+      ],
+    });
+    const pool = (declaration.app4 as Dict).p1 as Dict;
+    expect(pool.members).toEqual([
+      { servicePort: 80, serverAddresses: ["10.1.1.1"] },
+      {
+        servicePort: 8080,
+        addressDiscovery: "fqdn",
+        hostname: "backend.example.com",
+        addressFamily: "IPv4",
+        autoPopulate: true,
+        queryInterval: 30,
+        downInterval: 5,
+      },
+    ]);
+    expect(warnings).toEqual([]);
   });
 });
 

@@ -14,6 +14,7 @@ describe("push run summary", () => {
       applied: 2,
       failed: 1,
       skipped: 1,
+      rolledBack: 0,
     });
   });
 
@@ -22,15 +23,30 @@ describe("push run summary", () => {
       applied: 0,
       failed: 0,
       skipped: 0,
+      rolledBack: 0,
     });
   });
 
   it("reads as a sentence, mentioning only what applies", () => {
-    expect(describePush({ applied: 4, failed: 0, skipped: 0 })).toBe(
+    expect(describePush({ applied: 4, failed: 0, skipped: 0, rolledBack: 0 })).toBe(
       "4 applied"
     );
-    expect(describePush({ applied: 2, failed: 1, skipped: 3 })).toBe(
+    expect(describePush({ applied: 2, failed: 1, skipped: 3, rolledBack: 0 })).toBe(
       "2 applied · 1 failed · 3 skipped after the failure"
     );
+    expect(
+      describePush({ applied: 0, failed: 1, skipped: 1, rolledBack: 2 })
+    ).toBe(
+      "0 applied · 1 failed · 1 skipped after the failure · 2 rolled back — nothing new was left behind"
+    );
+  });
+
+  it("counts rolled-back creates", () => {
+    expect(summarizePush(rows("rolled-back", "fail", "skipped"))).toEqual({
+      applied: 0,
+      failed: 1,
+      skipped: 1,
+      rolledBack: 1,
+    });
   });
 });
