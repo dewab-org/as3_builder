@@ -45,6 +45,7 @@
   --toolbar-btn: #d85602;
   --toolbar-btn-border: #ffb27a;
   --toolbar-btn-hover: #b34702;
+  --toolbar-btn-text: #ffffff;
   --immutable-bg: #eef1f4;
   --immutable-border: #b6c0ca;
   --immutable-text: #5b6773;
@@ -90,6 +91,7 @@
   --toolbar-btn: #4a2503;
   --toolbar-btn-border: #8a4a12;
   --toolbar-btn-hover: #66330a;
+  --toolbar-btn-text: #ffffff;
   --immutable-bg: #1b2026;
   --immutable-border: #3c4854;
   --immutable-text: #8d9aa8;
@@ -162,7 +164,7 @@ body {
 }
 
 .toolbar button.toolbar-title:focus-visible {
-  outline: 2px solid #ffffff;
+  outline: 2px solid var(--toolbar-text);
   outline-offset: 2px;
   border-radius: 3px;
 }
@@ -183,7 +185,7 @@ body {
   border-radius: 6px;
   border: 1px solid var(--toolbar-btn-border);
   background: var(--toolbar-btn);
-  color: #ffffff;
+  color: var(--toolbar-btn-text);
   cursor: pointer;
 }
 
@@ -248,7 +250,7 @@ body {
 
 .toolbar button:focus-visible,
 .toolbar select:focus-visible {
-  outline: 2px solid #ffffff;
+  outline: 2px solid var(--toolbar-text);
   outline-offset: 2px;
 }
 
@@ -275,6 +277,7 @@ body {
 /* Connection state at a glance: green when this session holds a NetBox
    connection, ember red while it does not. */
 .toolbar button.is-connected {
+  color: #ffffff;
   background: #1d6b2f;
   border-color: #5fbf74;
 }
@@ -284,6 +287,7 @@ body {
 }
 
 .toolbar button.is-disconnected {
+  color: #ffffff;
   background: #a02c10;
   border-color: #ffd0a8;
 }
@@ -2388,4 +2392,63 @@ body {
   margin-left: 8px;
   opacity: 0.6;
   font-size: 12px;
+}
+
+/* Settings: color theme picker. */
+.palette-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 8px;
+  margin: 6px 0 4px;
+}
+
+.palette-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.palette-option:hover {
+  border-color: var(--accent-soft);
+}
+
+.palette-option.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.palette-option:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.palette-swatch {
+  display: flex;
+  width: 100%;
+  height: 18px;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--border-light);
+}
+
+.palette-swatch span {
+  flex: 1;
+}
+
+.palette-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.palette-variant {
+  font-size: 11px;
+  color: var(--muted);
 }

@@ -1,5 +1,12 @@
 import { SCHEMA_LIST } from "../schemas";
+import { PALETTES, type ColorMode, type PaletteId } from "../themes";
 import type { ToolbarLabelMode } from "./Toolbar";
+
+/** The swatch colors for a palette in a mode. THD reads its own tokens. */
+const THD_SWATCH: Record<ColorMode, string[]> = {
+  light: ["#f96302", "#f7f5f3", "#ffffff", "#c94f00"],
+  dark: ["#2c1503", "#14110f", "#1e1a17", "#ff8e42"],
+};
 
 interface SettingsDialogProps {
   schemaId: string;
@@ -9,6 +16,10 @@ interface SettingsDialogProps {
   onAddSchemaUrl: () => void;
   labelMode: ToolbarLabelMode;
   onLabelModeChange: (mode: ToolbarLabelMode) => void;
+  palette: PaletteId;
+  onPaletteChange: (palette: PaletteId) => void;
+  /** Current light/dark, so the swatches show what will apply. */
+  mode: ColorMode;
   onClose: () => void;
 }
 
@@ -29,12 +40,48 @@ export default function SettingsDialog({
   onAddSchemaUrl,
   labelMode,
   onLabelModeChange,
+  palette,
+  onPaletteChange,
+  mode,
   onClose,
 }: SettingsDialogProps) {
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h2>Settings</h2>
+        <p className="ctx-hint">Saved in this browser and kept across sessions.</p>
+
+        <h3 className="settings-heading">Color theme</h3>
+        <p className="ctx-hint">
+          Each theme has a light and a dark variant; the sun/moon button on the
+          toolbar switches between them.
+        </p>
+        <div className="palette-grid" role="radiogroup" aria-label="Color theme">
+          {PALETTES.map((p) => {
+            const spec = p[mode];
+            const swatch = spec
+              ? [spec.toolbarBg, spec.bg, spec.panel, spec.accent]
+              : THD_SWATCH[mode];
+            return (
+              <button
+                key={p.id}
+                role="radio"
+                aria-checked={palette === p.id}
+                className={`palette-option${palette === p.id ? " selected" : ""}`}
+                onClick={() => onPaletteChange(p.id)}
+                title={`${p.label} — ${p.variants.light} (light) / ${p.variants.dark} (dark)`}
+              >
+                <span className="palette-swatch" aria-hidden="true">
+                  {swatch.map((c, i) => (
+                    <span key={i} style={{ background: c }} />
+                  ))}
+                </span>
+                <span className="palette-name">{p.label}</span>
+                <span className="palette-variant">{p.variants[mode]}</span>
+              </button>
+            );
+          })}
+        </div>
 
         <h3 className="settings-heading">Schema</h3>
         <p className="ctx-hint">
