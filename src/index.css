@@ -133,6 +133,8 @@ body {
   font-weight: 700;
   margin: 0 12px 0 0;
   letter-spacing: 0.01em;
+  white-space: nowrap;
+  flex: none;
 }
 
 /* The title is a real button (it opens About) but must read as plain text.
@@ -208,19 +210,46 @@ body {
   border-radius: 8px;
 }
 
-.toolbar-group-label {
+/* Beats ".toolbar label" so the Template label matches the group labels. */
+.toolbar .toolbar-group-label {
+  display: block;
   font-size: 10px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  opacity: 0.85;
+  opacity: 1;
   line-height: 1;
 }
 
 .toolbar-group-buttons {
   display: flex;
-  align-items: stretch;
+  align-items: center;
   gap: 4px;
+}
+
+/* Unboxed slot: identical geometry (transparent border, same padding and
+   label row), so its controls line up with the boxed groups' buttons. */
+.toolbar-group.bare {
+  border-color: transparent;
+}
+
+/* One control height across the bar; icon-only buttons are square. */
+.toolbar-group-buttons button,
+.toolbar-group-buttons select {
+  height: 30px;
+  box-sizing: border-box;
+}
+
+.toolbar button.icon-only {
+  width: 32px;
+  padding: 0;
+  justify-content: center;
+}
+
+.toolbar button:focus-visible,
+.toolbar select:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
 }
 
 .toolbar-group-buttons button {
@@ -231,7 +260,9 @@ body {
 
 /* Icons carry the buttons, so they are deliberately prominent. */
 .btn-icon {
-  display: inline-block;
+  /* Flex, not inline-block: an inline box sits on the text baseline and
+     lifts the icon a pixel above the standalone icon buttons. */
+  display: inline-flex;
   font-size: 17px;
   line-height: 1;
   opacity: 0.95;
@@ -2331,22 +2362,14 @@ body {
   font-weight: 600;
 }
 
-/* Static "Schema: …" readout; the picker lives in Settings. */
+/* Static schema readout; the picker lives in Settings. */
 .toolbar-schema {
   display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
+  align-items: center;
+  height: 30px;
   font-size: 13px;
   white-space: nowrap;
   cursor: default;
-}
-
-.toolbar-schema-label {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  opacity: 0.85;
 }
 
 .settings-heading {

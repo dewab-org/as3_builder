@@ -179,6 +179,10 @@ export default function App() {
     () => !!netboxSession.apps
   );
   const [showConnectDialog, setShowConnectDialog] = useState(false);
+  /** What to open once Connect succeeds, when Load/Push needed it first. */
+  const [afterConnect, setAfterConnect] = useState<"load" | "push" | null>(
+    null
+  );
 
   // The buttons follow the sessions: a lost token or a changed BIG-IP device
   // turns them back to Not connected.
@@ -1103,9 +1107,20 @@ export default function App() {
         netboxConnected={netboxConnected}
         onConnectBigip={() => setShowBigipConnectDialog(true)}
         bigipConnected={bigipConnected}
-        onLoadFromNetbox={() => setShowNetboxDialog(true)}
+        onLoadFromNetbox={() => {
+          // Not connected: connect first, then carry on to Load.
+          if (!netboxConnected) {
+            setAfterConnect("load");
+            setShowConnectDialog(true);
+          } else setShowNetboxDialog(true);
+        }}
         onLoadFromBigip={() => setShowBigipLoadDialog(true)}
-        onPushToNetbox={() => setShowPushDialog(true)}
+        onPushToNetbox={() => {
+          if (!netboxConnected) {
+            setAfterConnect("push");
+            setShowConnectDialog(true);
+          } else setShowPushDialog(true);
+        }}
         pushPreview={pushPreview}
         theme={theme}
         onAbout={() => setShowAbout(true)}
@@ -1212,10 +1227,17 @@ export default function App() {
           onConnected={() => {
             setNetboxConnected(true);
             setShowConnectDialog(false);
-            // Deep link: continue straight into loading the linked app.
-            if (deepLinkRef.current?.appId) setShowNetboxDialog(true);
+            // Continue to whatever needed the connection: a deep link's
+            // application, or the Load/Push the user clicked.
+            if (deepLinkRef.current?.appId || afterConnect === "load")
+              setShowNetboxDialog(true);
+            else if (afterConnect === "push") setShowPushDialog(true);
+            setAfterConnect(null);
           }}
-          onClose={() => setShowConnectDialog(false)}
+          onClose={() => {
+            setShowConnectDialog(false);
+            setAfterConnect(null);
+          }}
         />
       )}
       {policy.netbox && showNetboxDialog && (

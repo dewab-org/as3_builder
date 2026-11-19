@@ -64,6 +64,10 @@ export default function SettingsDialog({
         </label>
 
         <h3 className="settings-heading">Toolbar buttons</h3>
+        <p className="ctx-hint">
+          When the window is too narrow for labels, the toolbar shows icons
+          only until there is room again.
+        </p>
         <div className="settings-choices" role="radiogroup" aria-label="Toolbar button style">
           {LABEL_MODES.map((m) => (
             <label key={m.value} className="modal-check">
