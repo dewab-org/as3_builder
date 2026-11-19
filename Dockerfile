@@ -28,7 +28,7 @@ RUN npm run build && npm run build:server && npm run precompress
 # glibc u13, which trivy flags with 1 CRITICAL and 5 HIGH that have fixes
 # upstream but no rebuilt base image. Trixie carries none of them — its only
 # findings are unfixed MEDIUMs shared by every glibc.
-FROM gcr.io/distroless/nodejs22-debian13:nonroot@sha256:939d6f1671529d230f50b563578e9b5d206af58f038b10ebd7e1233023d4e167
+FROM gcr.io/distroless/nodejs22-debian13:nonroot@sha256:39c66687298417dbf3ff2fb8b6012c20554494e16414ef7afd07b9abbb45b501
 
 WORKDIR /app
 ENV NODE_ENV=production \
