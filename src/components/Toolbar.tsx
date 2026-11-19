@@ -4,7 +4,8 @@ import MaterialIcon from "./MaterialIcon";
 import { TEMPLATES, getTemplate } from "../templates";
 
 /** How grouped toolbar buttons present themselves. */
-export type ToolbarLabelMode = "icons" | "text" | "both";
+import type { ToolbarLabelMode } from "../settings";
+export type { ToolbarLabelMode };
 
 /** A button inside a labelled toolbar group: icon, text, or both, per the
  * user's preference. Icon-only keeps the label reachable via tooltip and

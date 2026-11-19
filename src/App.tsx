@@ -16,6 +16,19 @@ import {
   type ParseError,
 } from "jsonc-parser";
 import SettingsDialog from "./components/SettingsDialog";
+import {
+  loadSettings,
+  saveSettings,
+  storageGet,
+  storageSet,
+  type ViewMode,
+} from "./settings";
+import {
+  applyTheme,
+  monacoThemeName,
+  type ColorMode,
+  type PaletteId,
+} from "./themes";
 import Toolbar, { type ToolbarLabelMode } from "./components/Toolbar";
 import BigipDialog from "./components/BigipDialog";
 import BigipLoadDialog from "./components/BigipLoadDialog";
@@ -133,22 +146,10 @@ function parseDeepLink(): DeepLink | null {
   };
 }
 
-type Theme = "light" | "dark";
+type Theme = ColorMode;
 
-function initialTheme(): Theme {
-  const stored = localStorage.getItem("as3b-theme");
-  if (stored === "light" || stored === "dark") return stored;
-  return window.matchMedia?.("(prefers-color-scheme: dark)").matches
-    ? "dark"
-    : "light";
-}
-
-function initialLabelMode(): ToolbarLabelMode {
-  const stored = localStorage.getItem("as3b-toolbar-labels");
-  return stored === "text" || stored === "both" || stored === "icons"
-    ? stored
-    : "icons";
-}
+// Read once at startup; the effect below writes every change back.
+const STARTUP_SETTINGS = loadSettings();
 
 function monacoRangeFor(
   model: editor.ITextModel,
@@ -166,7 +167,9 @@ function monacoRangeFor(
 }
 
 export default function App() {
-  const [schemaId, setSchemaId] = useState(DEFAULT_SCHEMA_ID);
+  const [schemaId, setSchemaId] = useState(
+    STARTUP_SETTINGS.schemaId ?? DEFAULT_SCHEMA_ID
+  );
   const [cursorOffset, setCursorOffset] = useState(0);
   const [baselineText, setBaselineText] = useState(INITIAL_TEXT);
   const [showBigipDialog, setShowBigipDialog] = useState(false);
@@ -224,8 +227,9 @@ export default function App() {
     setShowConnectDialog(true);
   }, []);
   const [showPushDialog, setShowPushDialog] = useState(false);
-  const [theme, setTheme] = useState<Theme>(initialTheme);
-  const [viewMode, setViewMode] = useState<"json" | "simple">("simple");
+  const [theme, setTheme] = useState<Theme>(STARTUP_SETTINGS.mode);
+  const [palette, setPalette] = useState<PaletteId>(STARTUP_SETTINGS.palette);
+  const [viewMode, setViewMode] = useState<ViewMode>(STARTUP_SETTINGS.viewMode);
   // Sticky: once the editor has been loaded, keep it mounted so toggling back
   // does not throw away its undo stack, folds and scroll position.
   const [jsonEverOpened, setJsonEverOpened] = useState(viewMode === "json");
@@ -237,7 +241,7 @@ export default function App() {
     () => {
       try {
         const stored = JSON.parse(
-          localStorage.getItem("as3b-url-schemas") ?? "[]"
+          storageGet("as3b-url-schemas") ?? "[]"
         ) as string[];
         return stored.map((u) => ({ id: urlSchemaId(u), label: urlSchemaLabel(u) }));
       } catch {
@@ -264,15 +268,16 @@ export default function App() {
     null
   );
 
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    localStorage.setItem("as3b-theme", theme);
-  }, [theme]);
+  useEffect(() => applyTheme(palette, theme), [palette, theme]);
 
-  const [labelMode, setLabelMode] = useState<ToolbarLabelMode>(initialLabelMode);
+  const [labelMode, setLabelMode] = useState<ToolbarLabelMode>(
+    STARTUP_SETTINGS.labelMode
+  );
+
+  // Every preference persists across sessions in one record.
   useEffect(() => {
-    localStorage.setItem("as3b-toolbar-labels", labelMode);
-  }, [labelMode]);
+    saveSettings({ palette, mode: theme, labelMode, schemaId, viewMode });
+  }, [palette, theme, labelMode, schemaId, viewMode]);
 
   const docState = useDocument(INITIAL_TEXT);
   const {
@@ -324,7 +329,10 @@ export default function App() {
         if (!cancelled) setSchemaEntry(entry);
       })
       .catch(() => {
-        if (!cancelled) flashToast(`Failed to load schema ${schemaId}`);
+        if (cancelled) return;
+        flashToast(`Failed to load schema ${schemaId}`);
+        // e.g. a remembered URL schema that is gone: don't keep retrying it.
+        if (schemaId !== DEFAULT_SCHEMA_ID) setSchemaId(DEFAULT_SCHEMA_ID);
       });
     return () => {
       cancelled = true;
@@ -757,7 +765,7 @@ export default function App() {
       setUrlSchemas((prev) => {
         if (prev.some((s) => s.id === id)) return prev;
         const next = [...prev, { id, label: urlSchemaLabel(url) }];
-        localStorage.setItem(
+        storageSet(
           "as3b-url-schemas",
           JSON.stringify(next.map((s) => s.id.slice(4)))
         );
@@ -1142,6 +1150,9 @@ export default function App() {
           }}
           labelMode={labelMode}
           onLabelModeChange={setLabelMode}
+          palette={palette}
+          onPaletteChange={setPalette}
+          mode={theme}
           onClose={() => setShowSettings(false)}
         />
       )}
@@ -1364,7 +1375,7 @@ export default function App() {
             onTextChange={setText}
             schema={schemaEntry.schema}
             schemaId={schemaEntry.id}
-            theme={theme}
+            monacoTheme={monacoThemeName(palette, theme)}
             onEditorMount={(ed) => {
               editorRef.current = ed;
             }}
