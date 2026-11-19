@@ -104,3 +104,17 @@ describe("toolbar settings", () => {
     expect(props.onOpenSettings).toHaveBeenCalledOnce();
   });
 });
+
+describe("toolbar accessibility", () => {
+  it("names the theme toggle for screen readers", () => {
+    renderToolbar({ theme: "dark" });
+    expect(
+      screen.getByRole("button", { name: "Switch to light mode" })
+    ).toBeInTheDocument();
+  });
+
+  it("labels the template picker", () => {
+    renderToolbar();
+    expect(screen.getByLabelText("Template")).toBeInTheDocument();
+  });
+});

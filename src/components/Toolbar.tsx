@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import AppLogo from "./AppLogo";
 import MaterialIcon from "./MaterialIcon";
 import { TEMPLATES, getTemplate } from "../templates";
@@ -30,7 +30,9 @@ function GroupButton({
     <button
       onClick={onClick}
       aria-label={label}
-      className={className}
+      className={[className, mode === "icons" ? "icon-only" : ""]
+        .filter(Boolean)
+        .join(" ") || undefined}
       title={mode === "icons" ? `${label} — ${title}` : title}
     >
       {mode !== "text" && (
@@ -105,6 +107,43 @@ export default function Toolbar({
 }: ToolbarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Labels that do not fit fall back to icons-only (names stay in the
+  // tooltips) instead of pushing the page into sideways scrolling; they
+  // come back once the window is wide enough for them again.
+  const barRef = useRef<HTMLDivElement>(null);
+  const [collapsed, setCollapsed] = useState(false);
+  const expandedWidth = useRef(0);
+  useLayoutEffect(() => {
+    const bar = barRef.current;
+    if (!bar || labelMode === "icons") {
+      setCollapsed(false);
+      return;
+    }
+    const check = () => {
+      if (!collapsed) {
+        if (bar.scrollWidth > bar.clientWidth + 1) {
+          expandedWidth.current = bar.scrollWidth;
+          setCollapsed(true);
+        }
+        // A little slack so a label that changes width (Connect… →
+        // Connected) cannot flip the bar back and forth.
+      } else if (bar.clientWidth >= expandedWidth.current + 16) {
+        setCollapsed(false);
+      }
+    };
+    check();
+    // The window resize covers browsers that throttle ResizeObserver.
+    window.addEventListener("resize", check);
+    const observer =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(check);
+    observer?.observe(bar);
+    return () => {
+      window.removeEventListener("resize", check);
+      observer?.disconnect();
+    };
+  }, [labelMode, collapsed]);
+  const mode: ToolbarLabelMode = collapsed ? "icons" : labelMode;
+
   function handleTemplateSelect(id: string) {
     if (!id) return;
     const template = getTemplate(id);
@@ -129,7 +168,7 @@ export default function Toolbar({
   }
 
   return (
-    <div className="toolbar">
+    <div className="toolbar" ref={barRef}>
       {/* The title doubles as the About control: version and author live
           behind the name, where convention puts them. */}
       <h1>
@@ -143,41 +182,63 @@ export default function Toolbar({
           AS3 Builder
         </button>
       </h1>
-      {/* Static: the schema is chosen in Settings, shown here so it is
-          always clear what the editor validates against. */}
-      <span className="toolbar-schema" title="Change in Settings">
-        <span className="toolbar-schema-label">Schema</span>
-        {schemaLabel}
-      </span>
-      <label>
-        Template
-        <select value="" onChange={(e) => handleTemplateSelect(e.target.value)}>
-          <option value="" disabled>
-            Load template…
-          </option>
-          {TEMPLATES.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.label}
+      {/* Every item is a slot: a small label row on top, the control below.
+          Unboxed slots keep the label row (blank if unlabelled), so their
+          controls sit on the same line as the boxed groups' buttons. */}
+      <div className="toolbar-group bare" title="Change in Settings">
+        <span className="toolbar-group-label">Schema</span>
+        <div className="toolbar-group-buttons">
+          {/* Static: chosen in Settings, shown so it is always clear what
+              the editor validates against. */}
+          <span className="toolbar-schema">{schemaLabel}</span>
+        </div>
+      </div>
+      <div className="toolbar-group bare">
+        <label className="toolbar-group-label" htmlFor="toolbar-template">
+          Template
+        </label>
+        <div className="toolbar-group-buttons">
+          <select
+            id="toolbar-template"
+            value=""
+            onChange={(e) => handleTemplateSelect(e.target.value)}
+          >
+            <option value="" disabled>
+              Load template…
             </option>
-          ))}
-        </select>
-      </label>
-      <button
-        onClick={onUndo}
-        disabled={!canUndo}
-        title="Undo (⌘Z)"
-        aria-label="Undo"
-      >
-        <MaterialIcon name="undo" />
-      </button>
-      <button
-        onClick={onRedo}
-        disabled={!canRedo}
-        title="Redo (⇧⌘Z)"
-        aria-label="Redo"
-      >
-        <MaterialIcon name="redo" />
-      </button>
+            {TEMPLATES.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <div className="toolbar-group bare" role="group" aria-label="History">
+        <span className="toolbar-group-label" aria-hidden="true">
+          &nbsp;
+        </span>
+        <div className="toolbar-group-buttons">
+          <button
+            className="icon-only"
+            onClick={onUndo}
+            disabled={!canUndo}
+            title="Undo (⌘Z)"
+            aria-label="Undo"
+          >
+            <MaterialIcon name="undo" />
+          </button>
+          <button
+            className="icon-only"
+            onClick={onRedo}
+            disabled={!canRedo}
+            title="Redo (⇧⌘Z)"
+            aria-label="Redo"
+          >
+            <MaterialIcon name="redo" />
+          </button>
+        </div>
+      </div>
       <div className="spacer" />
       {netboxEnabled && (
         <div className="toolbar-group" role="group" aria-label="NetBox">
@@ -186,7 +247,7 @@ export default function Toolbar({
             <GroupButton
               icon={netboxConnected ? "check_circle" : "sync_alt"}
               label={netboxConnected ? "Connected" : "Connect…"}
-              mode={labelMode}
+              mode={mode}
               onClick={onConnectNetbox}
               className={netboxConnected ? "is-connected" : "is-disconnected"}
               title={
@@ -198,14 +259,14 @@ export default function Toolbar({
             <GroupButton
               icon="download"
               label="Load…"
-              mode={labelMode}
+              mode={mode}
               onClick={onLoadFromNetbox}
               title="Read a load-balancer application from NetBox as AS3"
             />
             <GroupButton
               icon="upload"
               label="Push…"
-              mode={labelMode}
+              mode={mode}
               onClick={onPushToNetbox}
               title={
                 pushPreview
@@ -237,7 +298,7 @@ export default function Toolbar({
           <GroupButton
             icon={bigipConnected ? "check_circle" : "sync_alt"}
             label={bigipConnected ? "Connected" : "Connect…"}
-            mode={labelMode}
+            mode={mode}
             onClick={onConnectBigip}
             className={bigipConnected ? "is-connected" : "is-disconnected"}
             title={
@@ -249,14 +310,14 @@ export default function Toolbar({
           <GroupButton
             icon="download"
             label="Load…"
-            mode={labelMode}
+            mode={mode}
             onClick={onLoadFromBigip}
             title="Read an application from a device's running configuration, via AS3's per-application API"
           />
           <GroupButton
             icon="task_alt"
             label="Validate…"
-            mode={labelMode}
+            mode={mode}
             onClick={onValidateOnBigip}
             title="Dry-run this declaration against a BIG-IP"
           />
@@ -268,14 +329,14 @@ export default function Toolbar({
           <GroupButton
             icon="folder_open"
             label="Open…"
-            mode={labelMode}
+            mode={mode}
             onClick={() => fileInputRef.current?.click()}
             title="Open a declaration from a local JSON file"
           />
           <GroupButton
             icon="save"
             label="Save"
-            mode={labelMode}
+            mode={mode}
             onClick={handleSave}
             title="Save the declaration as a local JSON file"
           />
@@ -291,19 +352,29 @@ export default function Toolbar({
           e.target.value = "";
         }}
       />
-      <button
-        onClick={onOpenSettings}
-        title="Settings — schema and toolbar button style"
-        aria-label="Settings"
-      >
-        <MaterialIcon name="settings" />
-      </button>
-      <button
-        onClick={onToggleTheme}
-        title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-      >
-        <MaterialIcon name={theme === "dark" ? "light_mode" : "dark_mode"} />
-      </button>
+      <div className="toolbar-group bare" role="group" aria-label="View">
+        <span className="toolbar-group-label" aria-hidden="true">
+          &nbsp;
+        </span>
+        <div className="toolbar-group-buttons">
+          <button
+            className="icon-only"
+            onClick={onOpenSettings}
+            title="Settings — schema and toolbar button style"
+            aria-label="Settings"
+          >
+            <MaterialIcon name="settings" />
+          </button>
+          <button
+            className="icon-only"
+            onClick={onToggleTheme}
+            title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+          >
+            <MaterialIcon name={theme === "dark" ? "light_mode" : "dark_mode"} />
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
