@@ -100,6 +100,33 @@ function authHeader(req: IncomingMessage): Record<string, string> {
     : {};
 }
 
+/** Codes Node's TLS stack uses for certificate trust failures. */
+const TLS_ERROR_CODES = new Set([
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "UNABLE_TO_GET_ISSUER_CERT",
+  "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "CERT_HAS_EXPIRED",
+  "ERR_TLS_CERT_ALTNAME_INVALID",
+]);
+
+/** A 502 that names the cause. A certificate trust failure says so in plain
+ * words with the way out, instead of a bare error code. */
+export function upstreamErrorMessage(
+  target: string,
+  err: NodeJS.ErrnoException
+): string {
+  if (TLS_ERROR_CODES.has(err.code ?? "") || /certificate/i.test(err.message)) {
+    return (
+      `TLS certificate verification failed for ${target}: ${err.message}. ` +
+      `The device's certificate is not trusted by this server — for a lab ` +
+      `device with a self-signed certificate, untick “Validate TLS certificate”.`
+    );
+  }
+  return `Cannot reach ${target}: ${err.message}`;
+}
+
 export function bigipProxyHandler(
   req: IncomingMessage,
   res: ServerResponse,
@@ -149,7 +176,7 @@ export function bigipProxyHandler(
     upstream.on("error", (err) => {
       res.statusCode = 502;
       res.setHeader("content-type", "application/json");
-      res.end(JSON.stringify({ error: `Cannot reach ${target}: ${err.message}` }));
+      res.end(JSON.stringify({ error: upstreamErrorMessage(target, err) }));
     });
     upstream.end(body);
   });
@@ -210,7 +237,7 @@ export function netboxProxyHandler(
     upstream.on("error", (err) => {
       res.statusCode = 502;
       res.setHeader("content-type", "application/json");
-      res.end(JSON.stringify({ error: `Cannot reach ${target}: ${err.message}` }));
+      res.end(JSON.stringify({ error: upstreamErrorMessage(target, err) }));
     });
     upstream.end(body);
   });

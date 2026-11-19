@@ -143,6 +143,14 @@ body {
   cursor: pointer;
   color: inherit;
   font: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-logo {
+  flex: none;
+  display: block;
 }
 
 .toolbar button.toolbar-title:hover {
@@ -185,6 +193,107 @@ body {
 .toolbar button:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+/* Related actions boxed under one label — NetBox (connect/load/push),
+   BIG-IP (load/validate), JSON (open/save) — with the system named once
+   ABOVE the buttons, so each button keeps a short verb or just its icon. */
+.toolbar-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 6px 4px;
+  border: 1px solid var(--toolbar-btn-border);
+  border-radius: 8px;
+}
+
+.toolbar-group-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.85;
+  line-height: 1;
+}
+
+.toolbar-group-buttons {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.toolbar-group-buttons button {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+/* Icons carry the buttons, so they are deliberately prominent. */
+.btn-icon {
+  display: inline-block;
+  font-size: 17px;
+  line-height: 1;
+  opacity: 0.95;
+}
+
+.btn-icon + .btn-label {
+  margin-left: 6px;
+}
+
+/* Connection state at a glance: green when this session holds a NetBox
+   connection, ember red while it does not. */
+.toolbar button.is-connected {
+  background: #1d6b2f;
+  border-color: #5fbf74;
+}
+
+.toolbar button.is-connected:hover:not(:disabled) {
+  background: #175526;
+}
+
+.toolbar button.is-disconnected {
+  background: #a02c10;
+  border-color: #ffd0a8;
+}
+
+.toolbar button.is-disconnected:hover:not(:disabled) {
+  background: #7f2209;
+}
+
+.toolbar select.toolbar-labelmode {
+  max-width: 110px;
+}
+
+/* Rename affordance beside delete in the context panel's breadcrumb. */
+.ctx-rename {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  opacity: 0.7;
+  padding: 0 4px;
+}
+
+.ctx-rename:hover {
+  opacity: 1;
+}
+
+.ctx-rename-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 6px 0;
+}
+
+.ctx-rename-row input {
+  flex: 1;
+  min-width: 140px;
+}
+
+.ctx-rename-row .modal-error {
+  flex-basis: 100%;
 }
 
 /* Counts on the Push button: what a push would write, and — in warn colour —
@@ -2153,4 +2262,74 @@ body {
 
 .modified-line {
   background: var(--modified-bg);
+}
+
+/* Inline rename on double-click of an object card's name. */
+.obj-rename {
+  font: inherit;
+  font-weight: 600;
+  min-width: 120px;
+  padding: 0 4px;
+  border-radius: 4px;
+  border: 1px solid var(--toolbar-btn-border, #888);
+}
+
+.obj-rename.invalid {
+  border-color: #d33;
+  outline: 1px solid #d33;
+}
+
+/* Explicit rename affordance beside renameable names: quiet until the
+   header is hovered, so card heads stay readable. */
+.obj-rename-trigger {
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 1px 3px;
+  border-radius: 3px;
+  opacity: 0.35;
+  display: inline-flex;
+  align-items: center;
+}
+
+.obj-card-head:hover .obj-rename-trigger {
+  opacity: 0.8;
+}
+
+.obj-rename-trigger:hover {
+  opacity: 1;
+  background: var(--accent-soft, rgba(216, 86, 2, 0.15));
+}
+
+/* Delete beside the name, styled like the rename pencil; first click arms
+   it (red "delete?"), second click deletes. */
+.obj-delete-trigger {
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 1px 3px;
+  border-radius: 3px;
+  opacity: 0.35;
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+}
+
+.obj-card-head:hover .obj-delete-trigger {
+  opacity: 0.8;
+}
+
+.obj-delete-trigger:hover {
+  opacity: 1;
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.obj-delete-trigger.armed {
+  opacity: 1;
+  color: #fff;
+  background: var(--danger);
+  font-weight: 600;
 }

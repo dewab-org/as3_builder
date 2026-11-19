@@ -8,11 +8,19 @@ import {
   useState,
 } from "react";
 import type { editor } from "monaco-editor";
-import { findNodeAtLocation, getLocation, parse, parseTree } from "jsonc-parser";
-import Toolbar from "./components/Toolbar";
+import {
+  findNodeAtLocation,
+  getLocation,
+  parse,
+  parseTree,
+  type ParseError,
+} from "jsonc-parser";
+import Toolbar, { type ToolbarLabelMode } from "./components/Toolbar";
 import BigipDialog from "./components/BigipDialog";
 import BigipLoadDialog from "./components/BigipLoadDialog";
 import AboutDialog from "./components/AboutDialog";
+import BigipConnectDialog from "./components/BigipConnectDialog";
+import NetboxConnectDialog from "./components/NetboxConnectDialog";
 import NetboxDialog from "./components/NetboxDialog";
 import PushNetboxDialog from "./components/PushNetboxDialog";
 // Monaco is ~4MB of the bundle and the simplified view is the default, so the
@@ -33,7 +41,13 @@ import {
 } from "./schemas";
 import { getTemplate } from "./templates";
 import { useDocument } from "./hooks/useDocument";
-import { netboxSession } from "./netboxSession";
+import {
+  invalidateNetboxAuth,
+  netboxGraphql,
+  netboxSession,
+  netboxSessionRestored,
+  onNetboxConnectionChange,
+} from "./netboxSession";
 import { loadAppConfig } from "./appConfig";
 import {
   DEFAULT_POLICY,
@@ -41,11 +55,16 @@ import {
   type UnsupportedRule,
 } from "./engine/supportPolicy";
 import HoverCard, { type HoverAnchor } from "./components/HoverCard";
-import { applyBigipDefaults } from "./components/bigipSession";
+import {
+  applyBigipDefaults,
+  onBigipConnectionChange,
+  remembered as bigipRemembered,
+} from "./components/bigipSession";
 import { useValidation } from "./hooks/useValidation";
 import {
   applicationMemberClasses,
   bigipCandidates,
+  APPLICATION_LIST_QUERY,
   buildClassRegistry,
   computeUpdates,
   effectiveSchema,
@@ -58,6 +77,9 @@ import {
   loadAs3Documentation,
   pathKey,
   loadBigipCatalog,
+  referencePathsTo,
+  renameInManifest,
+  renameMember,
   resolveDrop,
   resolveSchemaForPath,
   auditUnsupported,
@@ -120,6 +142,13 @@ function initialTheme(): Theme {
     : "light";
 }
 
+function initialLabelMode(): ToolbarLabelMode {
+  const stored = localStorage.getItem("as3b-toolbar-labels");
+  return stored === "text" || stored === "both" || stored === "icons"
+    ? stored
+    : "icons";
+}
+
 function monacoRangeFor(
   model: editor.ITextModel,
   offset: number,
@@ -140,18 +169,53 @@ export default function App() {
   const [cursorOffset, setCursorOffset] = useState(0);
   const [baselineText, setBaselineText] = useState(INITIAL_TEXT);
   const [showBigipDialog, setShowBigipDialog] = useState(false);
+  const [showBigipConnectDialog, setShowBigipConnectDialog] = useState(false);
+  // Restored from this tab's storage: a reload keeps the BIG-IP connection.
+  const [bigipConnected, setBigipConnected] = useState(
+    () => bigipRemembered.connected
+  );
+  const [netboxConnected, setNetboxConnected] = useState(
+    () => !!netboxSession.apps
+  );
+  const [showConnectDialog, setShowConnectDialog] = useState(false);
+
+  // The buttons follow the sessions: a lost token or a changed BIG-IP device
+  // turns them back to Not connected.
+  useEffect(() => onNetboxConnectionChange(setNetboxConnected), []);
+  useEffect(() => onBigipConnectionChange(setBigipConnected), []);
+
+  // A reload keeps the NetBox token (sessionStorage); restore the app list —
+  // and with it the Connected state — in the background.
+  useEffect(() => {
+    if (!netboxSession.authHeader || netboxSession.apps) return;
+    void netboxGraphql<{ application_list: { id: string; name: string }[] }>(
+      APPLICATION_LIST_QUERY
+    )
+      .then((data) => {
+        netboxSession.apps = [...data.application_list].sort((a, b) =>
+          a.name.localeCompare(b.name)
+        );
+        setNetboxConnected(true);
+      })
+      .catch(() => {
+        // Token expired or NetBox away: back to Not connected.
+        invalidateNetboxAuth();
+        setNetboxConnected(false);
+      });
+  }, []);
   const [showNetboxDialog, setShowNetboxDialog] = useState(false);
   const [showBigipLoadDialog, setShowBigipLoadDialog] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const deepLinkRef = useRef<DeepLink | null>(null);
 
-  // Deep link: prefill the NetBox connection and open the Load dialog.
+  // Deep link: prefill the NetBox connection and open the Connect dialog;
+  // its onConnected continues into the Load dialog for the linked app.
   useEffect(() => {
     const link = parseDeepLink();
     if (!link) return;
     deepLinkRef.current = link;
     netboxSession.url = link.netbox;
-    setShowNetboxDialog(true);
+    setShowConnectDialog(true);
   }, []);
   const [showPushDialog, setShowPushDialog] = useState(false);
   const [theme, setTheme] = useState<Theme>(initialTheme);
@@ -198,6 +262,11 @@ export default function App() {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("as3b-theme", theme);
   }, [theme]);
+
+  const [labelMode, setLabelMode] = useState<ToolbarLabelMode>(initialLabelMode);
+  useEffect(() => {
+    localStorage.setItem("as3b-toolbar-labels", labelMode);
+  }, [labelMode]);
 
   const docState = useDocument(INITIAL_TEXT);
   const {
@@ -283,13 +352,18 @@ export default function App() {
           "NetBox deep link ignored: NetBox support is disabled by this deployment's configuration."
         );
         deepLinkRef.current = null;
+        setShowConnectDialog(false);
         setShowNetboxDialog(false);
       }
-      if (config.netbox.url) netboxSession.url = config.netbox.url;
+      // A connection restored from this tab wins over the server defaults:
+      // its token belongs to its URL and TLS setting.
+      if (!netboxSessionRestored) {
+        if (config.netbox.url) netboxSession.url = config.netbox.url;
+        netboxSession.validateCert = config.netbox.validateCert;
+      }
       netboxSession.username ||= config.netbox.username;
       netboxSession.password ||= config.netbox.password;
       netboxSession.token ||= config.netbox.token;
-      netboxSession.validateCert = config.netbox.validateCert;
       applyBigipDefaults(config.bigip);
     });
   }, []);
@@ -638,11 +712,32 @@ export default function App() {
     [root, registry]
   );
 
+  // Delete a node, clearing every reference to it inside its application
+  // (only application members are referenced by name), as one undo step.
+  // With broken JSON there is no reliable structure to scan, so it falls
+  // back to a plain delete.
+  const deleteWithReferences = useCallback(
+    (path: JsonPath) => {
+      const errors: ParseError[] = [];
+      const current = parse(text, errors, { allowTrailingComma: true });
+      const refs =
+        errors.length === 0 && isPlainObject(current)
+          ? referencePathsTo(current, path as (string | number)[])
+          : [];
+      applyEditMany([
+        ...refs.map((p): [JsonPath, unknown] => [p as JsonPath, undefined]),
+        [path, undefined],
+      ]);
+    },
+    [text, applyEditMany]
+  );
+
   const handleEdit = useCallback(
     (path: JsonPath, value: unknown) => {
-      applyEdit(path, value);
+      if (value === undefined) deleteWithReferences(path);
+      else applyEdit(path, value);
     },
-    [applyEdit]
+    [applyEdit, deleteWithReferences]
   );
 
   const submitSchemaUrl = useCallback(async () => {
@@ -902,18 +997,40 @@ export default function App() {
 
   const handleDeleteRow = useCallback(
     (path: unknown) => {
-      applyEdit(path as JsonPath, undefined);
+      deleteWithReferences(path as JsonPath);
     },
-    [applyEdit]
+    [deleteWithReferences]
   );
 
   const handleDeleteNode = useCallback(
     (path: JsonPath) => {
       if (path.length === 0) return;
-      applyEdit(path, undefined);
+      deleteWithReferences(path);
       navigateToPath(path.slice(0, -1));
     },
-    [applyEdit, navigateToPath]
+    [deleteWithReferences, navigateToPath]
+  );
+
+  // Rename an application (or one of its members) and rewrite references.
+  // With NetBox provenance the manifest follows along, so the rename pushes
+  // as a NetBox name change instead of a delete + create.
+  const handleRenameNode = useCallback(
+    (path: JsonPath, newName: string): string | null => {
+      if (!isPlainObject(lastGoodDoc)) return "Fix JSON errors before renaming.";
+      const decl = lastGoodDoc as Record<string, unknown>;
+      const res = renameMember(decl, path as (string | number)[], newName);
+      if ("error" in res) return res.error;
+      const oldKey = String(path[path.length - 1]);
+      const manifest = netboxSession.manifests.get(String(decl.id ?? ""));
+      if (manifest) renameInManifest(manifest, oldKey, newName);
+      const newText = JSON.stringify(res.declaration, null, 2) + "\n";
+      replaceText(newText);
+      navigateWhenReady([...path.slice(0, -1), newName], newText, {
+        flash: true,
+      });
+      return null;
+    },
+    [lastGoodDoc, replaceText, navigateWhenReady]
   );
 
   // Double-click insertion: add the property (or new class object) into the
@@ -982,6 +1099,10 @@ export default function App() {
         currentText={text}
         onValidateOnBigip={() => setShowBigipDialog(true)}
         netboxEnabled={policy.netbox}
+        onConnectNetbox={() => setShowConnectDialog(true)}
+        netboxConnected={netboxConnected}
+        onConnectBigip={() => setShowBigipConnectDialog(true)}
+        bigipConnected={bigipConnected}
         onLoadFromNetbox={() => setShowNetboxDialog(true)}
         onLoadFromBigip={() => setShowBigipLoadDialog(true)}
         onPushToNetbox={() => setShowPushDialog(true)}
@@ -989,6 +1110,8 @@ export default function App() {
         theme={theme}
         onAbout={() => setShowAbout(true)}
         onToggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
+        labelMode={labelMode}
+        onLabelModeChange={setLabelMode}
         onUndo={undo}
         onRedo={redo}
         canUndo={canUndo}
@@ -1061,9 +1184,33 @@ export default function App() {
           onClose={() => setShowBigipLoadDialog(false)}
         />
       )}
+      {showBigipConnectDialog && (
+        <BigipConnectDialog
+          onConnected={() => {
+            setBigipConnected(true);
+            setShowBigipConnectDialog(false);
+          }}
+          onClose={() => setShowBigipConnectDialog(false)}
+        />
+      )}
+      {policy.netbox && showConnectDialog && (
+        <NetboxConnectDialog
+          configWarnings={configWarnings}
+          onConnected={() => {
+            setNetboxConnected(true);
+            setShowConnectDialog(false);
+            // Deep link: continue straight into loading the linked app.
+            if (deepLinkRef.current?.appId) setShowNetboxDialog(true);
+          }}
+          onClose={() => setShowConnectDialog(false)}
+        />
+      )}
       {policy.netbox && showNetboxDialog && (
         <NetboxDialog
-          configWarnings={configWarnings}
+          onConnect={() => {
+            setShowNetboxDialog(false);
+            setShowConnectDialog(true);
+          }}
           autoLoadAppId={deepLinkRef.current?.appId}
           onLoad={(newText) => {
             guardedLoad(newText, "the NetBox render", () => {
@@ -1159,6 +1306,7 @@ export default function App() {
               onEditValue={handleEdit}
               onEditMany={applyEditMany}
               onAppendObjectItem={handleAppendObjectItem}
+              onRenameNode={handleRenameNode}
               onHoverPath={setHover}
               relatedKeys={relatedKeys}
               searchKeys={searchKeys}
@@ -1211,6 +1359,7 @@ export default function App() {
             onAddChip={handleAddChip}
             onDeleteNode={handleDeleteNode}
             onClassChange={handleClassChange}
+            onRenameNode={handleRenameNode}
           />
         </div>
       </div>

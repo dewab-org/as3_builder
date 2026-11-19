@@ -14,6 +14,12 @@ function renderToolbar(overrides: Partial<ToolbarProps> = {}) {
     currentText: "{}",
     onValidateOnBigip: vi.fn(),
     netboxEnabled: true,
+    onConnectNetbox: vi.fn(),
+    netboxConnected: false,
+    onConnectBigip: vi.fn(),
+    bigipConnected: false,
+    labelMode: "both" as const,
+    onLabelModeChange: vi.fn(),
     onLoadFromNetbox: vi.fn(),
     onLoadFromBigip: vi.fn(),
     onPushToNetbox: vi.fn(),
@@ -31,18 +37,58 @@ function renderToolbar(overrides: Partial<ToolbarProps> = {}) {
 }
 
 describe("toolbar NetBox gate", () => {
-  it("shows both NetBox buttons when the deployment allows NetBox", () => {
+  it("shows the grouped NetBox buttons when the deployment allows NetBox", () => {
     renderToolbar();
-    expect(screen.getByText("Load from NetBox…")).toBeInTheDocument();
-    expect(screen.getByText(/Push to NetBox/)).toBeInTheDocument();
+    const group = screen.getByRole("group", { name: "NetBox" });
+    expect(group).toHaveTextContent("Connect…");
+    expect(group).toHaveTextContent("Load…");
+    expect(group).toHaveTextContent("Push…");
   });
 
-  it("hides them entirely — not disables — when gated off", () => {
+  it("shows the connected state on the Connect button, with state colour", () => {
+    renderToolbar({ netboxConnected: true });
+    const connect = screen.getByRole("button", { name: "Connected" });
+    expect(connect).toHaveClass("is-connected");
+  });
+
+  it("colours both Connect buttons while disconnected", () => {
+    renderToolbar();
+    const buttons = screen.getAllByRole("button", { name: "Connect…" });
+    expect(buttons).toHaveLength(2); // NetBox and BIG-IP
+    for (const b of buttons) expect(b).toHaveClass("is-disconnected");
+  });
+
+  it("shows the BIG-IP connected state independently", () => {
+    renderToolbar({ bigipConnected: true });
+    const bigip = screen.getByRole("group", { name: "BIG-IP" });
+    expect(bigip).toHaveTextContent("Connected");
+    expect(
+      screen.getByRole("group", { name: "NetBox" })
+    ).not.toHaveTextContent("Connected");
+  });
+
+  it("icons mode hides the text but keeps the name reachable", () => {
+    renderToolbar({ labelMode: "icons" });
+    const load = screen.getAllByRole("button", { name: "Load…" })[0];
+    expect(load).not.toHaveTextContent("Load…");
+    expect(load.title).toContain("Load…");
+  });
+
+  it("groups Open and Save under a JSON label", () => {
+    renderToolbar();
+    const json = screen.getByRole("group", { name: "JSON" });
+    expect(json).toHaveTextContent("Open…");
+    expect(json).toHaveTextContent("Save");
+  });
+
+  it("hides the group entirely — not disables — when gated off", () => {
     renderToolbar({ netboxEnabled: false });
-    expect(screen.queryByText("Load from NetBox…")).not.toBeInTheDocument();
-    expect(screen.queryByText(/Push to NetBox/)).not.toBeInTheDocument();
-    // The rest of the toolbar is unaffected.
-    expect(screen.getByText("Load from BIG-IP…")).toBeInTheDocument();
-    expect(screen.getByText(/Validate on BIG-IP/)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("group", { name: "NetBox" })
+    ).not.toBeInTheDocument();
+    // The BIG-IP group is unaffected.
+    const bigip = screen.getByRole("group", { name: "BIG-IP" });
+    expect(bigip).toHaveTextContent("Load…");
+    expect(bigip).toHaveTextContent("Validate…");
   });
 });

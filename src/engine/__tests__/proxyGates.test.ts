@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { OPEN_GATES, bigipWriteAllowed } from "../../../server/proxy";
+import { OPEN_GATES, bigipWriteAllowed, upstreamErrorMessage } from "../../../server/proxy";
 
 const CLOSED = { netbox: false, bigipApply: false };
 const declare = "/mgmt/shared/appsvcs/declare/Applications/applications";
@@ -51,5 +51,26 @@ describe("BIG-IP apply gate (proxy decision)", () => {
       bigipWriteAllowed(CLOSED, "POST", "/mgmt/shared/authn/login", body({}))
         .allowed
     ).toBe(true);
+  });
+});
+
+describe("upstream error messages", () => {
+  it("names a certificate trust failure and the way out", () => {
+    const err = Object.assign(new Error("self-signed certificate"), {
+      code: "DEPTH_ZERO_SELF_SIGNED_CERT",
+    });
+    const msg = upstreamErrorMessage("bigip01.lab.local", err);
+    expect(msg).toContain("TLS certificate verification failed");
+    expect(msg).toContain("bigip01.lab.local");
+    expect(msg).toContain("Validate TLS certificate");
+  });
+
+  it("stays generic for plain connection failures", () => {
+    const err = Object.assign(new Error("connect ECONNREFUSED"), {
+      code: "ECONNREFUSED",
+    });
+    expect(upstreamErrorMessage("host", err)).toBe(
+      "Cannot reach host: connect ECONNREFUSED"
+    );
   });
 });

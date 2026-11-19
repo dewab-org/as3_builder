@@ -14,61 +14,42 @@ import {
 } from "../netboxSession";
 
 interface NetboxDialogProps {
-  /** Problems the server spotted in its own configuration (see appConfig). */
-  configWarnings?: string[];
   onLoad: (text: string) => void;
   onClose: () => void;
-  /** Deep link: load this application automatically once connected. */
+  /** Opens the Connect dialog in this dialog's place. */
+  onConnect: () => void;
+  /** Deep link: load this application automatically once the list is here. */
   autoLoadAppId?: string;
 }
 
-
+/** Application picker half of the NetBox integration. The connection itself
+ * is "Connect to NetBox…" (NetboxConnectDialog); this dialog only consumes
+ * the cached session. */
 export default function NetboxDialog({
-  configWarnings = [],
   onLoad,
   onClose,
+  onConnect,
   autoLoadAppId,
 }: NetboxDialogProps) {
-  const [url, setUrl] = useState(netboxSession.url);
-  const [username, setUsername] = useState(netboxSession.username);
-  const [password, setPassword] = useState(netboxSession.password);
-  const [token, setToken] = useState(netboxSession.token);
-  // A token skips provisioning and works for accounts that cannot mint one.
-  const [authMode, setAuthMode] = useState<"token" | "password">(
-    netboxSession.token ? "token" : "password"
-  );
-  const [validateCert, setValidateCert] = useState(netboxSession.validateCert);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | undefined>();
   const [apps, setApps] = useState<AppEntry[] | undefined>(netboxSession.apps);
   const [selectedApp, setSelectedApp] = useState(
-    netboxSession.apps?.[0]?.id ?? ""
+    autoLoadAppId ?? netboxSession.apps?.[0]?.id ?? ""
   );
   const [appFilter, setAppFilter] = useState("");
   const [warnings, setWarnings] = useState<string[]>([]);
 
-  netboxSession.url = url;
-  netboxSession.username = authMode === "password" ? username : "";
-  netboxSession.password = authMode === "password" ? password : "";
-  netboxSession.token = authMode === "token" ? token : "";
-  netboxSession.validateCert = validateCert;
-
-  // Cached connection: if we already hold a token but no app list yet,
-  // connect immediately on open.
+  // Deep link: the Connect dialog already ran; load the target right away.
   useEffect(() => {
-    if (netboxSession.authHeader && !netboxSession.apps) void connect();
+    if (autoLoadAppId && netboxSession.apps?.some((a) => a.id === autoLoadAppId))
+      void loadApp(autoLoadAppId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const canConnect =
-    !busy &&
-    url.trim() !== "" &&
-    (authMode === "token" ? token.trim() !== "" : username !== "");
-
-  async function connect() {
-    setBusy("Connecting…");
+  async function refresh() {
+    setBusy("Refreshing…");
     setError(undefined);
-    setApps(undefined);
     try {
       const data = await netboxGraphql<{ application_list: AppEntry[] }>(
         APPLICATION_LIST_QUERY
@@ -78,14 +59,10 @@ export default function NetboxDialog({
       );
       netboxSession.apps = list;
       setApps(list);
-      if (autoLoadAppId && list.some((a) => a.id === autoLoadAppId)) {
-        setSelectedApp(autoLoadAppId);
-        void loadApp(autoLoadAppId);
-      } else if (list.length > 0) {
-        setSelectedApp(list[0].id);
-      }
+      if (!list.some((a) => a.id === selectedApp))
+        setSelectedApp(list[0]?.id ?? "");
     } catch (err) {
-      invalidateNetboxAuth(); // stale token? re-provision next time
+      invalidateNetboxAuth(); // stale token? reconnect provisions a fresh one
       setError(String(err instanceof Error ? err.message : err));
     } finally {
       setBusy(null);
@@ -121,82 +98,17 @@ export default function NetboxDialog({
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h2>Load from NetBox</h2>
         <p className="ctx-hint">
-          Reads a load-balancer application from NetBox and renders it as a
-          per-app AS3 declaration in the editor.
+          Reads a load-balancer application from{" "}
+          <code>{netboxSession.url}</code> and renders it as a per-app AS3
+          declaration in the editor.
         </p>
-        <label className="modal-field">
-          <span>NetBox URL</span>
-          <input
-            type="text"
-            placeholder="http://netbox.example.com:8080"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            autoFocus
-          />
-        </label>
-        <label className="modal-field">
-          <span>Authenticate with</span>
-          <select
-            value={authMode}
-            onChange={(e) => {
-              setAuthMode(e.target.value as "token" | "password");
-              netboxSession.authHeader = "";
-            }}
-          >
-            <option value="token">API token</option>
-            <option value="password">Username &amp; password</option>
-          </select>
-        </label>
-        {authMode === "token" ? (
-          <label className="modal-field">
-            <span>API token</span>
-            <input
-              type="password"
-              autoComplete="off"
-              placeholder="nbt_… or a 40-character key"
-              value={token}
-              onChange={(e) => {
-                setToken(e.target.value);
-                netboxSession.authHeader = "";
-              }}
-            />
-          </label>
-        ) : (
-          <>
-            <label className="modal-field">
-              <span>Username</span>
-              <input
-                type="text"
-                autoComplete="username"
-                value={username}
-                onChange={(e) => {
-                  setUsername(e.target.value);
-                  netboxSession.authHeader = "";
-                }}
-              />
-            </label>
-            <label className="modal-field">
-              <span>Password</span>
-              <input
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => {
-                  setPassword(e.target.value);
-                  netboxSession.authHeader = "";
-                }}
-              />
-            </label>
-          </>
+
+        {!apps && (
+          <p className="ctx-hint">
+            Not connected to NetBox yet — connect first, then pick an
+            application here.
+          </p>
         )}
-        <label className="modal-check">
-          <input
-            type="checkbox"
-            checked={validateCert}
-            onChange={(e) => setValidateCert(e.target.checked)}
-          />
-          Validate TLS certificate (https only)
-        </label>
 
         {apps && apps.length > 0 && (
           <div className="app-picker">
@@ -205,6 +117,7 @@ export default function NetboxDialog({
               placeholder={`Search ${apps.length} applications…`}
               value={appFilter}
               onChange={(e) => setAppFilter(e.target.value)}
+              autoFocus
             />
             <div className="app-picker-list">
               {apps
@@ -240,17 +153,6 @@ export default function NetboxDialog({
           <p className="ctx-hint">No applications found in this NetBox.</p>
         )}
 
-        {configWarnings.length > 0 && (
-          <div className="modal-warnings">
-            <strong>Check the server configuration:</strong>
-            <ul>
-              {configWarnings.map((w) => (
-                <li key={w}>{w}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-
         {error && <div className="modal-error">{error}</div>}
 
         {warnings.length > 0 && (
@@ -267,18 +169,18 @@ export default function NetboxDialog({
         <div className="modal-actions">
           <button onClick={onClose}>Close</button>
           {!apps ? (
-            <button className="primary" disabled={!canConnect} onClick={connect}>
-              {busy ?? "Connect"}
+            <button className="primary" onClick={onConnect}>
+              Connect to NetBox…
             </button>
           ) : (
             <>
-              <button disabled={!!busy} onClick={connect}>
+              <button disabled={!!busy} onClick={() => void refresh()}>
                 Refresh
               </button>
               <button
                 className="primary"
                 disabled={!!busy || !selectedApp}
-                onClick={() => loadApp()}
+                onClick={() => void loadApp()}
               >
                 {busy ?? "Load as AS3"}
               </button>

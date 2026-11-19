@@ -4,7 +4,10 @@ import {
   applicationGraphQuery,
   buildManifest,
   computeUpdates,
+  findApplicationKey,
+  newAppManifest,
   renderNetboxApp,
+  slugify,
   type AppManifest,
   type CreateObject,
   type DeleteObject,
@@ -63,6 +66,17 @@ export default function PushNetboxDialog({
   onClose,
 }: PushNetboxDialogProps) {
   const [manifest, setManifest] = useState<AppManifest | undefined>();
+  const [declaration, setDeclaration] = useState<Record<string, unknown>>();
+  /** Metadata survey for a declaration with no NetBox provenance: the fields
+   * a net-new Application needs that AS3 does not carry. */
+  const [survey, setSurvey] = useState<{
+    appKey: string;
+    name: string;
+    description: string;
+    snowSysId: string;
+    clusterId: number | null;
+    clusters: { id: number; name: string }[];
+  }>();
   const [rows, setRows] = useState<Row[]>([]);
   const [notes, setNotes] = useState<string[]>([]);
   const [error, setError] = useState<string | undefined>();
@@ -73,50 +87,39 @@ export default function PushNetboxDialog({
   // from a column of ticks.
   const [summary, setSummary] = useState<ReturnType<typeof summarizePush>>();
 
-  // Compute the change set + drift on open.
-  useEffect(() => {
-    void (async () => {
-      setBusy("Computing changes…");
-      setSummary(undefined);
-      try {
-        const declaration = parse(declarationText, [], {
-          allowTrailingComma: true,
-        }) as Record<string, unknown>;
-        if (!declaration || typeof declaration !== "object")
-          throw new Error("Editor content is not valid JSON");
-        const m = netboxSession.manifests.get(String(declaration.id ?? ""));
-        if (!m)
-          throw new Error(
-            "No NetBox provenance for this declaration. Load an application via “Load from NetBox…” first (write-back only works in the session that loaded it)."
+  // Compute the change set + drift for a (declaration, manifest) pair.
+  async function computeRows(
+    decl: Record<string, unknown>,
+    m: AppManifest
+  ): Promise<void> {
+    setManifest(m);
+    const changeSet = computeUpdates(decl, m);
+    setNotes(changeSet.notes);
+
+    // Drift check for updates and deletes.
+    setBusy("Checking for drift…");
+    const drift = new Map<string, boolean>();
+    const entries = [
+      ...changeSet.updates.map((u) => u.entry),
+      ...changeSet.deletes.map((d) => d.entry),
+    ];
+    await Promise.all(
+      entries.map(async (entry) => {
+        try {
+          const obj = await netboxRest<{ last_updated?: string }>(
+            `${PLUGIN_BASE}/${entry.endpoint}/${entry.id}/`
           );
-        setManifest(m);
-        const changeSet = computeUpdates(declaration, m);
-        setNotes(changeSet.notes);
+          const a = Date.parse(entry.lastUpdated ?? "");
+          const b = Date.parse(obj.last_updated ?? "");
+          // NaN !== NaN → unparseable timestamps fail safe (drifted).
+          drift.set(entry.as3Key, a !== b);
+        } catch {
+          drift.set(entry.as3Key, true);
+        }
+      })
+    );
 
-        // Drift check for updates and deletes.
-        setBusy("Checking for drift…");
-        const drift = new Map<string, boolean>();
-        const entries = [
-          ...changeSet.updates.map((u) => u.entry),
-          ...changeSet.deletes.map((d) => d.entry),
-        ];
-        await Promise.all(
-          entries.map(async (entry) => {
-            try {
-              const obj = await netboxRest<{ last_updated?: string }>(
-                `${PLUGIN_BASE}/${entry.endpoint}/${entry.id}/`
-              );
-              const a = Date.parse(entry.lastUpdated ?? "");
-              const b = Date.parse(obj.last_updated ?? "");
-              // NaN !== NaN → unparseable timestamps fail safe (drifted).
-              drift.set(entry.as3Key, a !== b);
-            } catch {
-              drift.set(entry.as3Key, true);
-            }
-          })
-        );
-
-        const newRows: Row[] = [
+    const newRows: Row[] = [
           ...changeSet.creates.map(
             (create): Row => ({
               kind: "create",
@@ -137,18 +140,73 @@ export default function PushNetboxDialog({
               status: "pending",
             };
           }),
-          ...changeSet.deletes.map(
-            (del): Row => ({
-              kind: "delete",
-              del,
-              // Deletions are destructive — never pre-checked.
-              checked: false,
-              drifted: drift.get(del.entry.as3Key) ?? false,
-              status: "pending",
-            })
-          ),
-        ];
-        setRows(newRows);
+      ...changeSet.deletes.map(
+        (del): Row => ({
+          kind: "delete",
+          del,
+          // Deletions are destructive — never pre-checked.
+          checked: false,
+          drifted: drift.get(del.entry.as3Key) ?? false,
+          status: "pending",
+        })
+      ),
+    ];
+    setRows(newRows);
+  }
+
+  // On open: parse the editor, find provenance, and either diff against it or
+  // open the net-new application survey.
+  useEffect(() => {
+    void (async () => {
+      setBusy("Computing changes…");
+      setSummary(undefined);
+      try {
+        const decl = parse(declarationText, [], {
+          allowTrailingComma: true,
+        }) as Record<string, unknown>;
+        if (!decl || typeof decl !== "object")
+          throw new Error("Editor content is not valid JSON");
+        setDeclaration(decl);
+        const m = netboxSession.manifests.get(String(decl.id ?? ""));
+        if (m) {
+          await computeRows(decl, m);
+          return;
+        }
+        // No provenance: this declaration can become a NET-NEW application.
+        const appKey = findApplicationKey(decl);
+        if (!appKey)
+          throw new Error(
+            "No NetBox provenance and no Application object in the declaration — nothing to push."
+          );
+        const appObj = decl[appKey] as Record<string, unknown>;
+        if (
+          !netboxSession.authHeader &&
+          !netboxSession.token.trim() &&
+          !netboxSession.username
+        )
+          throw new Error(
+            "Not connected to NetBox. Use “Connect…” in the NetBox toolbar group, then push again to create this declaration as a new application."
+          );
+        setBusy("Loading clusters…");
+        // Virtual servers live on BIG-IP HA clusters; other cluster types
+        // (vSphere, Kubernetes) are not placement targets. Estates without
+        // the bigip-ha type fall back to the full list rather than a dead
+        // dropdown.
+        let clusters = await netboxRest<{
+          results: { id: number; name: string }[];
+        }>(`/api/virtualization/clusters/?type=bigip-ha&limit=500`);
+        if (clusters.results.length === 0)
+          clusters = await netboxRest<{
+            results: { id: number; name: string }[];
+          }>(`/api/virtualization/clusters/?limit=500`);
+        setSurvey({
+          appKey,
+          name: appKey,
+          description: typeof appObj.label === "string" ? appObj.label : "",
+          snowSysId: "",
+          clusterId: null,
+          clusters: clusters.results,
+        });
       } catch (err) {
         setError(String(err instanceof Error ? err.message : err));
       } finally {
@@ -158,8 +216,38 @@ export default function PushNetboxDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Turn the survey into a change list. Nothing is written yet: the
+  // application itself is created as the first step of Apply, inside the
+  // same all-or-nothing run as everything else.
+  const [pendingApp, setPendingApp] = useState<Record<string, unknown> | null>(
+    null
+  );
+  async function continueFromSurvey() {
+    if (!survey || !declaration || survey.clusterId === null) return;
+    setError(undefined);
+    const body: Record<string, unknown> = {
+      name: survey.name.trim(),
+      slug: slugify(survey.name),
+      description: survey.description,
+    };
+    if (survey.snowSysId.trim()) body.snow_sys_id = survey.snowSysId.trim();
+    // id 0 until Apply creates the record.
+    const m = newAppManifest(declaration, survey.appKey, { id: 0 }, survey.clusterId);
+    setPendingApp(body);
+    setSurvey(undefined);
+    setBusy("Computing changes…");
+    try {
+      await computeRows(declaration, m);
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   const applicable = rows.filter((r) => r.checked && rowOpCount(r) > 0);
-  const totalOps = applicable.reduce((n, r) => n + rowOpCount(r), 0);
+  const totalOps =
+    applicable.reduce((n, r) => n + rowOpCount(r), 0) + (pendingApp ? 1 : 0);
   const deleteCount = applicable.filter((r) => r.kind === "delete").length;
 
   // NetBox holds certificate metadata only — the material lives in the
@@ -180,11 +268,48 @@ export default function PushNetboxDialog({
     return { id: created.id, placeholder: true };
   }
 
+  /** One step to reverse on rollback: DELETE what the run created (the
+   * default), PATCH an updated object's fields back to their prior values,
+   * or POST a deleted pool member back. */
+  interface UndoEntry {
+    /** Proxy path, e.g. "/api/plugins/netbox-load-balancer/backend-pools/12/". */
+    path: string;
+    label: string;
+    method?: "DELETE" | "PATCH" | "POST";
+    body?: Record<string, unknown>;
+  }
+
+  /** A read-back value in the shape NetBox accepts on write: nested objects
+   * become their id, lists of them a list of ids. */
+  function writable(v: unknown): unknown {
+    if (Array.isArray(v))
+      return v.map((x) =>
+        x && typeof x === "object" && "id" in x ? (x as { id: unknown }).id : x
+      );
+    if (v && typeof v === "object" && "id" in v) return (v as { id: unknown }).id;
+    return v;
+  }
+
+  /** PATCH, after recording the fields' current values so a rollback can
+   * put them back. */
+  async function patchTracked(
+    path: string,
+    body: Record<string, unknown>,
+    undo: UndoEntry[]
+  ): Promise<void> {
+    const before = await netboxRest<Record<string, unknown>>(path);
+    const restore: Record<string, unknown> = {};
+    for (const field of Object.keys(body)) restore[field] = writable(before[field]);
+    await netboxRest(path, { method: "PATCH", body });
+    undo.push({ path, label: `restore ${path}`, method: "PATCH", body: restore });
+  }
+
   /** Returns warnings worth surfacing on the row (placeholder certificates). */
   async function applyCreate(
     create: CreateObject,
     keyToId: Map<string, number>,
-    appId: number
+    appId: number,
+    undo: UndoEntry[]
   ): Promise<string[]> {
     const body: Record<string, unknown> = { ...create.fields };
     const warnings: string[] = [];
@@ -194,10 +319,15 @@ export default function PushNetboxDialog({
       for (const name of create.certificateNames) {
         const cert = await ensureCertificate(name);
         ids.push(cert.id);
-        if (cert.placeholder)
+        if (cert.placeholder) {
+          undo.push({
+            path: `${PLUGIN_BASE}/certificates/${cert.id}/`,
+            label: `placeholder certificate "${name}"`,
+          });
           warnings.push(
             `placeholder certificate "${name}" created in NetBox — it is a pointer only, so reconcile it with the certificate estate`
           );
+        }
       }
       body.certificates = ids;
     }
@@ -219,14 +349,54 @@ export default function PushNetboxDialog({
       }
       body.monitors = ids;
     }
+    // M2M links by AS3 key: this changeset's own creates first, then by
+    // NetBox name — a service may point at estate objects that were never
+    // part of this declaration.
+    async function resolveLinks(
+      endpoint: "policies" | "protocol-profiles",
+      keys: string[]
+    ): Promise<number[]> {
+      const ids: number[] = [];
+      for (const key of keys) {
+        const known = keyToId.get(key);
+        if (known !== undefined) {
+          ids.push(known);
+          continue;
+        }
+        const found = await netboxRest<{ results: { id: number }[] }>(
+          `${PLUGIN_BASE}/${endpoint}/?name=${encodeURIComponent(key)}`
+        );
+        if (found.results.length === 0)
+          throw new Error(
+            `"${key}" does not exist in NetBox — create it there first`
+          );
+        ids.push(found.results[0].id);
+      }
+      return ids;
+    }
+
     if (create.endpoint === "virtual-servers") {
       // Required single-application FK since plugin 0.9.0 (G2); the required
       // cluster is already in create.fields (stamped by computeUpdates).
       body.application = appId;
+      if (create.policyKeys && create.policyKeys.length > 0)
+        body.policies = await resolveLinks("policies", create.policyKeys);
+      if (create.protocolProfileKeys && create.protocolProfileKeys.length > 0)
+        body.protocol_profiles = await resolveLinks(
+          "protocol-profiles",
+          create.protocolProfileKeys
+        );
       if (create.vipAddresses && create.vipAddresses.length > 0) {
         const ids: number[] = [];
-        for (const address of create.vipAddresses)
-          ids.push(await ensureIpAddress(address));
+        for (const address of create.vipAddresses) {
+          const ip = await ensureIpAddress(address);
+          if (ip.created)
+            undo.push({
+              path: `/api/ipam/ip-addresses/${ip.id}/`,
+              label: `IP address ${address}`,
+            });
+          ids.push(ip.id);
+        }
         body.virtual_addresses = ids;
       }
     }
@@ -236,20 +406,33 @@ export default function PushNetboxDialog({
       { method: "POST", body }
     );
     keyToId.set(create.as3Key, created.id);
+    undo.push({
+      path: `${PLUGIN_BASE}/${create.endpoint}/${created.id}/`,
+      label: `${create.className} "${create.as3Key}"`,
+    });
 
     for (const member of create.members ?? []) {
-      const nodeId = await ensureIpAddress(member.addressWithMask);
+      const ip = await ensureIpAddress(member.addressWithMask);
+      if (ip.created)
+        undo.push({
+          path: `/api/ipam/ip-addresses/${ip.id}/`,
+          label: `IP address ${member.addressWithMask}`,
+        });
       const memberBody: Record<string, unknown> = {
         pool: created.id,
-        node: nodeId,
+        node: ip.id,
         service_port: member.servicePort,
       };
       if (!member.enabled) memberBody.enabled = false;
       if (member.ratio) memberBody.ratio = member.ratio;
       if (member.priorityGroup) memberBody.priority_group = member.priorityGroup;
-      await netboxRest(`${PLUGIN_BASE}/pool-members/`, {
+      const m = await netboxRest<{ id: number }>(`${PLUGIN_BASE}/pool-members/`, {
         method: "POST",
         body: memberBody,
+      });
+      undo.push({
+        path: `${PLUGIN_BASE}/pool-members/${m.id}/`,
+        label: `member ${member.address}:${member.servicePort}`,
       });
     }
     return warnings;
@@ -257,44 +440,76 @@ export default function PushNetboxDialog({
 
   async function applyUpdate(
     change: ObjectChange,
-    keyToId: Map<string, number>
+    keyToId: Map<string, number>,
+    undo: UndoEntry[]
   ): Promise<void> {
     const { entry } = change;
     const base = `${PLUGIN_BASE}/${entry.endpoint}`;
     if (change.changes.length > 0) {
       const body: Record<string, unknown> = {};
       for (const c of change.changes) body[c.field] = c.to;
-      await netboxRest(`${base}/${entry.id}/`, { method: "PATCH", body });
+      await patchTracked(`${base}/${entry.id}/`, body, undo);
     }
     for (const op of change.ops) {
       switch (op.op) {
         case "member-create": {
-          const nodeId = await ensureIpAddress(op.addressWithMask);
-          await netboxRest(`${PLUGIN_BASE}/pool-members/`, {
-            method: "POST",
-            body: { pool: entry.id, node: nodeId, ...op.body },
+          const ip = await ensureIpAddress(op.addressWithMask);
+          if (ip.created)
+            undo.push({
+              path: `/api/ipam/ip-addresses/${ip.id}/`,
+              label: `IP address ${op.addressWithMask}`,
+            });
+          const m = await netboxRest<{ id: number }>(
+            `${PLUGIN_BASE}/pool-members/`,
+            {
+              method: "POST",
+              body: { pool: entry.id, node: ip.id, ...op.body },
+            }
+          );
+          undo.push({
+            path: `${PLUGIN_BASE}/pool-members/${m.id}/`,
+            label: op.label,
           });
           break;
         }
         case "member-update":
-          await netboxRest(`${PLUGIN_BASE}/pool-members/${op.memberId}/`, {
-            method: "PATCH",
-            body: op.body,
+          await patchTracked(
+            `${PLUGIN_BASE}/pool-members/${op.memberId}/`,
+            op.body,
+            undo
+          );
+          break;
+        case "member-delete": {
+          // Read it first so a rollback can recreate it.
+          const path = `${PLUGIN_BASE}/pool-members/${op.memberId}/`;
+          const before = await netboxRest<Record<string, unknown>>(path);
+          const recreate: Record<string, unknown> = {};
+          for (const [k, v] of Object.entries(before)) {
+            if (["id", "url", "display", "display_url", "created", "last_updated"].includes(k))
+              continue;
+            recreate[k] = writable(v);
+          }
+          await netboxRest(path, { method: "DELETE" });
+          undo.push({
+            path: `${PLUGIN_BASE}/pool-members/`,
+            label: `restore ${op.label}`,
+            method: "POST",
+            body: recreate,
           });
           break;
-        case "member-delete":
-          await netboxRest(`${PLUGIN_BASE}/pool-members/${op.memberId}/`, {
-            method: "DELETE",
-          });
-          break;
+        }
         case "vs-addresses": {
           const ids: number[] = [];
-          for (const address of op.addresses)
-            ids.push(await ensureIpAddress(address));
-          await netboxRest(`${base}/${entry.id}/`, {
-            method: "PATCH",
-            body: { virtual_addresses: ids },
-          });
+          for (const address of op.addresses) {
+            const ip = await ensureIpAddress(address);
+            if (ip.created)
+              undo.push({
+                path: `/api/ipam/ip-addresses/${ip.id}/`,
+                label: `IP address ${address}`,
+              });
+            ids.push(ip.id);
+          }
+          await patchTracked(`${base}/${entry.id}/`, { virtual_addresses: ids }, undo);
           break;
         }
         case "pool-monitors": {
@@ -305,10 +520,7 @@ export default function PushNetboxDialog({
               throw new Error(`monitor reference "${key}" does not resolve`);
             ids.push(id);
           }
-          await netboxRest(`${base}/${entry.id}/`, {
-            method: "PATCH",
-            body: { monitors: ids },
-          });
+          await patchTracked(`${base}/${entry.id}/`, { monitors: ids }, undo);
           break;
         }
         case "vs-links": {
@@ -333,10 +545,7 @@ export default function PushNetboxDialog({
               );
             ids.push(found.results[0].id);
           }
-          await netboxRest(`${base}/${entry.id}/`, {
-            method: "PATCH",
-            body: { [op.field]: ids },
-          });
+          await patchTracked(`${base}/${entry.id}/`, { [op.field]: ids }, undo);
           break;
         }
         case "vs-snat": {
@@ -352,10 +561,7 @@ export default function PushNetboxDialog({
               );
             id = found.results[0].id;
           }
-          await netboxRest(`${base}/${entry.id}/`, {
-            method: "PATCH",
-            body: { snat_pool: id },
-          });
+          await patchTracked(`${base}/${entry.id}/`, { snat_pool: id }, undo);
           break;
         }
         case "vs-ref": {
@@ -368,10 +574,7 @@ export default function PushNetboxDialog({
               );
             id = resolved;
           }
-          await netboxRest(`${base}/${entry.id}/`, {
-            method: "PATCH",
-            body: { [op.field]: id },
-          });
+          await patchTracked(`${base}/${entry.id}/`, { [op.field]: id }, undo);
           break;
         }
       }
@@ -383,6 +586,34 @@ export default function PushNetboxDialog({
     setConfirming(false);
     setBusy("Applying…");
     let failed = false;
+    // Everything minted in THIS run, deletable newest-first: creation is
+    // all-or-nothing, so a failure deletes the run's objects again instead
+    // of leaving half an application behind (and a retry full of
+    // duplicate-name errors).
+    const undo: UndoEntry[] = [];
+
+    // A net-new application is the run's first create and its last undo.
+    if (pendingApp) {
+      try {
+        const created = await netboxRest<{ id: number }>(
+          `${PLUGIN_BASE}/applications/`,
+          { method: "POST", body: pendingApp }
+        );
+        undo.push({
+          path: `${PLUGIN_BASE}/applications/${created.id}/`,
+          label: `application "${String(pendingApp.name)}"`,
+        });
+        manifest.appId = created.id;
+        for (const entry of manifest.entries)
+          if (entry.isApplication) entry.id = created.id;
+      } catch (err) {
+        setError(
+          `Could not create the application: ${String(err instanceof Error ? err.message : err)}`
+        );
+        setBusy(null);
+        return;
+      }
+    }
 
     const keyToId = new Map<string, number>();
     for (const entry of manifest.entries) keyToId.set(entry.as3Key, entry.id);
@@ -407,8 +638,9 @@ export default function PushNetboxDialog({
       try {
         let warnings: string[] = [];
         if (row.kind === "create")
-          warnings = await applyCreate(row.create, keyToId, manifest.appId);
-        else if (row.kind === "update") await applyUpdate(row.change, keyToId);
+          warnings = await applyCreate(row.create, keyToId, manifest.appId, undo);
+        else if (row.kind === "update")
+          await applyUpdate(row.change, keyToId, undo);
         else
           await netboxRest(
             `${PLUGIN_BASE}/${row.del.entry.endpoint}/${row.del.entry.id}/`,
@@ -435,12 +667,53 @@ export default function PushNetboxDialog({
       }
     }
 
+    // All-or-nothing creation: a failure deletes everything this run minted,
+    // newest first so references fall before their targets.
+    if (failed && undo.length > 0) {
+      setBusy(`Rolling back ${undo.length} created object${undo.length === 1 ? "" : "s"}…`);
+      const rollbackFailures: string[] = [];
+      for (const entry of [...undo].reverse()) {
+        try {
+          await netboxRest(entry.path, {
+            method: entry.method ?? "DELETE",
+            body: entry.body,
+          });
+        } catch (err) {
+          rollbackFailures.push(
+            `${entry.label}: ${String(err instanceof Error ? err.message : err)}`
+          );
+        }
+      }
+      setRows((prev) =>
+        prev.map((r) =>
+          r.kind !== "delete" && r.status === "ok"
+            ? { ...r, status: "rolled-back" as RowStatus }
+            : r
+        )
+      );
+      if (rollbackFailures.length > 0)
+        setError(
+          `Rollback could not delete: ${rollbackFailures.join("; ")} — remove these in NetBox by hand.`
+        );
+    }
+
     // Read the outcome from the rows themselves — they are the record of what
     // actually happened, including the skips.
     setRows((prev) => {
       setSummary(summarizePush(prev));
       return prev;
     });
+
+    if (!failed && pendingApp) {
+      netboxSession.manifests.set(manifest.declarationId, manifest);
+      netboxSession.apps = undefined; // the cached picker list is stale now
+      setPendingApp(null);
+    } else if (failed && pendingApp) {
+      // Rolled back: put the application id back to "not created yet" so a
+      // retry creates it again.
+      manifest.appId = 0;
+      for (const entry of manifest.entries) if (entry.isApplication) entry.id = 0;
+    }
 
     if (!failed) {
       // Re-fetch, re-render, refresh manifest — the editor then shows the
@@ -522,6 +795,14 @@ export default function PushNetboxDialog({
               skipped
             </span>
           )}
+          {row.status === "rolled-back" && (
+            <span
+              className="push-skipped"
+              title="Created, then deleted again: a later step failed, and creation is all-or-nothing"
+            >
+              rolled back
+            </span>
+          )}
         </label>
         {row.kind === "update" && (
           <>
@@ -585,19 +866,99 @@ export default function PushNetboxDialog({
           Writes this declaration's edits back to the NetBox objects it was
           loaded from: field updates, pool membership, virtual addresses, and
           object creation/deletion. IPs and placeholder certificate records are created as
-          needed. Deletions are never pre-selected.
+          needed. Deletions are never pre-selected. A declaration that was not
+          loaded from NetBox can be created as a new application.
         </p>
 
         {error && <div className="modal-error">{error}</div>}
 
-        {!error && rows.length === 0 && !busy && (
+        {survey && (
+          <>
+            <p className="ctx-hint">
+              This declaration was not loaded from NetBox, so it can be created
+              as a <strong>new application</strong>. NetBox needs a few fields
+              AS3 does not carry; the virtual servers are placed on the chosen
+              cluster. Nothing is created until you apply, and a failed apply
+              creates nothing.
+            </p>
+            <label className="modal-field">
+              <span>Application name</span>
+              <input
+                value={survey.name}
+                disabled={busy !== null}
+                onChange={(e) => setSurvey({ ...survey, name: e.target.value })}
+              />
+            </label>
+            <label className="modal-field">
+              <span>Description</span>
+              <input
+                value={survey.description}
+                disabled={busy !== null}
+                onChange={(e) =>
+                  setSurvey({ ...survey, description: e.target.value })
+                }
+              />
+            </label>
+            <label className="modal-field">
+              <span>SNOW sys_id (optional)</span>
+              <input
+                value={survey.snowSysId}
+                disabled={busy !== null}
+                onChange={(e) =>
+                  setSurvey({ ...survey, snowSysId: e.target.value })
+                }
+              />
+            </label>
+            <label className="modal-field">
+              <span>Cluster</span>
+              <select
+                value={survey.clusterId ?? ""}
+                disabled={busy !== null}
+                onChange={(e) =>
+                  setSurvey({
+                    ...survey,
+                    clusterId: e.target.value ? Number(e.target.value) : null,
+                  })
+                }
+              >
+                <option value="">Select a cluster…</option>
+                {survey.clusters.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </>
+        )}
+
+        {!error && !survey && rows.length === 0 && !pendingApp && !busy && (
           <p className="ctx-hint">
             No pushable changes — the declaration matches NetBox.
           </p>
         )}
 
-        {rows.length > 0 && (
-          <div className="push-list">{rows.map((row, i) => renderRow(row, i))}</div>
+        {(rows.length > 0 || pendingApp) && (
+          <div className="push-list">
+            {pendingApp && (
+              <div className="push-row">
+                <div className="push-row-head">
+                  <span className="push-kind create">CREATE</span>
+                  <span className="push-name">
+                    {String(pendingApp.name)}
+                    <span className="push-class">Application</span>
+                  </span>
+                </div>
+                <div className="push-field">
+                  <span className="push-to">
+                    create application — first, and removed again if anything
+                    after it fails
+                  </span>
+                </div>
+              </div>
+            )}
+            {rows.map((row, i) => renderRow(row, i))}
+          </div>
         )}
 
         {notes.length > 0 && (
@@ -646,10 +1007,23 @@ export default function PushNetboxDialog({
 
         <div className="modal-actions">
           <button onClick={onClose}>{done ? "Done" : "Close"}</button>
-          {!done && (
+          {!done && survey && (
             <button
               className="primary"
-              disabled={busy !== null || applicable.length === 0}
+              disabled={
+                busy !== null ||
+                survey.name.trim() === "" ||
+                survey.clusterId === null
+              }
+              onClick={() => void continueFromSurvey()}
+            >
+              {busy ?? "Continue…"}
+            </button>
+          )}
+          {!done && !survey && (
+            <button
+              className="primary"
+              disabled={busy !== null || (applicable.length === 0 && !pendingApp)}
               onClick={() => setConfirming(true)}
             >
               {busy ?? `Apply ${totalOps} change${totalOps === 1 ? "" : "s"}…`}

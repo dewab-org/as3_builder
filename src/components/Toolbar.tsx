@@ -1,6 +1,49 @@
-import { useRef } from "react";
+import { useRef, type ReactNode } from "react";
+import AppLogo from "./AppLogo";
+import MaterialIcon from "./MaterialIcon";
 import { SCHEMA_LIST } from "../schemas";
 import { TEMPLATES, getTemplate } from "../templates";
+
+/** How grouped toolbar buttons present themselves. */
+export type ToolbarLabelMode = "icons" | "text" | "both";
+
+/** A button inside a labelled toolbar group: icon, text, or both, per the
+ * user's preference. Icon-only keeps the label reachable via tooltip and
+ * aria-label. */
+function GroupButton({
+  icon,
+  label,
+  title,
+  mode,
+  onClick,
+  className,
+  children,
+}: {
+  icon: string;
+  label: string;
+  title: string;
+  mode: ToolbarLabelMode;
+  onClick: () => void;
+  className?: string;
+  children?: ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label={label}
+      className={className}
+      title={mode === "icons" ? `${label} — ${title}` : title}
+    >
+      {mode !== "text" && (
+        <span className="btn-icon" aria-hidden="true">
+          <MaterialIcon name={icon} />
+        </span>
+      )}
+      {mode !== "icons" && <span className="btn-label">{label}</span>}
+      {children}
+    </button>
+  );
+}
 
 interface ToolbarProps {
   schemaId: string;
@@ -16,6 +59,12 @@ interface ToolbarProps {
   /** False hides the NetBox buttons entirely: the deployment has switched
    * the capability off, so nothing should advertise it. */
   netboxEnabled: boolean;
+  onConnectNetbox: () => void;
+  /** Whether this session holds a NetBox connection (cached app list). */
+  netboxConnected: boolean;
+  onConnectBigip: () => void;
+  /** Whether "Connect to BIG-IP…" has verified the device this session. */
+  bigipConnected: boolean;
   onLoadFromNetbox: () => void;
   onLoadFromBigip: () => void;
   onPushToNetbox: () => void;
@@ -25,6 +74,9 @@ interface ToolbarProps {
   theme: "light" | "dark";
   onToggleTheme: () => void;
   onAbout: () => void;
+  /** Grouped buttons: icons only (hover for text), text only, or both. */
+  labelMode: ToolbarLabelMode;
+  onLabelModeChange: (mode: ToolbarLabelMode) => void;
   onUndo: () => void;
   onRedo: () => void;
   canUndo: boolean;
@@ -40,6 +92,10 @@ export default function Toolbar({
   currentText,
   onValidateOnBigip,
   netboxEnabled,
+  onConnectNetbox,
+  netboxConnected,
+  onConnectBigip,
+  bigipConnected,
   onLoadFromNetbox,
   onLoadFromBigip,
   onPushToNetbox,
@@ -47,6 +103,8 @@ export default function Toolbar({
   theme,
   onToggleTheme,
   onAbout,
+  labelMode,
+  onLabelModeChange,
   onUndo,
   onRedo,
   canUndo,
@@ -88,6 +146,7 @@ export default function Toolbar({
           title="About AS3 Builder (version, author)"
           aria-label="About AS3 Builder"
         >
+          <AppLogo />
           AS3 Builder
         </button>
       </h1>
@@ -132,7 +191,7 @@ export default function Toolbar({
         title="Undo (⌘Z)"
         aria-label="Undo"
       >
-        ↶
+        <MaterialIcon name="undo" />
       </button>
       <button
         onClick={onRedo}
@@ -140,50 +199,111 @@ export default function Toolbar({
         title="Redo (⇧⌘Z)"
         aria-label="Redo"
       >
-        ↷
+        <MaterialIcon name="redo" />
       </button>
       <div className="spacer" />
       {netboxEnabled && (
-        <button onClick={onLoadFromNetbox} title="Read a load-balancer application from NetBox as AS3">
-          Load from NetBox…
-        </button>
+        <div className="toolbar-group" role="group" aria-label="NetBox">
+          <span className="toolbar-group-label">NetBox</span>
+          <div className="toolbar-group-buttons">
+            <GroupButton
+              icon={netboxConnected ? "check_circle" : "sync_alt"}
+              label={netboxConnected ? "Connected" : "Connect…"}
+              mode={labelMode}
+              onClick={onConnectNetbox}
+              className={netboxConnected ? "is-connected" : "is-disconnected"}
+              title={
+                netboxConnected
+                  ? "Connected — reopen to change the connection"
+                  : "Not connected — connect to NetBox (required before loading or pushing)"
+              }
+            />
+            <GroupButton
+              icon="download"
+              label="Load…"
+              mode={labelMode}
+              onClick={onLoadFromNetbox}
+              title="Read a load-balancer application from NetBox as AS3"
+            />
+            <GroupButton
+              icon="upload"
+              label="Push…"
+              mode={labelMode}
+              onClick={onPushToNetbox}
+              title={
+                pushPreview
+                  ? `${pushPreview.writes} change${pushPreview.writes === 1 ? "" : "s"} to write` +
+                    (pushPreview.notes > 0
+                      ? `, ${pushPreview.notes} edit${pushPreview.notes === 1 ? "" : "s"} that cannot be pushed`
+                      : "")
+                  : "Write edits back to NetBox, or create this declaration as a new application"
+              }
+            >
+              {pushPreview && pushPreview.writes > 0 && (
+                <span className="toolbar-badge">{pushPreview.writes}</span>
+              )}
+              {pushPreview && pushPreview.notes > 0 && (
+                <span
+                  className="toolbar-badge warn"
+                  aria-label={`${pushPreview.notes} edits cannot be pushed`}
+                >
+                  !{pushPreview.notes}
+                </span>
+              )}
+            </GroupButton>
+          </div>
+        </div>
       )}
-      <button
-        onClick={onLoadFromBigip}
-        title="Read an application from a device's running configuration, via AS3's per-application API"
-      >
-        Load from BIG-IP…
-      </button>
-      {netboxEnabled && (
-      <button
-        onClick={onPushToNetbox}
-        title={
-          pushPreview
-            ? `${pushPreview.writes} change${pushPreview.writes === 1 ? "" : "s"} to write` +
-              (pushPreview.notes > 0
-                ? `, ${pushPreview.notes} edit${pushPreview.notes === 1 ? "" : "s"} that cannot be pushed`
-                : "")
-            : "Write edited fields back to the NetBox objects this declaration came from"
-        }
-      >
-        Push to NetBox…
-        {pushPreview && pushPreview.writes > 0 && (
-          <span className="toolbar-badge">{pushPreview.writes}</span>
-        )}
-        {pushPreview && pushPreview.notes > 0 && (
-          <span
-            className="toolbar-badge warn"
-            aria-label={`${pushPreview.notes} edits cannot be pushed`}
-          >
-            !{pushPreview.notes}
-          </span>
-        )}
-      </button>
-      )}
-      <button onClick={onValidateOnBigip} title="Dry-run this declaration against a BIG-IP">
-        Validate on BIG-IP…
-      </button>
-      <button onClick={() => fileInputRef.current?.click()}>Open</button>
+      <div className="toolbar-group" role="group" aria-label="BIG-IP">
+        <span className="toolbar-group-label">BIG-IP</span>
+        <div className="toolbar-group-buttons">
+          <GroupButton
+            icon={bigipConnected ? "check_circle" : "sync_alt"}
+            label={bigipConnected ? "Connected" : "Connect…"}
+            mode={labelMode}
+            onClick={onConnectBigip}
+            className={bigipConnected ? "is-connected" : "is-disconnected"}
+            title={
+              bigipConnected
+                ? "Connected — reopen to change the device or credentials"
+                : "Not connected — connect to BIG-IP (used by load and validate)"
+            }
+          />
+          <GroupButton
+            icon="download"
+            label="Load…"
+            mode={labelMode}
+            onClick={onLoadFromBigip}
+            title="Read an application from a device's running configuration, via AS3's per-application API"
+          />
+          <GroupButton
+            icon="task_alt"
+            label="Validate…"
+            mode={labelMode}
+            onClick={onValidateOnBigip}
+            title="Dry-run this declaration against a BIG-IP"
+          />
+        </div>
+      </div>
+      <div className="toolbar-group" role="group" aria-label="JSON">
+        <span className="toolbar-group-label">JSON</span>
+        <div className="toolbar-group-buttons">
+          <GroupButton
+            icon="folder_open"
+            label="Open…"
+            mode={labelMode}
+            onClick={() => fileInputRef.current?.click()}
+            title="Open a declaration from a local JSON file"
+          />
+          <GroupButton
+            icon="save"
+            label="Save"
+            mode={labelMode}
+            onClick={handleSave}
+            title="Save the declaration as a local JSON file"
+          />
+        </div>
+      </div>
       <input
         ref={fileInputRef}
         type="file"
@@ -194,12 +314,22 @@ export default function Toolbar({
           e.target.value = "";
         }}
       />
-      <button onClick={handleSave}>Save</button>
+      <select
+        className="toolbar-labelmode"
+        value={labelMode}
+        onChange={(e) => onLabelModeChange(e.target.value as ToolbarLabelMode)}
+        title="How the grouped buttons present themselves"
+        aria-label="Toolbar button style"
+      >
+        <option value="icons">Icons</option>
+        <option value="text">Text</option>
+        <option value="both">Icons + text</option>
+      </select>
       <button
         onClick={onToggleTheme}
         title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
       >
-        {theme === "dark" ? "☀" : "☾"}
+        <MaterialIcon name={theme === "dark" ? "light_mode" : "dark_mode"} />
       </button>
     </div>
   );

@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import type {
   ClassInfo,
   JsonPath,
@@ -6,6 +7,7 @@ import type {
   PropertyInfo,
 } from "../engine";
 import {
+  canRename,
   describeSchema,
   definitionDocumentation,
   fieldDocumentation,
@@ -18,6 +20,7 @@ import {
   type DocumentationIndex,
   type SupportPolicy,
 } from "../engine";
+import MaterialIcon from "./MaterialIcon";
 import PropertyWidget from "./PropertyWidget";
 import ConfirmButton from "./ConfirmButton";
 import AddableList, {
@@ -42,6 +45,9 @@ interface ContextPanelProps {
   onAddChip: (payload: ChipPayload) => void;
   onDeleteNode: (path: JsonPath) => void;
   onClassChange: (path: JsonPath, className: string) => void;
+  /** Rename this node's key; returns an error message or null on success.
+   * Offered for applications and their members (references are rewritten). */
+  onRenameNode: (path: JsonPath, newName: string) => string | null;
 }
 
 export default function ContextPanel({
@@ -57,7 +63,16 @@ export default function ContextPanel({
   onAddChip,
   onDeleteNode,
   onClassChange,
+  onRenameNode,
 }: ContextPanelProps) {
+  const [rename, setRename] = useState<{
+    value: string;
+    error: string | null;
+  } | null>(null);
+  // An open rename belongs to the node it was opened on: moving the
+  // selection must not carry its text over to another node.
+  const selectionKey = JSON.stringify(context.path);
+  useEffect(() => setRename(null), [selectionKey]);
   const docNode = getAtPath(doc, context.path);
 
   // Cross-reference options: document objects grouped once, filtered per
@@ -189,6 +204,17 @@ export default function ContextPanel({
             </a>
           )}
         </span>
+        {nodeName !== undefined &&
+          canRename(context.path as (string | number)[], docNode) && (
+            <button
+              className="ctx-rename"
+              title={`Rename ${nodeName} (references to it are rewritten)`}
+              aria-label={`Rename ${nodeName}`}
+              onClick={() => setRename({ value: String(nodeName), error: null })}
+            >
+              <MaterialIcon name="edit" size={16} />
+            </button>
+          )}
         {nodeName !== undefined && (
           <ConfirmButton
             className="ctx-delete"
@@ -196,10 +222,42 @@ export default function ContextPanel({
             armedLabel="delete?"
             onConfirm={() => onDeleteNode(context.path)}
           >
-            🗑
+            <MaterialIcon name="delete" size={16} />
           </ConfirmButton>
         )}
       </div>
+
+      {rename !== null && (
+        <div className="ctx-rename-row">
+          <input
+            autoFocus
+            onFocus={(e) => e.currentTarget.select()}
+            value={rename.value}
+            onChange={(e) => setRename({ value: e.target.value, error: null })}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setRename(null);
+              if (e.key === "Enter") {
+                const err = onRenameNode(context.path, rename.value.trim());
+                if (err) setRename({ ...rename, error: err });
+                else setRename(null);
+              }
+            }}
+            aria-label="New name"
+          />
+          <button
+            className="primary"
+            onClick={() => {
+              const err = onRenameNode(context.path, rename.value.trim());
+              if (err) setRename({ ...rename, error: err });
+              else setRename(null);
+            }}
+          >
+            Rename
+          </button>
+          <button onClick={() => setRename(null)}>Cancel</button>
+          {rename.error && <div className="modal-error">{rename.error}</div>}
+        </div>
+      )}
 
       {!context.schema && (
         <div className="pane-placeholder">

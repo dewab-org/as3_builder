@@ -1,0 +1,44 @@
+// The AS3 Builder mark: a JSON document ({ } and "AS3") being edited with a
+// pencil. Drawn in currentColor so it follows the toolbar's theme. The same
+// paths, in a fixed colour on a white tile, are public/favicon.svg;
+// public/as3-builder-icon.svg is the plain standalone version.
+export default function AppLogo({ size = 28 }: { size?: number }) {
+  return (
+    <svg
+      className="app-logo"
+      viewBox="0 0 64 64"
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path
+        d="M51.3 29.5V18.9L38.9 6.3H10A4.7 4.7 0 0 0 5.3 11V53.5A4.7 4.7 0 0 0 10 58.2H46.6A4.7 4.7 0 0 0 51.3 53.5V46.5"
+        strokeWidth="2.5"
+      />
+      <path d="M38.9 6.6V16.2A2.5 2.5 0 0 0 41.4 18.7H51" strokeWidth="2.5" />
+      <path
+        d="M21 16.8C18.6 16.8 17.9 18 17.9 20V23.4C17.9 24.9 16.9 25.8 15 25.8C16.9 25.8 17.9 26.7 17.9 28.2V31.6C17.9 33.6 18.6 34.8 21 34.8"
+        strokeWidth="2.8"
+      />
+      <path
+        d="M26.7 16.8C29.1 16.8 29.8 18 29.8 20V23.4C29.8 24.9 30.8 25.8 32.7 25.8C30.8 25.8 29.8 26.7 29.8 28.2V31.6C29.8 33.6 29.1 34.8 26.7 34.8"
+        strokeWidth="2.8"
+      />
+      <g strokeWidth="2.2">
+        <path d="M11 46.4L15.1 37.4L19.2 46.4M12.6 43.1H17.6" />
+        <path d="M26.7 39.3C26 38 24.9 37.4 23.9 37.4C22.4 37.4 21.4 38.3 21.4 39.6C21.4 41 22.6 41.5 24.1 42C25.8 42.5 27 43.2 27 44.4C27 45.7 25.8 46.6 24.2 46.6C22.9 46.6 21.8 45.9 21.1 44.8" />
+        <path d="M29.6 39C30.2 38 31.2 37.4 32.4 37.4C34 37.4 35 38.3 35 39.6C35 40.9 34 41.8 32.4 41.8H31.5M32.4 41.8C34.3 41.8 35.4 42.8 35.4 44.2C35.4 45.6 34.2 46.6 32.4 46.6C31 46.6 29.9 45.9 29.3 44.8" />
+      </g>
+      <path
+        d="M35.4 54.1L37.4 47.6L54.2 30.6A3.2 3.2 0 0 1 58.8 35.2L41.9 52.1Z"
+        strokeWidth="2.2"
+      />
+      <path d="M50.1 34.9L54.6 39.4" strokeWidth="2.2" />
+    </svg>
+  );
+}
